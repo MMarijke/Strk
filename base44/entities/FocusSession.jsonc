@@ -1,0 +1,108 @@
+{
+  "name": "FocusSession",
+  "type": "object",
+  "properties": {
+    "host_email": {
+      "type": "string",
+      "description": "Email of the session host"
+    },
+    "host_name": {
+      "type": "string",
+      "description": "Display name of the host"
+    },
+    "group_id": {
+      "type": "string",
+      "description": "Optional linked group ID"
+    },
+    "duration_minutes": {
+      "type": "number",
+      "enum": [
+        25,
+        45,
+        60
+      ],
+      "description": "Session duration"
+    },
+    "started_at": {
+      "type": "string",
+      "description": "ISO datetime when session started"
+    },
+    "ends_at": {
+      "type": "string",
+      "description": "ISO datetime when session ends"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "waiting",
+        "active",
+        "completed"
+      ],
+      "default": "waiting"
+    },
+    "participant_emails": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Emails of all participants"
+    },
+    "session_code": {
+      "type": "string",
+      "description": "6-character join code"
+    }
+  },
+  "required": [
+    "host_email",
+    "duration_minutes",
+    "session_code"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "data.participant_emails": {
+            "$in": [
+              "{{user.email}}"
+            ]
+          }
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

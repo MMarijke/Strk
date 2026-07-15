@@ -1,0 +1,84 @@
+{
+  "name": "Habit",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the habit"
+    },
+    "color": {
+      "type": "string",
+      "description": "Color theme for the habit widget"
+    },
+    "completions": {
+      "type": "array",
+      "description": "Array of date strings (YYYY-MM-DD) when the habit was completed",
+      "items": {
+        "type": "string"
+      }
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional notes or motivation for the habit"
+    },
+    "goal_per_week": {
+      "type": "number",
+      "description": "Target number of days per week to complete this habit"
+    },
+    "reminder_time": {
+      "type": "string",
+      "description": "Reminder time in HH:MM (24h) format"
+    },
+    "reminder_days": {
+      "type": "array",
+      "description": "Days of week to remind (0=Sun, 6=Sat)",
+      "items": {
+        "type": "number"
+      }
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "health",
+        "fitness",
+        "mindfulness",
+        "learning",
+        "productivity",
+        "social",
+        "other"
+      ],
+      "description": "Category of the habit"
+    },
+    "archived": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the habit is archived (hidden from dashboard)"
+    },
+    "frequency": {
+      "type": "string",
+      "enum": [
+        "daily",
+        "weekly"
+      ],
+      "default": "daily",
+      "description": "Habit frequency"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

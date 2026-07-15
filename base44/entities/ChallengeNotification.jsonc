@@ -1,0 +1,70 @@
+{
+  "name": "ChallengeNotification",
+  "type": "object",
+  "properties": {
+    "challenge_id": {
+      "type": "string",
+      "description": "ID of the GroupChallenge"
+    },
+    "group_id": {
+      "type": "string",
+      "description": "ID of the group"
+    },
+    "group_name": {
+      "type": "string",
+      "description": "Name of the group"
+    },
+    "habit_name": {
+      "type": "string",
+      "description": "Challenge habit name"
+    },
+    "duration_days": {
+      "type": "number",
+      "description": "Duration in days"
+    },
+    "started_by_email": {
+      "type": "string",
+      "description": "Email of the admin who started the challenge"
+    },
+    "started_by_name": {
+      "type": "string",
+      "description": "Display name of the admin"
+    },
+    "recipient_email": {
+      "type": "string",
+      "description": "Email of the member to notify"
+    },
+    "dismissed": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this member has dismissed the notification"
+    }
+  },
+  "required": [
+    "challenge_id",
+    "group_id",
+    "habit_name",
+    "recipient_email"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "data.recipient_email": "{{user.email}}"
+        }
+      ]
+    },
+    "update": {
+      "data.recipient_email": "{{user.email}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

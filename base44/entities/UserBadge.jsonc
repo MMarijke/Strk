@@ -1,0 +1,37 @@
+{
+  "name": "UserBadge",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user who earned the badge"
+    },
+    "badge_id": {
+      "type": "string",
+      "description": "ID of the badge earned"
+    },
+    "earned_date": {
+      "type": "string",
+      "description": "Date the badge was earned (YYYY-MM-DD)"
+    }
+  },
+  "required": [
+    "user_email",
+    "badge_id",
+    "earned_date"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

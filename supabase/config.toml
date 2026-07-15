@@ -1,0 +1,12 @@
+project_id = "strk"
+
+# Both functions below are invoked by external systems (Paddle's webhook
+# delivery, a cron schedule) rather than an authenticated app user, so they
+# can't present a Supabase JWT. Each verifies its own caller instead —
+# paddle-webhook via the Paddle-Signature HMAC, send-weekly-digest via the
+# X-Cron-Secret header — so disabling Supabase's JWT check here is safe.
+[functions.paddle-webhook]
+verify_jwt = false
+
+[functions.send-weekly-digest]
+verify_jwt = false

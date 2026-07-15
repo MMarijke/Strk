@@ -1,0 +1,44 @@
+{
+  "name": "StreakFreeze",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user"
+    },
+    "week_key": {
+      "type": "string",
+      "description": "ISO week key YYYY-WNN (e.g. 2026-W24) \u2014 one record per user per week"
+    },
+    "used_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of freezes used this week"
+    },
+    "frozen_habits": {
+      "type": "object",
+      "description": "Map of habitId -> frozenDate for habits frozen this week",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "user_email",
+    "week_key"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

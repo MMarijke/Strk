@@ -1,0 +1,68 @@
+{
+  "name": "UserProfile",
+  "type": "object",
+  "properties": {
+    "display_name": {
+      "type": "string",
+      "description": "Public display name"
+    },
+    "avatar_color": {
+      "type": "string",
+      "description": "Avatar background color"
+    },
+    "total_completions": {
+      "type": "number",
+      "description": "Cached total completions count"
+    },
+    "best_streak": {
+      "type": "number",
+      "description": "Cached best streak"
+    },
+    "consistency_score": {
+      "type": "number",
+      "description": "30-day completion rate 0-100"
+    },
+    "is_public": {
+      "type": "boolean",
+      "default": true,
+      "description": "Opt into leaderboard"
+    },
+    "plan": {
+      "type": "string",
+      "enum": [
+        "free",
+        "pro"
+      ],
+      "default": "free",
+      "description": "User plan: free (1 freeze/week) or pro (unlimited)"
+    },
+    "highest_rank": {
+      "type": "string",
+      "description": "Highest rank key ever achieved (ember/flame/blaze/inferno/legend)"
+    }
+  },
+  "required": [
+    "display_name"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "data.is_public": true
+        }
+      ]
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

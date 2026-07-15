@@ -1,39 +1,29 @@
-**Welcome to your Base44 project** 
+**Strk**
 
 **About**
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+A habit-tracking app, originally scaffolded on Base44, now fully migrated to a standalone Supabase backend (auth, database, realtime).
 
-This project contains everything you need to run your app locally.
+**Local setup**
 
-**Edit the code in your local development environment**
-
-Any change pushed to the repo will also be reflected in the Base44 Builder.
-
-**Prerequisites:** 
-
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
+1. Clone the repository and `cd` into the project directory.
+2. Install dependencies: `npm install`
+3. Create an `.env.local` file with:
 
 ```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-Run the app: `npm run dev`
+4. Apply the SQL migrations in `supabase/migrations/` to your Supabase project (via `supabase db push` with the Supabase CLI, or by pasting each file into the SQL editor in order).
+5. Run the app: `npm run dev`
 
-**Publish your changes**
+**Notes**
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+- Sign-in uses Supabase's passwordless magic-link email flow (`src/pages/Login.jsx`).
+- `base44/entities/*.jsonc` is kept only as historical reference for the original schema each Supabase table in `supabase/migrations/` was ported from — it is not read by the running app.
+- `public/manifest.json` has an empty `icons` array — add real branded PWA icons before shipping.
 
-**Docs & Support**
+**Docs**
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
-
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+- Supabase: https://supabase.com/docs

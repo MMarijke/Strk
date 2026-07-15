@@ -1,0 +1,57 @@
+{
+  "name": "Reaction",
+  "type": "object",
+  "properties": {
+    "emoji": {
+      "type": "string",
+      "description": "The emoji reaction sent"
+    },
+    "sender_email": {
+      "type": "string",
+      "description": "Email of the sender"
+    },
+    "sender_name": {
+      "type": "string",
+      "description": "Display name of the sender"
+    },
+    "recipient_email": {
+      "type": "string",
+      "description": "Email of the recipient"
+    },
+    "group_id": {
+      "type": "string",
+      "description": "Group where the reaction was sent"
+    },
+    "read": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the recipient has seen this reaction"
+    }
+  },
+  "required": [
+    "emoji",
+    "sender_email",
+    "recipient_email"
+  ],
+  "rls": {
+    "create": {
+      "data.sender_email": "{{user.email}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "data.sender_email": "{{user.email}}"
+        },
+        {
+          "data.recipient_email": "{{user.email}}"
+        }
+      ]
+    },
+    "update": {
+      "data.recipient_email": "{{user.email}}"
+    },
+    "delete": {
+      "data.sender_email": "{{user.email}}"
+    }
+  }
+}

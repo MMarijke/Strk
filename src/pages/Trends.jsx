@@ -1,0 +1,183 @@
+import React from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/AuthContext";
+import { Habit } from "@/api/entities";
+import { format, subDays, startOfWeek, eachWeekOfInterval, subWeeks } from "date-fns";
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  CartesianGrid, Legend,
+} from "recharts";
+import { ArrowLeft, TrendingUp } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { calculateStreak } from "@/components/habits/StreakWidget";
+import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
+
+function buildWeeklyData(habits, numWeeks = 12) {
+  const today = new Date();
+  const weeks = Array.from({ length: numWeeks }, (_, i) => {
+    const weekStart = startOfWeek(subWeeks(today, numWeeks - 1 - i), { weekStartsOn: 1 });
+    const weekDays = Array.from({ length: 7 }, (_, d) => format(subDays(weekStart, -d), "yyyy-MM-dd"));
+    return { weekLabel: format(weekStart, "MMM d"), weekDays };
+  });
+
+  return weeks.map(({ weekLabel, weekDays }) => {
+    const row = { week: weekLabel };
+    habits.forEach((h) => {
+      const completions = h.completions || [];
+      const count = weekDays.filter((d) => completions.includes(d)).length;
+      row[h.name] = count;
+    });
+    return row;
+  });
+}
+
+const STROKE_COLORS = [
+  "#E8A030",
+  "#F5C265",
+  "#7A9E78",
+  "#6B8FAB",
+  "#9B8BB5",
+  "#C47A8A",
+  "#7AB5A8",
+  "#D4956A",
+];
+
+export default function Trends() {
+  const { user } = useAuth();
+
+  const { data: habits = [], isLoading } = useQuery({
+    queryKey: ["habits", user?.email],
+    queryFn: () => user?.email
+      ? Habit.filter({ created_by: user.email }, "-created_date")
+      : [],
+    enabled: !!user?.email,
+  });
+
+  const weeklyData = buildWeeklyData(habits);
+
+  const today = format(new Date(), "yyyy-MM-dd");
+  const last30 = Array.from({ length: 30 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="max-w-3xl mx-auto px-4 pb-8" style={{ paddingTop: `calc(env(safe-area-inset-top) + 2rem)` }}>
+
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-foreground tracking-tight flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-primary" />
+            Trends
+          </h1>
+          <p className="text-sm text-muted-foreground">12-week completion overview</p>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-4">
+            {[1, 2].map((i) => <div key={i} className="h-48 rounded-xl bg-card animate-pulse" />)}
+          </div>
+        ) : habits.length === 0 ? (
+          <div className="text-center py-20 text-muted-foreground">No habits yet</div>
+        ) : (
+          <div className="space-y-6">
+
+            {/* Weekly completion line chart */}
+            <Card className="p-5 border-0 shadow-sm">
+              <h2 className="font-semibold text-sm mb-4">Weekly Completions per Habit</h2>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={weeklyData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis
+                    dataKey="week"
+                    tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval={2}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                    axisLine={false}
+                    tickLine={false}
+                    domain={[0, 7]}
+                    ticks={[0, 1, 2, 3, 4, 5, 6, 7]}
+                    width={20}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                    }}
+                    formatter={(val, name) => [`${val} days`, name]}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: "11px", paddingTop: "12px" }}
+                    iconType="circle"
+                    iconSize={8}
+                  />
+                  {habits.map((h, i) => (
+                    <Line
+                      key={h.id}
+                      type="monotone"
+                      dataKey={h.name}
+                      stroke={h.color || STROKE_COLORS[i % STROKE_COLORS.length]}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </Card>
+
+            {/* Per-habit stat cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {habits.map((h, i) => {
+                const completions = h.completions || [];
+                const streak = calculateStreak(completions);
+                const best = getAllTimeBest(completions);
+                const last30Count = last30.filter((d) => completions.includes(d)).length;
+                const rate30 = Math.round((last30Count / 30) * 100);
+                const color = h.color || STROKE_COLORS[i % STROKE_COLORS.length];
+
+                // 4-week trend: compare last 2 weeks vs 2 weeks before that
+                const w1 = Array.from({ length: 14 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
+                const w2 = Array.from({ length: 14 }, (_, i) => format(subDays(new Date(), 14 + i), "yyyy-MM-dd"));
+                const c1 = w1.filter((d) => completions.includes(d)).length;
+                const c2 = w2.filter((d) => completions.includes(d)).length;
+                const trend = c1 > c2 ? "↑ Improving" : c1 < c2 ? "↓ Declining" : "→ Steady";
+                const trendColor = c1 > c2 ? "text-primary" : c1 < c2 ? "text-destructive" : "text-muted-foreground";
+
+                return (
+                  <Card key={h.id} className="p-4 border-0 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: color }} />
+                    <div className="pl-2">
+                      <p className="font-semibold text-sm break-words">{h.name}</p>
+                      <div className="grid grid-cols-3 gap-2 mt-3">
+                        <div>
+                          <p className="text-lg font-bold text-foreground">{streak}</p>
+                          <p className="text-[10px] text-muted-foreground">Current streak</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-bold text-foreground">{best}</p>
+                          <p className="text-[10px] text-muted-foreground">Best ever</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-bold text-foreground">{rate30}%</p>
+                          <p className="text-[10px] text-muted-foreground">Last 30 days</p>
+                        </div>
+                      </div>
+                      <p className={`text-xs font-medium mt-2 ${trendColor}`}>{trend}</p>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

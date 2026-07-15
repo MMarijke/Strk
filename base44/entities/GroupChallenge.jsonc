@@ -1,0 +1,101 @@
+{
+  "name": "GroupChallenge",
+  "type": "object",
+  "properties": {
+    "group_id": {
+      "type": "string",
+      "description": "ID of the group this challenge belongs to"
+    },
+    "habit_name": {
+      "type": "string",
+      "description": "Name of the habit to track for this challenge"
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional challenge description"
+    },
+    "duration_days": {
+      "type": "number",
+      "enum": [
+        7,
+        14,
+        30
+      ],
+      "description": "Challenge duration in days"
+    },
+    "start_date": {
+      "type": "string",
+      "description": "Start date in YYYY-MM-DD format"
+    },
+    "end_date": {
+      "type": "string",
+      "description": "End date in YYYY-MM-DD format (auto-calculated)"
+    },
+    "member_emails": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Enrolled member emails"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether the challenge is active"
+    }
+  },
+  "required": [
+    "group_id",
+    "habit_name",
+    "duration_days",
+    "start_date"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "data.member_emails": {
+            "$in": [
+              "{{user.email}}"
+            ]
+          }
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}
