@@ -1,5 +1,18 @@
 // Paddle Billing webhook handler — see PADDLE_BILLING.md for the full
 // contract this follows (signature format, 5-second ack rule, idempotency).
+//
+// Matching note: Paddle Billing doesn't actually emit a "subscription.activated"
+// event — activation is represented by subscription.created/updated events
+// carrying status: "active" (or "trialing"). We treat those as the
+// "activated" case and subscription.canceled/paused as deactivation.
+//
+// We resolve the Strk user by email rather than Paddle's customer_id,
+// because on a user's very first purchase we have no stored customer_id yet
+// to join on. Subscription events don't reliably include the customer's
+// email directly (only customer_id), so src/lib/paddle.js stamps
+// custom_data.email at checkout time — that custom_data reliably propagates
+// to the resulting subscription events, giving us a dependable join key
+// from the very first webhook delivery.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
@@ -26,16 +39,14 @@ function verifySignature(rawBody: string, header: string): boolean {
 
 const ACTIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
 
-// Paddle customers/subscriptions don't carry our user id natively — we stamp
-// it into custom_data.supabase_user_id at checkout time (see paddleService.js)
-// specifically because Paddle does not enforce email uniqueness across
-// customer records, so email alone isn't a safe join key.
 async function applySubscriptionEvent(eventType: string, data: Record<string, unknown>) {
-  const userId = (data.custom_data as Record<string, unknown> | null)?.supabase_user_id as
-    | string
-    | undefined;
-  if (!userId) {
-    console.error(`paddle-webhook: no custom_data.supabase_user_id on ${eventType} (${data.id})`);
+  const customData = data.custom_data as Record<string, unknown> | null;
+  const email =
+    (customData?.email as string | undefined) ??
+    ((data.customer as Record<string, unknown> | undefined)?.email as string | undefined);
+
+  if (!email) {
+    console.error(`paddle-webhook: no resolvable email on ${eventType} (${data.id})`);
     return;
   }
 
@@ -55,7 +66,7 @@ async function applySubscriptionEvent(eventType: string, data: Record<string, un
       subscription_status: status,
       plan,
     })
-    .eq("created_by_id", userId);
+    .eq("created_by", email);
 
   if (error) throw error;
 }

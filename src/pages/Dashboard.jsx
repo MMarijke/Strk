@@ -28,12 +28,13 @@ import StartFocusModal from "@/components/focus/StartFocusModal";
 import SessionRoom from "@/components/focus/SessionRoom";
 import FocusSessionBanner from "@/components/focus/FocusSessionBanner";
 import { trackEvent } from "@/lib/analytics";
+import { useSubscription } from "@/hooks/useSubscription";
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { isPro } = useSubscription();
   const [showAdd, setShowAdd] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
-  const [isPro, setIsPro] = useState(false);
   const [rankUpRank, setRankUpRank] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [showFocusModal, setShowFocusModal] = useState(false);
@@ -41,12 +42,11 @@ export default function Dashboard() {
   const rankCheckTimeout = useRef(null);
   const queryClient = useQueryClient();
 
-  // Load user's plan + profile
+  // Load user's profile (display name, highest rank) — plan/isPro comes from useSubscription
   useEffect(() => {
     if (!user?.email) return;
     UserProfile.filter({ created_by: user.email }).then((profiles) => {
       if (profiles.length > 0) {
-        setIsPro(profiles[0].plan === "pro");
         setUserProfile(profiles[0]);
       }
     });

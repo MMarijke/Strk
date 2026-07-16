@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { Habit } from "@/api/entities";
@@ -7,12 +7,14 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend,
 } from "recharts";
-import { ArrowLeft, TrendingUp } from "lucide-react";
+import { ArrowLeft, TrendingUp, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { calculateStreak } from "@/components/habits/StreakWidget";
 import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
+import { useSubscription } from "@/hooks/useSubscription";
+import UpgradeModal from "@/components/upgrade/UpgradeModal";
 
 function buildWeeklyData(habits, numWeeks = 12) {
   const today = new Date();
@@ -46,6 +48,8 @@ const STROKE_COLORS = [
 
 export default function Trends() {
   const { user } = useAuth();
+  const { isPro } = useSubscription();
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   const { data: habits = [], isLoading } = useQuery({
     queryKey: ["habits", user?.email],
@@ -85,51 +89,69 @@ export default function Trends() {
             {/* Weekly completion line chart */}
             <Card className="p-5 border-0 shadow-sm">
               <h2 className="font-semibold text-sm mb-4">Weekly Completions per Habit</h2>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={weeklyData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis
-                    dataKey="week"
-                    tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval={2}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                    axisLine={false}
-                    tickLine={false}
-                    domain={[0, 7]}
-                    ticks={[0, 1, 2, 3, 4, 5, 6, 7]}
-                    width={20}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                    }}
-                    formatter={(val, name) => [`${val} days`, name]}
-                  />
-                  <Legend
-                    wrapperStyle={{ fontSize: "11px", paddingTop: "12px" }}
-                    iconType="circle"
-                    iconSize={8}
-                  />
-                  {habits.map((h, i) => (
-                    <Line
-                      key={h.id}
-                      type="monotone"
-                      dataKey={h.name}
-                      stroke={h.color || STROKE_COLORS[i % STROKE_COLORS.length]}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4 }}
+              <div className="relative">
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={weeklyData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis
+                      dataKey="week"
+                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                      axisLine={false}
+                      tickLine={false}
+                      interval={2}
                     />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
+                    <YAxis
+                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                      axisLine={false}
+                      tickLine={false}
+                      domain={[0, 7]}
+                      ticks={[0, 1, 2, 3, 4, 5, 6, 7]}
+                      width={20}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                      formatter={(val, name) => [`${val} days`, name]}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: "11px", paddingTop: "12px" }}
+                      iconType="circle"
+                      iconSize={8}
+                    />
+                    {habits.map((h, i) => (
+                      <Line
+                        key={h.id}
+                        type="monotone"
+                        dataKey={h.name}
+                        stroke={h.color || STROKE_COLORS[i % STROKE_COLORS.length]}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 4 }}
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+
+                {/* Free plan only sees the most recent 4 of 12 weeks — the
+                    other 8 (oldest, leftmost) are blurred behind an upsell. */}
+                {!isPro && (
+                  <div className="absolute inset-y-0 left-0 w-2/3 flex items-center justify-center rounded-l-xl bg-background/70 backdrop-blur-md">
+                    <div className="text-center px-4">
+                      <p className="text-xs font-semibold text-foreground mb-2">
+                        Unlock full 12-week trends
+                      </p>
+                      <Button size="sm" onClick={() => setShowUpgrade(true)} className="gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Upgrade to Pro
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </Card>
 
             {/* Per-habit stat cards */}
@@ -178,6 +200,8 @@ export default function Trends() {
           </div>
         )}
       </div>
+
+      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
     </div>
   );
 }

@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Copy, Share2, Check } from "lucide-react";
+import { useSubscription } from "@/hooks/useSubscription";
 
 function generateInviteCode() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -15,13 +16,24 @@ function getInviteLink(code) {
   return `${window.location.origin}?join=${code}`;
 }
 
-export default function CreateGroupModal({ open, onOpenChange, onCreate, userEmail }) {
+export default function CreateGroupModal({ open, onOpenChange, onCreate, userEmail, groupCount = 0, onUpgrade }) {
+  const { isPro } = useSubscription();
+  const paywalled = groupCount >= 2 && !isPro;
   const [step, setStep] = useState("form"); // "form" | "invite"
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [isPrivate, setIsPrivate] = useState(true);
   const [createdGroup, setCreatedGroup] = useState(null);
   const [copied, setCopied] = useState(null);
+
+  // Free plan is capped at 2 groups — redirect straight to the upgrade flow
+  // instead of showing the create-group form.
+  useEffect(() => {
+    if (open && paywalled) {
+      onOpenChange(false);
+      onUpgrade?.();
+    }
+  }, [open, paywalled]);
 
   const handleCreate = async () => {
     const code = generateInviteCode();
@@ -64,7 +76,7 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
   const inviteLink = createdGroup ? getInviteLink(createdGroup.invite_code) : "";
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open && !paywalled} onOpenChange={handleClose}>
       <DialogContent className="max-w-sm w-[calc(100%-2rem)] mx-auto overflow-y-auto max-h-[90vh]">
         {step === "form" ? (
           <>

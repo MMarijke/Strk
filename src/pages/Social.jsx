@@ -24,6 +24,7 @@ import ScoreHistoryChart from "@/components/social/ScoreHistoryChart";
 import ReactionsInbox from "@/components/social/ReactionsInbox";
 import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
+import UpgradeModal from "@/components/upgrade/UpgradeModal";
 
 function calcConsistency(completions) {
   if (!completions?.length) return 0;
@@ -84,6 +85,7 @@ export default function Social() {
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showJoinFocus, setShowJoinFocus] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const [activeSession, setActiveSession] = useState(null);
   const [activeTab, setActiveTab] = useState("leaderboard");
 
@@ -389,8 +391,10 @@ export default function Social() {
         open={showCreate}
         onOpenChange={setShowCreate}
         userEmail={user?.email}
+        groupCount={myGroups.length}
+        onUpgrade={() => setShowUpgrade(true)}
         onCreate={(data) => createGroupMutation.mutateAsync(data)} />
-      
+
       <JoinGroupModal
         open={showJoin}
         onOpenChange={setShowJoin}
@@ -410,6 +414,8 @@ export default function Social() {
         onClose={() => setActiveSession(null)} />
 
       }
+
+      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
     </div>);
 
 }

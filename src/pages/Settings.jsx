@@ -17,11 +17,13 @@ import { getWeeklySummaryNotifEnabled, setWeeklySummaryNotifEnabled } from "@/li
 import { Habit, UserProfile } from "@/api/entities";
 import { useAuth } from "@/lib/AuthContext";
 import { getMyProfile, saveMyDisplayName } from "@/lib/displayName";
-import { openProCheckout } from "@/lib/paddleService";
+import { useSubscription } from "@/hooks/useSubscription";
+import UpgradeModal from "@/components/upgrade/UpgradeModal";
 
 export default function Settings() {
   const { themeId, setThemeId, isDark, setIsDark } = useTheme();
   const { user, logout } = useAuth();
+  const { isPro } = useSubscription();
   const navigate = useNavigate();
   const notifSupported = "Notification" in window && Notification.permission === "granted";
   const [weeklySummaryNotif, setWeeklySummaryNotif] = useState(getWeeklySummaryNotifEnabled);
@@ -31,8 +33,7 @@ export default function Settings() {
   const [nameSaved, setNameSaved] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-
-  const isPro = profile?.plan === "pro";
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   useEffect(() => {
     if (!user?.email) return;
@@ -58,11 +59,6 @@ export default function Settings() {
     if (profile?.id) {
       UserProfile.update(profile.id, { email_weekly_digest: val }).then((updated) => setProfile(updated));
     }
-  };
-
-  const handleUpgrade = () => {
-    if (!user) return;
-    openProCheckout({ userId: user.id, email: user.email });
   };
 
   const handleDeleteAccount = async () => {
@@ -130,35 +126,43 @@ export default function Settings() {
             </div>
           </Card>
 
-          {/* Strk Pro */}
+          {/* Subscription */}
           <Card className={cn(
             "border-0 shadow-sm p-5",
             isPro && "bg-gradient-to-br from-primary/10 to-accent/10"
           )}>
             <div className="flex items-center gap-3 mb-1">
               <Sparkles className="w-4 h-4 text-primary" />
-              <h2 className="font-semibold text-sm">Strk Pro</h2>
+              <h2 className="font-semibold text-sm">Subscription</h2>
             </div>
-            {isPro ? (
-              <>
-                <p className="text-xs text-muted-foreground mb-1">
-                  You're a Pro member — unlimited streak freezes and more.
-                </p>
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary mt-2">
-                  <Sparkles className="w-3 h-3" /> Pro
-                </span>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Unlock unlimited streak freezes and support Strk's development.
-                </p>
-                <Button size="sm" onClick={handleUpgrade} className="gap-1.5">
+            <p className="text-xs text-muted-foreground mb-4">
+              {isPro
+                ? "Unlimited groups, 2 streak freezes a month, and full 12-week analytics."
+                : "Upgrade for unlimited groups, more streak freezes, and full 12-week analytics."}
+            </p>
+            <div className="flex items-center justify-between">
+              <span className={cn(
+                "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full",
+                isPro ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+              )}>
+                {isPro && <Sparkles className="w-3 h-3" />}
+                {isPro ? "Pro Plan" : "Free Plan"}
+              </span>
+              {isPro ? (
+                // TODO: replace with a real Paddle customer-portal URL once available
+                <a
+                  href="#"
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Manage Subscription
+                </a>
+              ) : (
+                <Button size="sm" onClick={() => setShowUpgrade(true)} className="gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
                   Upgrade to Pro
                 </Button>
-              </>
-            )}
+              )}
+            </div>
           </Card>
 
           {/* Dark Mode Toggle */}
@@ -348,6 +352,8 @@ export default function Settings() {
           </Card>
         </div>
       </div>
+
+      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
     </div>
   );
 }
