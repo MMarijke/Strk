@@ -29,3 +29,6 @@ dist-ssr
 
 .env
 .vite
+
+# Supabase CLI local cache (project ref, version metadata) — machine-specific, not source
+supabase/.temp/

@@ -39,12 +39,28 @@ function verifySignature(rawBody: string, header: string): boolean {
 
 const ACTIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
 
-async function applySubscriptionEvent(eventType: string, data: Record<string, unknown>) {
+// Subscription/transaction events carry customer_id but not reliably the
+// customer's email, and price-level custom_data (on the catalog price
+// object) is unrelated catalog metadata — not what's stamped at checkout.
+// src/lib/paddle.js stamps custom_data.email on the checkout itself, which
+// Paddle propagates onto the resulting transaction/subscription objects, so
+// that's the reliable path; data.customer?.email is a defensive fallback.
+function resolveEmail(data: Record<string, unknown>): string | undefined {
   const customData = data.custom_data as Record<string, unknown> | null;
-  const email =
+  return (
     (customData?.email as string | undefined) ??
-    ((data.customer as Record<string, unknown> | undefined)?.email as string | undefined);
+    ((data.customer as Record<string, unknown> | undefined)?.email as string | undefined)
+  );
+}
 
+function firstItemPriceId(data: Record<string, unknown>): string | null {
+  const items = data.items as Array<Record<string, unknown>> | undefined;
+  const price = items?.[0]?.price as Record<string, unknown> | undefined;
+  return (price?.id as string | undefined) ?? null;
+}
+
+async function applySubscriptionEvent(eventType: string, data: Record<string, unknown>) {
+  const email = resolveEmail(data);
   if (!email) {
     console.error(`paddle-webhook: no resolvable email on ${eventType} (${data.id})`);
     return;
@@ -63,6 +79,7 @@ async function applySubscriptionEvent(eventType: string, data: Record<string, un
     .update({
       paddle_customer_id: data.customer_id,
       paddle_subscription_id: data.id,
+      paddle_price_id: firstItemPriceId(data),
       subscription_status: status,
       plan,
     })
@@ -71,13 +88,38 @@ async function applySubscriptionEvent(eventType: string, data: Record<string, un
   if (error) throw error;
 }
 
+// Fires on every successful charge (initial + renewals), ahead of or
+// alongside subscription.created/updated — a redundant fast path so a
+// completed payment grants access even if the subscription event is
+// delayed, without overriding subscription.* as the authoritative status.
+async function applyTransactionCompleted(data: Record<string, unknown>) {
+  const email = resolveEmail(data);
+  if (!email) {
+    console.error(`paddle-webhook: no resolvable email on transaction.completed (${data.id})`);
+    return;
+  }
+
+  const { error } = await supabase
+    .from("user_profiles")
+    .update({
+      plan: "pro",
+      paddle_customer_id: data.customer_id,
+      paddle_subscription_id: (data.subscription_id as string | undefined) ?? null,
+      paddle_price_id: firstItemPriceId(data),
+    })
+    .eq("created_by", email);
+
+  if (error) throw error;
+}
+
 async function processEvent(event: { event_type: string; data: Record<string, unknown> }) {
-  if (event.event_type?.startsWith("subscription.")) {
+  if (event.event_type === "transaction.completed") {
+    await applyTransactionCompleted(event.data);
+  } else if (event.event_type?.startsWith("subscription.")) {
     await applySubscriptionEvent(event.event_type, event.data);
   }
-  // customer.* and transaction.* events are logged to paddle_events for the
-  // audit trail but don't need further handling — subscription state is the
-  // only thing user_profiles.plan cares about.
+  // customer.* events are logged to paddle_events for the audit trail but
+  // don't need further handling.
 }
 
 Deno.serve(async (req) => {
