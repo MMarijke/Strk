@@ -5,8 +5,19 @@ let paddleInstance = null;
 
 export async function getPaddle() {
   if (paddleInstance) return paddleInstance;
+
+  const environment = import.meta.env.VITE_PADDLE_ENVIRONMENT;
+  if (!environment) {
+    // No fallback on purpose — a missing env var silently defaulting to
+    // "sandbox" is exactly the kind of bug that stays invisible until a
+    // real customer hits it in production.
+    throw new Error(
+      'VITE_PADDLE_ENVIRONMENT is not set. Set it explicitly to "sandbox" or "production" for this deploy.'
+    );
+  }
+
   paddleInstance = await initializePaddle({
-    environment: import.meta.env.VITE_PADDLE_ENVIRONMENT || 'sandbox',
+    environment,
     token: import.meta.env.VITE_PADDLE_CLIENT_TOKEN,
     eventCallback: (event) => {
       // Best-effort client-side signal only — the webhook (paddle-webhook
