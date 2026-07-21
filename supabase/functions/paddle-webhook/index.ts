@@ -59,6 +59,19 @@ function firstItemPriceId(data: Record<string, unknown>): string | null {
   return (price?.id as string | undefined) ?? null;
 }
 
+// Paddle Billing has no separate "customer portal" — each subscription
+// carries its own self-service links directly in management_urls.
+function managementUrls(data: Record<string, unknown>): {
+  updatePaymentMethodUrl: string | null;
+  cancelUrl: string | null;
+} {
+  const urls = data.management_urls as Record<string, unknown> | null;
+  return {
+    updatePaymentMethodUrl: (urls?.update_payment_method as string | undefined) ?? null,
+    cancelUrl: (urls?.cancel as string | undefined) ?? null,
+  };
+}
+
 async function applySubscriptionEvent(eventType: string, data: Record<string, unknown>) {
   const email = resolveEmail(data);
   if (!email) {
@@ -73,6 +86,7 @@ async function applySubscriptionEvent(eventType: string, data: Record<string, un
       : ACTIVE_STATUSES.has(status)
         ? "pro"
         : "free";
+  const { updatePaymentMethodUrl, cancelUrl } = managementUrls(data);
 
   const { error } = await supabase
     .from("user_profiles")
@@ -80,6 +94,8 @@ async function applySubscriptionEvent(eventType: string, data: Record<string, un
       paddle_customer_id: data.customer_id,
       paddle_subscription_id: data.id,
       paddle_price_id: firstItemPriceId(data),
+      paddle_update_payment_method_url: updatePaymentMethodUrl,
+      paddle_cancel_url: cancelUrl,
       subscription_status: status,
       plan,
     })
