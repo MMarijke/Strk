@@ -6,7 +6,7 @@ import { openCheckout, PADDLE_MONTHLY_PRICE_ID, PADDLE_ANNUAL_PRICE_ID } from "@
 
 const BENEFITS = [
   { emoji: "🔥", label: "Unlimited groups" },
-  { emoji: "❄️", label: "2 streak freezes per month" },
+  { emoji: "❄️", label: "Unlimited streak freezes" },
   { emoji: "📊", label: "Full 12-week analytics" },
 ];
 

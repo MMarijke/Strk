@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getFreezesRemaining, getNextRefreshDateStr, FREE_FREEZES_PER_WEEK } from "@/lib/freezeService";
+import { getFreezesRemaining, getNextRefreshDateStr, FREE_FREEZES_PER_MONTH } from "@/lib/freezeService";
 
 export default function FreezeIndicator({ userEmail, isPro = false }) {
   const [remaining, setRemaining] = useState(null);
@@ -17,7 +17,7 @@ export default function FreezeIndicator({ userEmail, isPro = false }) {
       {isPro ? (
         <span>Unlimited freezes (Pro)</span>
       ) : remaining > 0 ? (
-        <span>{remaining} freeze this week</span>
+        <span>{remaining} freeze{remaining !== 1 ? "s" : ""} this month</span>
       ) : (
         <span>0 freezes — resets {getNextRefreshDateStr()}</span>
       )}

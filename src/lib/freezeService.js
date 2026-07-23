@@ -1,65 +1,66 @@
 /**
  * Streak Freeze Service — server-backed via StreakFreeze entity.
- * Free plan: 1 freeze per week. Pro plan: unlimited.
+ * Free plan: 2 freezes per month. Pro plan: unlimited.
  */
 import { StreakFreeze } from "@/api/entities";
 
-export const FREE_FREEZES_PER_WEEK = 1;
+export const FREE_FREEZES_PER_MONTH = 2;
 
-/** Returns ISO week key like "2026-W24" */
-export function getCurrentWeekKey() {
+/** Returns a month key like "2026-07" */
+export function getCurrentMonthKey() {
   const now = new Date();
-  // ISO week number
-  const jan4 = new Date(now.getFullYear(), 0, 4);
-  const startOfWeek1 = new Date(jan4);
-  startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-  const weekNum = Math.floor((now - startOfWeek1) / (7 * 24 * 60 * 60 * 1000)) + 1;
-  return `${now.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Returns the Monday of next week as a display string */
+/** Returns the 1st of next month as a display string */
 export function getNextRefreshDateStr() {
   const now = new Date();
-  const day = now.getDay(); // 0=Sun
-  const daysUntilMonday = day === 0 ? 1 : 8 - day;
-  const next = new Date(now);
-  next.setDate(now.getDate() + daysUntilMonday);
+  const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return next.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 /**
- * Load (or create) this week's freeze record for the user.
+ * Load (or create) this month's freeze record for the user.
  * Returns the record object.
  */
-export async function loadWeekRecord(userEmail) {
-  const weekKey = getCurrentWeekKey();
-  const records = await StreakFreeze.filter({ user_email: userEmail, week_key: weekKey });
+export async function loadMonthRecord(userEmail) {
+  const monthKey = getCurrentMonthKey();
+  const records = await StreakFreeze.filter({ user_email: userEmail, month_key: monthKey });
   if (records.length > 0) return records[0];
-  // Create fresh record for this week
+  // Create fresh record for this month
   return StreakFreeze.create({
     user_email: userEmail,
-    week_key: weekKey,
+    month_key: monthKey,
     used_count: 0,
     frozen_habits: {},
   });
 }
 
 /**
- * Returns freezes remaining this week.
+ * Returns freezes remaining this month.
  * isPro = true → unlimited (returns 999).
  */
 export async function getFreezesRemaining(userEmail, isPro = false) {
   if (isPro) return 999;
-  const record = await loadWeekRecord(userEmail);
-  return Math.max(0, FREE_FREEZES_PER_WEEK - (record.used_count || 0));
+  const record = await loadMonthRecord(userEmail);
+  return Math.max(0, FREE_FREEZES_PER_MONTH - (record.used_count || 0));
 }
 
 /**
- * Returns the frozen date for a specific habit this week, or null.
+ * Returns the frozen date for a specific habit this month, or null.
  */
 export async function getFrozenDateForHabit(userEmail, habitId) {
-  const record = await loadWeekRecord(userEmail);
+  const record = await loadMonthRecord(userEmail);
   return (record.frozen_habits || {})[habitId] || null;
+}
+
+/**
+ * Returns the set of habit IDs already frozen this month, for filtering
+ * candidates in the dashboard-level freeze prompt without a per-habit fetch.
+ */
+export async function getFrozenHabitIdsThisMonth(userEmail) {
+  const record = await loadMonthRecord(userEmail);
+  return new Set(Object.keys(record.frozen_habits || {}));
 }
 
 /**
@@ -67,15 +68,15 @@ export async function getFrozenDateForHabit(userEmail, habitId) {
  * Returns { success, reason }
  */
 export async function applyFreeze(userEmail, habitId, missedDate, isPro = false) {
-  const record = await loadWeekRecord(userEmail);
+  const record = await loadMonthRecord(userEmail);
   const usedCount = record.used_count || 0;
   const frozenHabits = record.frozen_habits || {};
 
-  if (!isPro && usedCount >= FREE_FREEZES_PER_WEEK) {
-    return { success: false, reason: "No freezes remaining this week. Upgrade to Pro for unlimited freezes." };
+  if (!isPro && usedCount >= FREE_FREEZES_PER_MONTH) {
+    return { success: false, reason: "No freezes remaining this month. Upgrade to Pro for unlimited freezes." };
   }
   if (frozenHabits[habitId]) {
-    return { success: false, reason: "Already used a freeze for this habit this week." };
+    return { success: false, reason: "Already used a freeze for this habit this month." };
   }
 
   const updated = await StreakFreeze.update(record.id, {
@@ -91,13 +92,14 @@ export async function applyFreeze(userEmail, habitId, missedDate, isPro = false)
  * Returns the missed date string or null.
  */
 /**
- * Legacy sync check — returns true if the user has any freeze record this week.
- * Used by Badges page. Async version preferred elsewhere.
+ * Legacy sync check — returns true if the user has any freeze record this
+ * month with a used freeze. Used by Badges page. Async version preferred
+ * elsewhere.
  */
 export async function hasFreezeEverBeenUsed(userEmail) {
   if (!userEmail) return false;
-  const weekKey = getCurrentWeekKey();
-  const records = await StreakFreeze.filter({ user_email: userEmail, week_key: weekKey });
+  const monthKey = getCurrentMonthKey();
+  const records = await StreakFreeze.filter({ user_email: userEmail, month_key: monthKey });
   return records.some((r) => (r.used_count || 0) > 0);
 }
 

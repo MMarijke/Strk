@@ -137,8 +137,8 @@ export default function Settings() {
             </div>
             <p className="text-xs text-muted-foreground mb-4">
               {isPro
-                ? "Unlimited groups, 2 streak freezes a month, and full 12-week analytics."
-                : "Upgrade for unlimited groups, more streak freezes, and full 12-week analytics."}
+                ? "Unlimited groups, unlimited streak freezes, and full 12-week analytics."
+                : "Upgrade for unlimited groups, unlimited streak freezes, and full 12-week analytics."}
             </p>
             <div className="flex items-center justify-between">
               <span className={cn(

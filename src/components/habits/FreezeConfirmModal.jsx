@@ -3,7 +3,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { FREE_FREEZES_PER_WEEK } from "@/lib/freezeService";
+import { FREE_FREEZES_PER_MONTH } from "@/lib/freezeService";
 
 export default function FreezeConfirmModal({ open, onOpenChange, habit, freezesRemaining, isPro, onConfirm }) {
   const noFreezesLeft = !isPro && freezesRemaining <= 0;
@@ -25,9 +25,9 @@ export default function FreezeConfirmModal({ open, onOpenChange, habit, freezesR
           <p className="text-sm text-blue-500 font-medium">✨ Pro — unlimited freezes</p>
         ) : noFreezesLeft ? (
           <div className="rounded-lg bg-muted/60 p-3 space-y-1">
-            <p className="text-sm font-semibold text-destructive">No freezes left this week</p>
+            <p className="text-sm font-semibold text-destructive">No freezes left this month</p>
             <p className="text-xs text-muted-foreground">
-              Free plan includes {FREE_FREEZES_PER_WEEK} freeze per week. Upgrade to Pro for unlimited freezes.
+              Free plan includes {FREE_FREEZES_PER_MONTH} freezes per month. Upgrade to Pro for unlimited freezes.
             </p>
           </div>
         ) : (
@@ -36,7 +36,7 @@ export default function FreezeConfirmModal({ open, onOpenChange, habit, freezesR
             <span className="font-semibold text-foreground">
               {freezesRemaining} freeze{freezesRemaining !== 1 ? "s" : ""}
             </span>{" "}
-            remaining this week.
+            remaining this month.
           </p>
         )}
         <DialogFooter className="mt-2">

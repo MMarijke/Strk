@@ -15,7 +15,8 @@ import StatsBar from "@/components/habits/StatsBar";
 import AddHabitDialog from "@/components/habits/AddHabitDialog";
 import SmartReminders from "@/components/habits/SmartReminders";
 import FreezeIndicator from "@/components/habits/FreezeIndicator";
-import { applyFreeze } from "@/lib/freezeService";
+import FreezePromptBanner from "@/components/habits/FreezePromptBanner";
+import { applyFreeze, getFreezesRemaining, getFrozenHabitIdsThisMonth } from "@/lib/freezeService";
 import WeeklySummaryCard from "@/components/habits/WeeklySummaryCard";
 import { isSummaryVisible, scheduleWeeklySummaryNotif } from "@/lib/weeklySummaryService";
 import ChallengeBanner from "@/components/habits/ChallengeBanner";
@@ -39,8 +40,20 @@ export default function Dashboard() {
   const [userProfile, setUserProfile] = useState(null);
   const [showFocusModal, setShowFocusModal] = useState(false);
   const [activeSession, setActiveSession] = useState(null);
+  const [freezesRemaining, setFreezesRemaining] = useState(0);
+  const [frozenHabitIds, setFrozenHabitIds] = useState(new Set());
   const rankCheckTimeout = useRef(null);
   const queryClient = useQueryClient();
+
+  const refreshFreezeState = useCallback(() => {
+    if (!user?.email) return;
+    getFreezesRemaining(user.email, isPro).then(setFreezesRemaining);
+    getFrozenHabitIdsThisMonth(user.email).then(setFrozenHabitIds);
+  }, [user?.email, isPro]);
+
+  useEffect(() => {
+    refreshFreezeState();
+  }, [refreshFreezeState]);
 
   // Load user's profile (display name, highest rank) — plan/isPro comes from useSubscription
   useEffect(() => {
@@ -156,6 +169,7 @@ export default function Dashboard() {
     if (!user?.email) return;
     await applyFreeze(user.email, habitId, missedDate, isPro);
     queryClient.invalidateQueries({ queryKey: ["habits", user?.email] });
+    refreshFreezeState();
   };
 
   const handleRefresh = useCallback(async () => {
@@ -242,6 +256,17 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Streak freeze prompt — more prominent than the per-card inline link */}
+        {user?.email && habits.length > 0 && (
+          <FreezePromptBanner
+            habits={habits}
+            frozenHabitIds={frozenHabitIds}
+            isPro={isPro}
+            freezesRemaining={freezesRemaining}
+            onApplyFreeze={handleApplyFreeze}
+          />
         )}
 
         {/* Focus session banner */}

@@ -116,7 +116,7 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
                   )}
                 >
                   <span>❄️</span>
-                  {isPro ? "Freeze streak (Pro)" : freezesRemaining > 0 ? "Freeze?" : "No freezes left this week"}
+                  {isPro ? "Freeze streak (Pro)" : freezesRemaining > 0 ? "Freeze?" : "No freezes left this month"}
                 </button>
               )}
             </div>
