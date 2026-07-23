@@ -17,6 +17,9 @@ import OnboardingDisplayName from './components/onboarding/OnboardingDisplayName
 
 // Sits inside AuthProvider so it can read the authenticated user id
 // and pass it to ThemeProvider for per-user localStorage key scoping.
+// ThemeProvider itself re-syncs its state when userId changes (auth
+// resolves asynchronously after this first mounts with userId=undefined)
+// — see the comment in ThemeContext.jsx.
 function ThemeProviderWithUser({ children }) {
   const { user } = useAuth();
   return (

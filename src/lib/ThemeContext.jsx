@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 
 export const COLOR_THEMES = [
   { id: "strk",    label: "Strk",     primary: "34 80% 55%",  accent: "42 90% 68%",  bg: "60 20% 98%",  darkBg: "60 8% 11%",  isDefault: true },
@@ -18,19 +18,47 @@ function storageKey(userId, name) {
   return userId ? `habit-${name}-${userId}` : `habit-${name}`;
 }
 
+// Reads every piece of theme/onboarding state for a given userId (or the
+// unscoped fallback keys if userId is undefined, i.e. before auth resolves).
+// Shared by the initial useState reads and the resync effect below so the
+// two can't drift out of sync with each other.
+function readStateForUser(userId) {
+  const themeId = localStorage.getItem(storageKey(userId, "theme")) || "strk";
+
+  const storedDark = localStorage.getItem(storageKey(userId, "dark"));
+  const isDark = storedDark !== null
+    ? storedDark === "true"
+    : (window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+
+  const onboarded = localStorage.getItem(storageKey(userId, "onboarded")) === "true";
+  const onboardStep = onboarded ? "done" : (localStorage.getItem(storageKey(userId, "onboard-step")) || "theme");
+
+  return { themeId, isDark, onboarded, onboardStep };
+}
+
 export function ThemeProvider({ children, userId }) {
-  const [themeId, setThemeId] = useState(() => localStorage.getItem(storageKey(userId, "theme")) || "strk");
-  const [isDark, setIsDark] = useState(() => {
-    const stored = localStorage.getItem(storageKey(userId, "dark"));
-    if (stored !== null) return stored === "true";
-    // Default to system preference
-    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
-  });
-  const [onboarded, setOnboarded] = useState(() => localStorage.getItem(storageKey(userId, "onboarded")) === "true");
-  const [onboardStep, setOnboardStep] = useState(() => {
-    if (localStorage.getItem(storageKey(userId, "onboarded")) === "true") return "done";
-    return localStorage.getItem(storageKey(userId, "onboard-step")) || "theme";
-  });
+  const [themeId, setThemeId] = useState(() => readStateForUser(userId).themeId);
+  const [isDark, setIsDark] = useState(() => readStateForUser(userId).isDark);
+  const [onboarded, setOnboarded] = useState(() => readStateForUser(userId).onboarded);
+  const [onboardStep, setOnboardStep] = useState(() => readStateForUser(userId).onboardStep);
+
+  // Auth resolves asynchronously, so this provider always mounts first with
+  // userId=undefined — the useState calls above read the unscoped fallback
+  // keys at that point. Once the real userId arrives a moment later, re-read
+  // everything from the correctly-scoped keys instead of leaving this state
+  // permanently locked to the wrong ones (lazy useState initializers only
+  // ever run once, on mount — they won't naturally pick this up).
+  const prevUserIdRef = useRef(userId);
+  useEffect(() => {
+    if (prevUserIdRef.current === userId) return;
+    prevUserIdRef.current = userId;
+
+    const next = readStateForUser(userId);
+    setThemeId(next.themeId);
+    setIsDark(next.isDark);
+    setOnboarded(next.onboarded);
+    setOnboardStep(next.onboardStep);
+  }, [userId]);
 
   useEffect(() => {
     const theme = COLOR_THEMES.find((t) => t.id === themeId) || COLOR_THEMES[0];
