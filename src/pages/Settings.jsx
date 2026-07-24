@@ -149,38 +149,15 @@ export default function Settings() {
                 {isPro ? "Pro Plan" : "Free Plan"}
               </span>
               {isPro ? (
-                profile?.paddle_update_payment_method_url ? (
-                  <div className="flex items-center gap-3">
-                    <a
-                      href={profile.paddle_update_payment_method_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Manage Subscription
-                    </a>
-                    {profile.paddle_cancel_url && (
-                      <a
-                        href={profile.paddle_cancel_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-medium text-muted-foreground hover:underline"
-                      >
-                        Cancel
-                      </a>
-                    )}
-                  </div>
-                ) : (
-                  // Paddle hasn't sent us a subscription.* event with
-                  // management_urls yet (e.g. only transaction events have
-                  // arrived so far) — don't show a dead link.
-                  <a
-                    href="mailto:seedstackstudio@gmail.com?subject=Manage%20my%20subscription"
-                    className="text-xs font-medium text-muted-foreground hover:underline"
-                  >
-                    Contact support to manage
-                  </a>
-                )
+                // /Subscription fetches live Paddle state itself (status,
+                // price, payment method, management_urls) rather than
+                // trusting cached webhook data here — see manage-subscription
+                // edge function. It also handles the "no subscription found"
+                // case internally, so this link no longer needs to branch on
+                // whether profile.paddle_update_payment_method_url exists.
+                <Link to="/Subscription" className="text-xs font-medium text-primary hover:underline">
+                  Manage Subscription
+                </Link>
               ) : (
                 <Button size="sm" onClick={() => setShowUpgrade(true)} className="gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />

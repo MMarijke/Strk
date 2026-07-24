@@ -10,6 +10,7 @@ import Trends from './pages/Trends';
 import Social from './pages/Social';
 import Settings from './pages/Settings';
 import Badges from './pages/Badges';
+import Subscription from './pages/Subscription';
 import AppLayout from './components/layout/AppLayout';
 import { ThemeProvider, useTheme } from './lib/ThemeContext';
 import OnboardingThemePicker from './components/onboarding/OnboardingThemePicker';
@@ -59,6 +60,7 @@ const AuthenticatedApp = () => {
         <Route path="/Social" element={<Social />} />
         <Route path="/Settings" element={<Settings />} />
         <Route path="/Badges" element={<Badges />} />
+        <Route path="/Subscription" element={<Subscription />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
