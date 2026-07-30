@@ -6,6 +6,15 @@
 // from webhook data; everything else (status, price, dates, payment method,
 // management_urls) comes fresh from Paddle on every call.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, createRateLimiter } from "../_shared/rate-limit.ts";
+
+// 30/hour per user — generous enough for normal use (the /Subscription
+// page calls the "get" action on every load, which can happen several
+// times while a user browses Settings) while still shutting down a tight
+// loop of switch_plan/cancel/resume calls. Scoped to user id (not IP),
+// via Upstash Redis — a separate service from Postgres, so this adds no
+// load to the database at all, just one REST round-trip per request.
+const rateLimiter = createRateLimiter("manage-subscription", 30, "1 h");
 
 const PADDLE_API_KEY = Deno.env.get("PADDLE_API_KEY")!;
 
@@ -94,6 +103,9 @@ Deno.serve(async (req) => {
   if (authError || !user) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
+
+  const rateLimitResponse = await checkRateLimit(rateLimiter, user.id, CORS_HEADERS);
+  if (rateLimitResponse) return rateLimitResponse;
 
   const { data: profile } = await supabase
     .from("user_profiles")

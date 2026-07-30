@@ -167,7 +167,7 @@ export default function Dashboard() {
 
   const handleApplyFreeze = async (habitId, missedDate) => {
     if (!user?.email) return;
-    await applyFreeze(user.email, habitId, missedDate, isPro);
+    await applyFreeze(habitId, missedDate);
     queryClient.invalidateQueries({ queryKey: ["habits", user?.email] });
     refreshFreezeState();
   };

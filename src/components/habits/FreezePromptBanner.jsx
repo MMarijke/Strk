@@ -42,8 +42,8 @@ export default function FreezePromptBanner({ habits, frozenHabitIds, isPro, free
 
   return (
     <>
-      <div className="mb-4 rounded-xl bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/20 px-4 py-3 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
+      <div className="mb-4 rounded-xl bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20 px-4 py-3 flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
           <span className="text-base leading-none">❄️</span>
         </div>
         <div className="flex-1 min-w-0">
@@ -56,7 +56,7 @@ export default function FreezePromptBanner({ habits, frozenHabitIds, isPro, free
         </div>
         <Button
           size="sm"
-          className="shrink-0 gap-1.5 bg-blue-500 hover:bg-blue-600 text-white"
+          className="shrink-0 gap-1.5"
           onClick={() => setConfirmHabit(candidate)}
         >
           ❄️ Freeze
@@ -64,7 +64,7 @@ export default function FreezePromptBanner({ habits, frozenHabitIds, isPro, free
         <Button
           size="icon"
           variant="ghost"
-          className="shrink-0 h-7 w-7 rounded-full hover:bg-blue-500/10"
+          className="shrink-0 h-7 w-7 rounded-full hover:bg-primary/10"
           onClick={handleDismiss}
         >
           <X className="w-3.5 h-3.5 text-muted-foreground" />

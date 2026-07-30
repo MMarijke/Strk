@@ -3,6 +3,7 @@
  * Free plan: 2 freezes per month. Pro plan: unlimited.
  */
 import { StreakFreeze } from "@/api/entities";
+import { supabase } from "@/api/supabaseClient";
 
 export const FREE_FREEZES_PER_MONTH = 2;
 
@@ -66,25 +67,28 @@ export async function getFrozenHabitIdsThisMonth(userEmail) {
 /**
  * Apply a freeze to a habit for the missed date.
  * Returns { success, reason }
+ *
+ * Routed through the apply_streak_freeze() RPC rather than a direct
+ * StreakFreeze.update() — the limit check has to happen server-side,
+ * looking up the caller's real plan itself, not from a client-supplied
+ * isPro flag. A BEFORE UPDATE trigger on streak_freezes now rejects any
+ * direct write to used_count/frozen_habits that doesn't come through
+ * this RPC, so a client-side-only check was no longer just insufficient,
+ * it would fail outright.
  */
-export async function applyFreeze(userEmail, habitId, missedDate, isPro = false) {
-  const record = await loadMonthRecord(userEmail);
-  const usedCount = record.used_count || 0;
-  const frozenHabits = record.frozen_habits || {};
-
-  if (!isPro && usedCount >= FREE_FREEZES_PER_MONTH) {
-    return { success: false, reason: "No freezes remaining this month. Upgrade to Pro for unlimited freezes." };
-  }
-  if (frozenHabits[habitId]) {
-    return { success: false, reason: "Already used a freeze for this habit this month." };
-  }
-
-  const updated = await StreakFreeze.update(record.id, {
-    used_count: usedCount + 1,
-    frozen_habits: { ...frozenHabits, [habitId]: missedDate },
+export async function applyFreeze(habitId, missedDate) {
+  const { data, error } = await supabase.rpc("apply_streak_freeze", {
+    p_habit_id: habitId,
+    p_missed_date: missedDate,
   });
 
-  return { success: true, record: updated };
+  if (error) {
+    return { success: false, reason: error.message || "Failed to apply freeze." };
+  }
+  if (!data.success) {
+    return { success: false, reason: data.reason };
+  }
+  return { success: true, record: data.record };
 }
 
 /**

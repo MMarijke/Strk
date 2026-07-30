@@ -23,7 +23,7 @@ export default function OnboardingDisplayName({ onComplete }) {
       .catch((err) => console.error("Onboarding save failed:", err));
     trackEvent("signup_completed");
     supabase.functions
-      .invoke("send-welcome-email", { body: { email: user?.email, display_name: trimmed } })
+      .invoke("send-welcome-email", { body: { display_name: trimmed } })
       .catch((err) => console.error("Welcome email failed:", err));
     onComplete();
   };
