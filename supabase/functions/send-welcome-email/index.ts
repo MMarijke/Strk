@@ -1,19 +1,85 @@
 // Sends the welcome email via Resend once onboarding completes.
-// Invoked directly from the client (supabase.functions.invoke) — protected by
-// the caller's JWT (default verify_jwt behavior), not a webhook.
+// Invoked directly from the client (supabase.functions.invoke).
+//
+// The recipient is derived from the caller's own verified JWT
+// (supabase.auth.getUser(), same pattern as manage-subscription) — never
+// trusted from the request body. Previously this took `email` straight
+// out of the JSON body with only a truthiness check, so any authenticated
+// user (including a fresh free signup) could invoke this with an
+// arbitrary target address and send email to anyone via our Resend
+// account. There's no legitimate reason for this specific function to
+// email someone other than the caller; a "invite a friend" style feature
+// would need its own, differently-scoped function, not a loosened
+// version of this one.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { emailShell } from "../_shared/email-template.ts";
+import { checkRateLimit, createRateLimiter } from "../_shared/rate-limit.ts";
+
+// 2/day per user — this only legitimately fires once, right after
+// onboarding; the second slot just tolerates a client-side retry if the
+// first attempt silently failed (e.g. a flaky network call), without
+// leaving room for repeat abuse. Scoped to user id (not IP), via Upstash
+// Redis — a separate service from Postgres, so this adds no load to the
+// database at all, just one REST round-trip per request.
+const rateLimiter = createRateLimiter("send-welcome-email", 2, "1 d");
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const FROM_ADDRESS = Deno.env.get("RESEND_FROM_ADDRESS") ?? "Strk <hello@strk.app>";
 
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+// Same CORS posture as manage-subscription — this is invoked directly
+// from browser JS, so it needs real CORS handling or the browser blocks
+// the request before it's sent. `*` is fine since the endpoint is
+// JWT-gated regardless of origin.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "apikey, authorization, content-type, x-client-info",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
+}
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: CORS_HEADERS });
+  }
+
+  if (req.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+
+  // Forward the caller's JWT so we can ask Supabase Auth who they actually
+  // are — this is the only source of truth for the recipient's email.
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
+  });
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user?.email) {
+    return jsonResponse({ error: "Unauthorized" }, 401);
+  }
+
+  const rateLimitResponse = await checkRateLimit(rateLimiter, user.id, CORS_HEADERS);
+  if (rateLimitResponse) return rateLimitResponse;
+
   try {
-    const { email, display_name } = await req.json();
-    if (!email) {
-      return new Response(JSON.stringify({ error: "email is required" }), { status: 400 });
+    let displayName: string | undefined;
+    try {
+      const body = await req.json();
+      displayName = typeof body?.display_name === "string" ? body.display_name : undefined;
+    } catch {
+      // No body / non-JSON body is fine — display_name is cosmetic, not required.
     }
 
-    const name = display_name || email.split("@")[0];
+    const email = user.email;
+    const name = displayName || email.split("@")[0];
     const html = emailShell({
       preheader: "Welcome to Strk — let's build your first streak.",
       heading: `Welcome, ${name} 🔥`,
@@ -47,12 +113,12 @@ Deno.serve(async (req) => {
     if (!res.ok) {
       const errText = await res.text();
       console.error("send-welcome-email: Resend API error", res.status, errText);
-      return new Response(JSON.stringify({ error: "Failed to send email" }), { status: 502 });
+      return jsonResponse({ error: "Failed to send email" }, 502);
     }
 
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    return jsonResponse({ ok: true });
   } catch (err) {
     console.error("send-welcome-email: unexpected error", err);
-    return new Response(JSON.stringify({ error: "Unexpected error" }), { status: 500 });
+    return jsonResponse({ error: "Unexpected error" }, 500);
   }
 });

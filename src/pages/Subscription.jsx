@@ -48,6 +48,7 @@ export default function Subscription() {
   const [loadError, setLoadError] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState(null);
+  const [paymentMethodsError, setPaymentMethodsError] = useState(null);
   const [actionPending, setActionPending] = useState(false);
   const [actionError, setActionError] = useState(null);
 
@@ -55,9 +56,10 @@ export default function Subscription() {
     setLoading(true);
     setLoadError(null);
     getSubscriptionDetails()
-      .then(({ subscription, paymentMethods }) => {
+      .then(({ subscription, paymentMethods, paymentMethodsError }) => {
         setSubscription(subscription);
         setPaymentMethod(paymentMethods?.[0] || null);
+        setPaymentMethodsError(paymentMethodsError || null);
         setNotFound(false);
       })
       .catch((err) => {
@@ -178,7 +180,9 @@ export default function Subscription() {
               ) : paymentMethod?.paypal ? (
                 <p className="text-sm text-foreground mb-3">PayPal — {paymentMethod.paypal.email}</p>
               ) : (
-                <p className="text-sm text-muted-foreground mb-3">No payment method on file</p>
+                <p className="text-sm text-muted-foreground mb-3">
+                  {paymentMethodsError ? `Couldn't load payment method: ${paymentMethodsError}` : "No payment method on file"}
+                </p>
               )}
               {subscription?.management_urls?.update_payment_method && (
                 <a

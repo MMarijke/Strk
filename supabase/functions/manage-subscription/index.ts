@@ -6,6 +6,15 @@
 // from webhook data; everything else (status, price, dates, payment method,
 // management_urls) comes fresh from Paddle on every call.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, createRateLimiter } from "../_shared/rate-limit.ts";
+
+// 30/hour per user — generous enough for normal use (the /Subscription
+// page calls the "get" action on every load, which can happen several
+// times while a user browses Settings) while still shutting down a tight
+// loop of switch_plan/cancel/resume calls. Scoped to user id (not IP),
+// via Upstash Redis — a separate service from Postgres, so this adds no
+// load to the database at all, just one REST round-trip per request.
+const rateLimiter = createRateLimiter("manage-subscription", 30, "1 h");
 
 const PADDLE_API_KEY = Deno.env.get("PADDLE_API_KEY")!;
 
@@ -23,6 +32,26 @@ const PADDLE_API_BASE = PADDLE_API_ENVIRONMENT === "production"
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
+// This is the first function in the project actually invoked cross-origin
+// from browser JS (paddle-webhook is called by Paddle's servers, not a
+// browser; send-weekly-digest by a cron job) — so unlike those, it needs
+// real CORS handling or the browser blocks the request before it's even
+// sent, surfacing as a generic "failed to send a request" on the client
+// with nothing Paddle-related to show for it. `*` is fine here since the
+// endpoint is JWT-gated regardless of origin.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "apikey, authorization, content-type, x-client-info",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
+}
+
 async function paddleFetch(path: string, options: RequestInit = {}) {
   const res = await fetch(`${PADDLE_API_BASE}${path}`, {
     ...options,
@@ -33,22 +62,35 @@ async function paddleFetch(path: string, options: RequestInit = {}) {
     },
   });
   const body = await res.json();
+  console.log(`paddleFetch ${options.method ?? "GET"} ${path} -> ${res.status}`, JSON.stringify(body));
   if (!res.ok) {
     throw new Error(`Paddle API error ${res.status}: ${JSON.stringify(body.error ?? body)}`);
   }
   return body.data;
 }
 
+// Paddle's own price_id format (see the pattern in their 400 response when
+// this doesn't match). Validating here turns a client-side env var mistake
+// into an immediately readable error instead of a cryptic Paddle 400.
+const PRICE_ID_PATTERN = /^pri_[a-z\d]{26}$/;
+
 Deno.serve(async (req) => {
+  // Preflight — browsers send this before the real POST because it carries
+  // a JSON body plus a custom Authorization header. Must return 200 with
+  // the CORS headers, not fall through to the 405 below.
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: CORS_HEADERS });
+  }
+
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+    return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
   let requestBody: { action?: string; priceId?: string };
   try {
     requestBody = await req.json();
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON body" }), { status: 400 });
+    return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
 
   // Forward the caller's JWT so this client is scoped to them — the
@@ -59,8 +101,11 @@ Deno.serve(async (req) => {
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    return jsonResponse({ error: "Unauthorized" }, 401);
   }
+
+  const rateLimitResponse = await checkRateLimit(rateLimiter, user.id, CORS_HEADERS);
+  if (rateLimitResponse) return rateLimitResponse;
 
   const { data: profile } = await supabase
     .from("user_profiles")
@@ -72,24 +117,46 @@ Deno.serve(async (req) => {
   const customerId = profile?.paddle_customer_id;
 
   if (!subscriptionId) {
-    return new Response(JSON.stringify({ error: "No subscription on file" }), { status: 404 });
+    return jsonResponse({ error: "No subscription on file" }, 404);
   }
 
   try {
     switch (requestBody.action) {
       case "get": {
-        const [subscription, paymentMethods] = await Promise.all([
+        console.log(`manage-subscription get: subscriptionId=${subscriptionId} customerId=${customerId}`);
+        const [subscription, paymentMethodsResult] = await Promise.all([
           paddleFetch(`/subscriptions/${subscriptionId}`),
           customerId
-            ? paddleFetch(`/customers/${customerId}/payment-methods`).catch(() => [])
-            : Promise.resolve([]),
+            ? paddleFetch(`/customers/${customerId}/payment-methods`)
+                .then((data) => ({ data, error: null }))
+                .catch((err) => ({
+                  data: [],
+                  error: err instanceof Error ? err.message : "Unknown error",
+                }))
+            : Promise.resolve({ data: [], error: "No paddle_customer_id on file for this user" }),
         ]);
-        return new Response(JSON.stringify({ subscription, paymentMethods }), { status: 200 });
+        if (paymentMethodsResult.error) {
+          console.error("manage-subscription: payment methods fetch failed:", paymentMethodsResult.error);
+        }
+        return jsonResponse({
+          subscription,
+          paymentMethods: paymentMethodsResult.data,
+          paymentMethodsError: paymentMethodsResult.error,
+          debugCustomerId: customerId,
+        });
       }
 
       case "switch_plan": {
         if (!requestBody.priceId) {
-          return new Response(JSON.stringify({ error: "priceId is required" }), { status: 400 });
+          return jsonResponse({ error: "priceId is required" }, 400);
+        }
+        if (!PRICE_ID_PATTERN.test(requestBody.priceId)) {
+          console.error(`manage-subscription: malformed priceId received: ${JSON.stringify(requestBody.priceId)}`);
+          return jsonResponse({
+            error: `Received an invalid priceId from the client: ${JSON.stringify(requestBody.priceId)}. ` +
+              `Expected Paddle's format (pri_ followed by 26 lowercase alphanumeric characters) — ` +
+              `check VITE_PADDLE_MONTHLY_PRICE_ID / VITE_PADDLE_ANNUAL_PRICE_ID in the deployed client build.`,
+          }, 400);
         }
         const subscription = await paddleFetch(`/subscriptions/${subscriptionId}`, {
           method: "PATCH",
@@ -98,7 +165,7 @@ Deno.serve(async (req) => {
             proration_billing_mode: "prorated_immediately",
           }),
         });
-        return new Response(JSON.stringify({ subscription }), { status: 200 });
+        return jsonResponse({ subscription });
       }
 
       case "cancel": {
@@ -106,7 +173,7 @@ Deno.serve(async (req) => {
           method: "POST",
           body: JSON.stringify({ effective_from: "next_billing_period" }),
         });
-        return new Response(JSON.stringify({ subscription }), { status: 200 });
+        return jsonResponse({ subscription });
       }
 
       case "resume": {
@@ -116,15 +183,15 @@ Deno.serve(async (req) => {
           method: "PATCH",
           body: JSON.stringify({ scheduled_change: null }),
         });
-        return new Response(JSON.stringify({ subscription }), { status: 200 });
+        return jsonResponse({ subscription });
       }
 
       default:
-        return new Response(JSON.stringify({ error: "Unknown action" }), { status: 400 });
+        return jsonResponse({ error: "Unknown action" }, 400);
     }
   } catch (err) {
     console.error("manage-subscription error:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
-    return new Response(JSON.stringify({ error: message }), { status: 502 });
+    return jsonResponse({ error: message }, 502);
   }
 });
