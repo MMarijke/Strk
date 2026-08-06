@@ -32,3 +32,6 @@ dist-ssr
 
 # Supabase CLI local cache (project ref, version metadata) — machine-specific, not source
 supabase/.temp/
+
+# Browser network captures — can contain live Authorization headers/cookies
+*.har

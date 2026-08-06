@@ -14,6 +14,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { emailShell } from "../_shared/email-template.ts";
 import { checkRateLimit, createRateLimiter } from "../_shared/rate-limit.ts";
+import { initSentry, captureException } from "../_shared/sentry.ts";
+
+initSentry("send-welcome-email");
 
 // 2/day per user — this only legitimately fires once, right after
 // onboarding; the second slot just tolerates a client-side retry if the
@@ -119,6 +122,8 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: true });
   } catch (err) {
     console.error("send-welcome-email: unexpected error", err);
+    // userId only, never user.email -- see _shared/sentry.ts's scrubbing policy.
+    await captureException(err, { userId: user.id });
     return jsonResponse({ error: "Unexpected error" }, 500);
   }
 });

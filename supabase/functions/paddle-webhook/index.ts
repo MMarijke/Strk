@@ -16,6 +16,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
+import { initSentry, captureException } from "../_shared/sentry.ts";
+
+initSentry("paddle-webhook");
 
 const WEBHOOK_SECRET = Deno.env.get("PADDLE_WEBHOOK_SECRET")!;
 const supabase = createClient(
@@ -139,42 +142,63 @@ async function processEvent(event: { event_type: string; data: Record<string, un
 }
 
 Deno.serve(async (req) => {
-  const rawBody = await req.text();
-  const signature = req.headers.get("paddle-signature") ?? "";
+  try {
+    const rawBody = await req.text();
+    const signature = req.headers.get("paddle-signature") ?? "";
 
-  if (!verifySignature(rawBody, signature)) {
-    return new Response("Invalid signature", { status: 400 });
-  }
-
-  const event = JSON.parse(rawBody);
-
-  // Write first, ack fast, process after — see PADDLE_BILLING.md's 5-second
-  // rule. Idempotency is enforced by the unique constraint on event_id.
-  const { error: insertError } = await supabase
-    .from("paddle_events")
-    .insert({ event_id: event.event_id, event_type: event.event_type, payload: event });
-
-  if (insertError) {
-    if (insertError.code === "23505") {
-      return new Response("OK (duplicate)", { status: 200 });
+    if (!verifySignature(rawBody, signature)) {
+      return new Response("Invalid signature", { status: 400 });
     }
-    console.error("paddle-webhook: failed to log event", insertError);
-    return new Response("OK (log failed, not retrying)", { status: 200 });
+
+    const event = JSON.parse(rawBody);
+
+    // Write first, ack fast, process after — see PADDLE_BILLING.md's 5-second
+    // rule. Idempotency is enforced by the unique constraint on event_id.
+    const { error: insertError } = await supabase
+      .from("paddle_events")
+      .insert({ event_id: event.event_id, event_type: event.event_type, payload: event });
+
+    if (insertError) {
+      if (insertError.code === "23505") {
+        return new Response("OK (duplicate)", { status: 200 });
+      }
+      console.error("paddle-webhook: failed to log event", insertError);
+      // Backgrounded like the processing capture below — don't hold up
+      // Paddle's 5-second ack budget on the Sentry flush.
+      const logFailureCaptured = captureException(new Error(`paddle-webhook: failed to log event: ${insertError.message}`), {
+        eventType: event.event_type,
+        eventId: event.event_id,
+      });
+      // @ts-ignore -- EdgeRuntime is a platform global, not in the standard lib types.
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(logFailureCaptured);
+      return new Response("OK (log failed, not retrying)", { status: 200 });
+    }
+
+    const processed = processEvent(event)
+      .then(() =>
+        supabase
+          .from("paddle_events")
+          .update({ processed: true, processed_at: new Date().toISOString() })
+          .eq("event_id", event.event_id)
+      )
+      .catch(async (err) => {
+        console.error("paddle-webhook: failed to process event", event.event_id, err);
+        await captureException(err, {
+          eventType: event.event_type,
+          eventId: event.event_id,
+          objectId: (event.data as Record<string, unknown> | undefined)?.id,
+        });
+      });
+
+    // Supabase/Deno Deploy's background-task hook: lets us respond immediately
+    // (Paddle's 5-second rule) while finishing the DB update after the fact.
+    // @ts-ignore -- EdgeRuntime is a platform global, not in the standard lib types.
+    if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(processed);
+
+    return new Response("OK", { status: 200 });
+  } catch (err) {
+    console.error("paddle-webhook: unhandled error", err);
+    await captureException(err, { where: "top-level handler" });
+    return new Response("Internal error", { status: 500 });
   }
-
-  const processed = processEvent(event)
-    .then(() =>
-      supabase
-        .from("paddle_events")
-        .update({ processed: true, processed_at: new Date().toISOString() })
-        .eq("event_id", event.event_id)
-    )
-    .catch((err) => console.error("paddle-webhook: failed to process event", event.event_id, err));
-
-  // Supabase/Deno Deploy's background-task hook: lets us respond immediately
-  // (Paddle's 5-second rule) while finishing the DB update after the fact.
-  // @ts-ignore -- EdgeRuntime is a platform global, not in the standard lib types.
-  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(processed);
-
-  return new Response("OK", { status: 200 });
 });

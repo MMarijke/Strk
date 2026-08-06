@@ -7,6 +7,9 @@
 // management_urls) comes fresh from Paddle on every call.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, createRateLimiter } from "../_shared/rate-limit.ts";
+import { initSentry, captureException } from "../_shared/sentry.ts";
+
+initSentry("manage-subscription");
 
 // 30/hour per user — generous enough for normal use (the /Subscription
 // page calls the "get" action on every load, which can happen several
@@ -192,6 +195,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error("manage-subscription error:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
+    await captureException(err, { userId: user.id, subscriptionId, customerId });
     return jsonResponse({ error: message }, 502);
   }
 });
