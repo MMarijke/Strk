@@ -17,6 +17,17 @@ export function initSentry() {
   Sentry.init({
     dsn,
     integrations: [Sentry.browserTracingIntegration()],
+    // Undefined here means "propagate trace headers to every URL" (verified
+    // in @sentry/core's shouldPropagateTraceForUrl -- `if (!tracePropagationTargets)
+    // return true`), which was attaching sentry-trace/baggage to cross-origin
+    // Supabase/Paddle requests too. That broke calls to manage-subscription/
+    // send-welcome-email outright (their CORS Access-Control-Allow-Headers
+    // doesn't list those headers, so the browser blocks the request) and
+    // added an unnecessary extra preflight round-trip to every Supabase
+    // auth/rest call on every page load. Neither buys anything today anyway
+    // -- the backend has tracesSampleRate: 0 with no request-linking
+    // integration, so there's nothing to link a propagated trace to.
+    tracePropagationTargets: [window.location.origin],
     dataCollection: {
       userInfo: false,
       httpBodies: [],

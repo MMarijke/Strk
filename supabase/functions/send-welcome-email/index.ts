@@ -38,7 +38,13 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 // JWT-gated regardless of origin.
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "apikey, authorization, content-type, x-client-info",
+  // sentry-trace/baggage: defense in depth, not currently exercised -- the
+  // frontend's tracePropagationTargets is scoped to same-origin only, so
+  // Sentry shouldn't attach these to this cross-origin call at all. Listed
+  // here so a future config change or SDK default shift doesn't silently
+  // reintroduce the CORS breakage this caused before that fix (see
+  // src/lib/sentry.js).
+  "Access-Control-Allow-Headers": "apikey, authorization, content-type, x-client-info, sentry-trace, baggage",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
