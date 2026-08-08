@@ -9,11 +9,16 @@ export default function FocusSessionBanner({ userEmail, onOpen }) {
     if (!userEmail) return;
     const check = async () => {
       if (document.hidden) return;
-      const sessions = await FocusSession.filter({ status: "active" });
-      const mine = sessions.find((s) =>
-        (s.participant_emails || []).includes(userEmail) &&
-        new Date(s.ends_at) > new Date()
-      );
+      // Include 'waiting' so a lobby session is just as recoverable as an
+      // active one -- otherwise anyone who navigates away during the
+      // 2-minute lobby gets no way back in until it goes active.
+      const sessions = await FocusSession.filter({ '$or': [{ status: "active" }, { status: "waiting" }] });
+      const mine = sessions.find((s) => {
+        if (!(s.participant_emails || []).includes(userEmail)) return false;
+        return s.status === "waiting"
+          ? new Date(s.lobby_ends_at) > new Date()
+          : new Date(s.ends_at) > new Date();
+      });
       setSession(mine || null);
     };
     check();
@@ -23,7 +28,11 @@ export default function FocusSessionBanner({ userEmail, onOpen }) {
 
   if (!session) return null;
 
-  const minsLeft = Math.max(0, differenceInMinutes(parseISO(session.ends_at), new Date()));
+  const inLobby = session.status === "waiting";
+  const minsLeft = Math.max(0, differenceInMinutes(
+    parseISO(inLobby ? session.lobby_ends_at : session.ends_at),
+    new Date()
+  ));
 
   return (
     <button
@@ -32,8 +41,14 @@ export default function FocusSessionBanner({ userEmail, onOpen }) {
     >
       <span className="text-xl">🎯</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground">Focus session active</p>
-        <p className="text-xs text-muted-foreground">{minsLeft} min{minsLeft !== 1 ? "s" : ""} left · tap to return</p>
+        <p className="text-sm font-semibold text-foreground">
+          {inLobby ? "Focus session starting soon" : "Focus session active"}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {inLobby
+            ? `starts in ${minsLeft < 1 ? "under a minute" : `${minsLeft} min${minsLeft !== 1 ? "s" : ""}`} · tap to return`
+            : `${minsLeft} min${minsLeft !== 1 ? "s" : ""} left · tap to return`}
+        </p>
       </div>
       <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
     </button>

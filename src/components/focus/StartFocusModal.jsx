@@ -29,14 +29,17 @@ export default function StartFocusModal({ open, onOpenChange, userEmail, userNam
   const handleStart = async () => {
     setLoading(true);
     const now = new Date();
+    // started_at/ends_at are intentionally left unset here -- they're set
+    // by start_focus_session_now() when the lobby actually ends (natural
+    // elapse or host force-start), so the real focus timer counts from
+    // when it truly begins rather than from session creation.
     const session = await FocusSession.create({
       host_email: userEmail,
       host_name: userName,
       group_id: groupId || undefined,
       duration_minutes: duration,
-      started_at: formatISO(now),
-      ends_at: formatISO(addMinutes(now, duration)),
-      status: "active",
+      lobby_ends_at: formatISO(addMinutes(now, 2)),
+      status: "waiting",
       participant_emails: [userEmail],
       session_code: genCode(),
     });
