@@ -2,19 +2,19 @@ import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { Habit } from "@/api/entities";
-import { format, subDays, startOfWeek, eachWeekOfInterval, subWeeks } from "date-fns";
+import { format, subDays, startOfWeek, subWeeks } from "date-fns";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend,
 } from "recharts";
-import { ArrowLeft, TrendingUp, Sparkles } from "lucide-react";
-import { Link } from "react-router-dom";
+import { TrendingUp, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { calculateStreak } from "@/components/habits/StreakWidget";
 import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
 import { useSubscription } from "@/hooks/useSubscription";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
+import { HABIT_COLORS as STROKE_COLORS } from "@/lib/utils";
 
 function buildWeeklyData(habits, numWeeks = 12) {
   const today = new Date();
@@ -34,17 +34,6 @@ function buildWeeklyData(habits, numWeeks = 12) {
     return row;
   });
 }
-
-const STROKE_COLORS = [
-  "#E8A030",
-  "#F5C265",
-  "#7A9E78",
-  "#6B8FAB",
-  "#9B8BB5",
-  "#C47A8A",
-  "#7AB5A8",
-  "#D4956A",
-];
 
 export default function Trends() {
   const { user } = useAuth();

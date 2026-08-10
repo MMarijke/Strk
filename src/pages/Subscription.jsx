@@ -152,7 +152,7 @@ export default function Subscription() {
                   "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full capitalize",
                   STATUS_STYLES[status] || "bg-muted text-muted-foreground"
                 )}>
-                  {status?.replace("_", " ")}
+                  {status?.replace(/_/g, " ")}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {pendingCancellation

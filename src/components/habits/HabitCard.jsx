@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, HABIT_COLORS } from "@/lib/utils";
 import StreakWidget from "./StreakWidget";
 import MonthlyReportDialog from "./MonthlyReportDialog";
 import EditWeekDialog from "./EditWeekDialog";
@@ -13,17 +13,6 @@ import EditReminderDialog from "./EditReminderDialog";
 import FreezeConfirmModal from "./FreezeConfirmModal";
 import EditHabitModal from "./EditHabitModal";
 import { getFreezeEligibleDate, getFrozenDateForHabit, getFreezesRemaining } from "@/lib/freezeService";
-
-const HABIT_COLORS = [
-  "#E8A030",
-  "#F5C265",
-  "#7A9E78",
-  "#6B8FAB",
-  "#9B8BB5",
-  "#C47A8A",
-  "#7AB5A8",
-  "#D4956A",
-];
 
 const CATEGORY_LABELS = {
   health: "🍎 Health", fitness: "💪 Fitness", mindfulness: "🧘 Mindfulness",
@@ -229,5 +218,3 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
     </>
   );
 }
-
-export { HABIT_COLORS };

@@ -10,8 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { ChevronDown, ChevronUp, RotateCcw, CalendarRange } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { HABIT_COLORS } from "./HabitCard";
+import { cn, HABIT_COLORS } from "@/lib/utils";
 import ReminderSection from "./ReminderSection";
 
 const CATEGORIES = [

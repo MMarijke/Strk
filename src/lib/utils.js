@@ -26,6 +26,21 @@ export function cn(...inputs) {
 
 export const isIframe = window.self !== window.top;
 
+// Shared across HabitCard, AddHabitDialog, EditHabitModal (color picker)
+// and Trends (chart line stroke, imported there as STROKE_COLORS) --
+// previously duplicated as two separate literal arrays that happened to
+// stay in sync by luck rather than by construction.
+export const HABIT_COLORS = [
+  "#E8A030",
+  "#F5C265",
+  "#7A9E78",
+  "#6B8FAB",
+  "#9B8BB5",
+  "#C47A8A",
+  "#7AB5A8",
+  "#D4956A",
+];
+
 // ── RPG Rank System ──────────────────────────────────────────────────────────
 export const RANKS = [
   { key: "ember",   title: "Ember",   emoji: "🌱", minScore: 0,   maxScore: 49,  color: "green" },
