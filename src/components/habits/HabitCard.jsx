@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { Check, Trash2, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2 } from "lucide-react";
+import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -150,16 +150,6 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
               >
                 <BarChart2 className="w-4 h-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn("h-8 w-8 transition-all text-muted-foreground hover:text-destructive", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
-                onClick={(e) => { e.stopPropagation(); onDelete(habit.id); setActionsVisible(false); }}
-                title="Delete habit"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-
               {/* Check button */}
               <button
                 onClick={(e) => { e.stopPropagation(); onToggleToday(habit); }}
