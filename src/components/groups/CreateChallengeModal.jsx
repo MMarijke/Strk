@@ -15,19 +15,23 @@ const DURATIONS = [
 ];
 
 export default function CreateChallengeModal({ open, onOpenChange, group, onCreate, userHabits = [] }) {
-  const [habitName, setHabitName] = useState("");
+  const activeHabits = userHabits.filter((h) => !h.archived);
+  const [habitId, setHabitId] = useState("");
   const [description, setDescription] = useState("");
   const [duration, setDuration] = useState(7);
   const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    if (!habitName.trim()) return;
+    if (!habitId) return;
     setLoading(true);
     const end = format(addDays(new Date(startDate + "T00:00:00"), duration - 1), "yyyy-MM-dd");
+    // habit_name is intentionally not sent here -- the group_challenges_
+    // set_habit_name trigger derives it server-side from habit_id, the
+    // only place it's now considered authoritative.
     await onCreate({
       group_id: group.id,
-      habit_name: habitName.trim(),
+      habit_id: habitId,
       description: description.trim() || undefined,
       duration_days: duration,
       start_date: startDate,
@@ -36,7 +40,7 @@ export default function CreateChallengeModal({ open, onOpenChange, group, onCrea
       is_active: true,
     });
     setLoading(false);
-    setHabitName("");
+    setHabitId("");
     setDescription("");
     setDuration(7);
     setStartDate(format(new Date(), "yyyy-MM-dd"));
@@ -56,29 +60,21 @@ export default function CreateChallengeModal({ open, onOpenChange, group, onCrea
         <div className="space-y-4 pt-1">
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Habit to track</Label>
-            <Input
-              placeholder="e.g. Morning Run, Read 20 Pages, Meditate..."
-              value={habitName}
-              onChange={(e) => setHabitName(e.target.value)}
-            />
-            {userHabits.filter((h) => !h.archived).length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {userHabits.filter((h) => !h.archived).map((h) => (
-                  <button
-                    key={h.id}
-                    type="button"
-                    onClick={() => setHabitName(h.name)}
-                    className={cn(
-                      "text-xs px-2.5 py-1 rounded-full border transition-all",
-                      habitName === h.name
-                        ? "border-primary bg-primary/10 text-primary font-semibold"
-                        : "border-border bg-muted text-muted-foreground hover:bg-muted/80"
-                    )}
-                  >
-                    {h.name}
-                  </button>
+            {activeHabits.length > 0 ? (
+              <select
+                value={habitId}
+                onChange={(e) => setHabitId(e.target.value)}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">Select a habit…</option>
+                {activeHabits.map((h) => (
+                  <option key={h.id} value={h.id}>{h.name}</option>
                 ))}
-              </div>
+              </select>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Add a habit first — challenges track one of your existing habits.
+              </p>
             )}
           </div>
 
@@ -125,7 +121,7 @@ export default function CreateChallengeModal({ open, onOpenChange, group, onCrea
           <Button
             className="w-full gap-2"
             onClick={handleSubmit}
-            disabled={!habitName.trim() || loading}
+            disabled={!habitId || loading}
           >
             <Trophy className="w-4 h-4" />
             {loading ? "Creating..." : "Launch Challenge"}
