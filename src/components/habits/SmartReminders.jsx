@@ -4,11 +4,15 @@ import { Bell, X, Flame, AlertTriangle, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { calculateStreak } from "./StreakWidget";
+import { isOldEnoughForFreeze } from "@/lib/freezeService";
 import { cn } from "@/lib/utils";
 
 function buildReminders(habits) {
-  const today = format(new Date(), "yyyy-MM-dd");
-  const yesterday = format(subDays(new Date(), 1), "yyyy-MM-dd");
+  const now = new Date();
+  const today = format(now, "yyyy-MM-dd");
+  const yesterday = format(subDays(now, 1), "yyyy-MM-dd");
+  const yesterdayDate = subDays(now, 1);
+  yesterdayDate.setHours(0, 0, 0, 0);
   const reminders = [];
 
   habits.forEach((habit) => {
@@ -29,13 +33,19 @@ function buildReminders(habits) {
       });
     }
 
-    // Missed yesterday with no completion today
+    // Missed yesterday with no completion today. Gated by the same
+    // "habit existed before yesterday" rule getFreezeEligibleDate uses --
+    // otherwise a habit backfilled via Edit Completions right after
+    // creation (a completion predating created_date) could get flagged
+    // here while correctly staying freeze-ineligible on HabitCard/
+    // FreezePromptBanner, telling the user to do something the app won't
+    // actually let them do.
     if (!doneToday && !completions.includes(yesterday) && completions.length > 0) {
       const last = [...completions].sort().reverse()[0];
       const daysSince = Math.floor(
         (new Date(today + "T00:00:00") - new Date(last + "T00:00:00")) / (1000 * 60 * 60 * 24)
       );
-      if (daysSince === 2) {
+      if (daysSince === 2 && isOldEnoughForFreeze(habit, yesterdayDate)) {
         reminders.push({
           id: `missed-${habit.id}`,
           type: "missed",
