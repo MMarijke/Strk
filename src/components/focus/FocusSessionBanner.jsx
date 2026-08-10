@@ -22,9 +22,17 @@ export default function FocusSessionBanner({ userEmail, onOpen }) {
       setSession(mine || null);
     };
     check();
-    const t = setInterval(check, 180000);
+    // Fast cadence only while a lobby is actually in flight for this user --
+    // that's the sole window where staleness can mean missing the entire
+    // waiting -> active transition inside its 2-minute duration (matches
+    // SessionRoom.jsx's own poll interval for the same data). Every other
+    // Dashboard visit has no session at all, so stay at the slow baseline
+    // rather than multiplying every user's background polling for a feature
+    // most aren't using at any given moment.
+    const intervalMs = session?.status === "waiting" ? 15000 : 180000;
+    const t = setInterval(check, intervalMs);
     return () => clearInterval(t);
-  }, [userEmail]);
+  }, [userEmail, session?.status]);
 
   if (!session) return null;
 
