@@ -2,8 +2,15 @@ import React, { useState, useEffect } from "react";
 import { FocusSession } from "@/api/entities";
 import { differenceInMinutes, parseISO } from "date-fns";
 
-export default function FocusSessionBanner({ userEmail, onOpen }) {
+export default function FocusSessionBanner({ userEmail, onOpen, onActiveChange }) {
   const [session, setSession] = useState(null);
+
+  // Separate from the polling effect below on purpose -- this only reports
+  // the boolean TodayTray needs, and shouldn't be entangled with that
+  // effect's own interval-cadence dependency logic.
+  useEffect(() => {
+    onActiveChange?.(!!session);
+  }, [!!session, onActiveChange]);
 
   useEffect(() => {
     if (!userEmail) return;

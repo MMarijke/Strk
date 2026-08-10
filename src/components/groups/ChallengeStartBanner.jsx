@@ -1,11 +1,11 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChallengeNotification } from "@/api/entities";
 import { Trophy, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 
-export default function ChallengeStartBanner({ userEmail }) {
+export default function ChallengeStartBanner({ userEmail, onActiveChange }) {
   const queryClient = useQueryClient();
 
   const { data: notifications = [] } = useQuery({
@@ -26,6 +26,10 @@ export default function ChallengeStartBanner({ userEmail }) {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["challenge-notifications", userEmail] }),
   });
+
+  useEffect(() => {
+    onActiveChange?.(notifications.length > 0);
+  }, [notifications.length, onActiveChange]);
 
   if (!notifications.length) return null;
 
