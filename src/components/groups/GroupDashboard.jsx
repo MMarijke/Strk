@@ -2,9 +2,8 @@ import React, { useState } from "react";
 import { Reaction, Habit, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, subDays, parseISO, isAfter } from "date-fns";
-import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Trash2, UserMinus, Settings, Trophy, Plus } from "lucide-react";
+import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, UserMinus, Settings, Trophy, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
 import CreateChallengeModal from "./CreateChallengeModal";
@@ -120,6 +119,10 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
 
   const createChallengeMutation = useMutation({
     mutationFn: (data) => GroupChallenge.create(data),
+    // habit_name now comes from newChallenge (the inserted row, with the
+    // group_challenges_set_habit_name trigger's server-derived value),
+    // not vars (the client-submitted payload) -- the client no longer
+    // sends habit_name at all now that habit selection is habit_id-based.
     onSuccess: async (newChallenge, vars) => {
       trackEvent("challenge_started");
       queryClient.invalidateQueries({ queryKey: ["group-challenges"] });
@@ -134,7 +137,7 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
             challenge_id: newChallenge.id,
             group_id: group.id,
             group_name: group.name,
-            habit_name: vars.habit_name,
+            habit_name: newChallenge.habit_name,
             duration_days: vars.duration_days,
             started_by_email: userEmail,
             started_by_name: adminName,
@@ -151,7 +154,7 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
             <span className="text-lg">🏆</span>
             <div>
               <p className="font-semibold text-sm text-foreground leading-tight">Challenge launched!</p>
-              <p className="text-xs text-muted-foreground">{vars.habit_name} · {vars.duration_days} days · {group.name}</p>
+              <p className="text-xs text-muted-foreground">{newChallenge.habit_name} · {vars.duration_days} days · {group.name}</p>
             </div>
           </div>
           <button
