@@ -106,33 +106,33 @@ export default function OnboardingThemePicker({ onComplete }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background overflow-y-auto">
       <div className="flex-1 flex flex-col max-w-lg mx-auto w-full px-5 py-10 sm:py-16">
 
         {/* Header */}
         <div className="mb-8 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center mx-auto mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl">✨</span>
           </div>
           <div className="mb-2">
-            <span className="text-2xl font-black text-white tracking-tight">Strk</span>
+            <span className="text-2xl font-black text-foreground tracking-tight">Strk</span>
           </div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight mb-2">Make it yours</h1>
-          <p className="text-slate-400 text-sm leading-relaxed">
+          <h1 className="text-3xl font-extrabold text-foreground tracking-tight mb-2">Make it yours</h1>
+          <p className="text-muted-foreground text-sm leading-relaxed">
             Build streaks. Stay accountable. — Pick a theme to get started.
           </p>
         </div>
 
         {/* Dark mode toggle */}
-        <div className="flex items-center justify-between bg-white/5 rounded-2xl px-4 py-3 mb-6">
+        <div className="flex items-center justify-between bg-muted rounded-2xl px-4 py-3 mb-6">
           <div className="flex items-center gap-3">
             {isDark
-              ? <Moon className="w-4 h-4 text-blue-300" />
-              : <Sun className="w-4 h-4 text-yellow-300" />
+              ? <Moon className="w-4 h-4 text-blue-500" />
+              : <Sun className="w-4 h-4 text-amber-500" />
             }
             <div>
-              <p className="text-white text-sm font-semibold">Dark Mode</p>
-              <p className="text-slate-400 text-xs">{isDark ? "Previewing dark themes" : "Previewing light themes"}</p>
+              <p className="text-foreground text-sm font-semibold">Dark Mode</p>
+              <p className="text-muted-foreground text-xs">{isDark ? "Previewing dark themes" : "Previewing light themes"}</p>
             </div>
           </div>
           <Switch
@@ -149,7 +149,7 @@ export default function OnboardingThemePicker({ onComplete }) {
             <>
               {defaultTheme && (
                 <div className="mb-4">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Default</p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Default</p>
                   <ThemePreviewCard
                     theme={defaultTheme}
                     isDark={isDark}
@@ -176,12 +176,7 @@ export default function OnboardingThemePicker({ onComplete }) {
         {/* CTA */}
         <Button
           size="lg"
-          className={cn(
-            "w-full rounded-2xl h-14 text-base font-bold gap-2 transition-all duration-300",
-            selectedTheme
-              ? "bg-white text-slate-900 hover:bg-white/90 shadow-xl"
-              : "bg-white/10 text-white/30 cursor-not-allowed"
-          )}
+          className="w-full rounded-2xl h-14 text-base font-bold gap-2 transition-all duration-300 shadow-xl disabled:opacity-50"
           disabled={!selectedTheme}
           onClick={handleComplete}
         >
@@ -190,10 +185,10 @@ export default function OnboardingThemePicker({ onComplete }) {
         </Button>
 
         {!selectedTheme && (
-          <p className="text-center text-slate-500 text-xs mt-3">Select a theme to continue</p>
+          <p className="text-center text-muted-foreground text-xs mt-3">Select a theme to continue</p>
         )}
         {selectedTheme && (
-          <p className="text-center text-slate-500 text-xs mt-3">You can change this anytime in Settings</p>
+          <p className="text-center text-muted-foreground text-xs mt-3">You can change this anytime in Settings</p>
         )}
       </div>
     </div>
