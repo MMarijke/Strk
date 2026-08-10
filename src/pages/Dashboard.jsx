@@ -6,28 +6,23 @@ import { format } from "date-fns";
 import { startReminderScheduler } from "@/lib/notificationService";
 import { startDigestScheduler } from "@/lib/groupDigestService";
 import { calculateStreak } from "@/components/habits/StreakWidget";
-import { subDays, format as fmtDate } from "date-fns";
 import { Plus, CheckCheck, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import HabitCard from "@/components/habits/HabitCard";
 import StatsBar from "@/components/habits/StatsBar";
 import AddHabitDialog from "@/components/habits/AddHabitDialog";
-import SmartReminders from "@/components/habits/SmartReminders";
 import FreezeIndicator from "@/components/habits/FreezeIndicator";
-import FreezePromptBanner from "@/components/habits/FreezePromptBanner";
 import { applyFreeze, getFreezesRemaining, getFrozenHabitIdsThisMonth } from "@/lib/freezeService";
-import WeeklySummaryCard from "@/components/habits/WeeklySummaryCard";
 import { isSummaryVisible, scheduleWeeklySummaryNotif } from "@/lib/weeklySummaryService";
 import ChallengeBanner from "@/components/habits/ChallengeBanner";
-import ChallengeStartBanner from "@/components/groups/ChallengeStartBanner";
 import PullToRefresh from "@/components/dashboard/PullToRefresh";
+import TodayTray from "@/components/dashboard/TodayTray";
 import RankCard from "@/components/rank/RankCard";
 import RankUpModal from "@/components/rank/RankUpModal";
 import { getRank, calculateScore } from "@/lib/utils";
 import StartFocusModal from "@/components/focus/StartFocusModal";
 import SessionRoom from "@/components/focus/SessionRoom";
-import FocusSessionBanner from "@/components/focus/FocusSessionBanner";
 import { trackEvent } from "@/lib/analytics";
 import { useSubscription } from "@/hooks/useSubscription";
 
@@ -258,47 +253,37 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Streak freeze prompt — more prominent than the per-card inline link */}
-        {user?.email && habits.length > 0 && (
-          <FreezePromptBanner
+        {/* Today tray — consolidates the freeze prompt, focus session
+            banner, new-challenge invite, weekly summary, and reminders
+            into a single priority-ordered slot (+N more to reveal the
+            rest) instead of stacking all of them disclosed at once.
+            Each child keeps its own original visibility condition
+            internally/via the props below — this wrapper doesn't impose
+            a habits.length gate, since FocusSessionBanner and
+            ChallengeStartBanner never had one (a brand-new user with no
+            habits yet can still get a focus/challenge invite). */}
+        {user?.email && (
+          <TodayTray
             habits={habits}
+            userEmail={user.email}
             frozenHabitIds={frozenHabitIds}
             isPro={isPro}
             freezesRemaining={freezesRemaining}
             onApplyFreeze={handleApplyFreeze}
+            onOpenSession={(s) => setActiveSession(s)}
+            showSummary={showSummary && habits.length > 0}
+            onDismissSummary={() => setShowSummary(false)}
           />
         )}
 
-        {/* Focus session banner */}
-        {user?.email && (
-          <FocusSessionBanner userEmail={user.email} onOpen={(s) => setActiveSession(s)} />
-        )}
-
-        {/* New challenge start notification banner */}
-        {user?.email && (
-          <ChallengeStartBanner userEmail={user.email} />
-        )}
-
-        {/* Challenge Banner */}
+        {/* Challenge Banner — ongoing status for an active challenge, not
+            a notification (no dismiss, persists for the challenge's whole
+            duration), so it deliberately stays outside the tray */}
         {user?.email && habits.length > 0 && (
           <div className="mb-4">
             <ChallengeBanner userEmail={user.email} habits={habits} />
           </div>
         )}
-
-        {/* Weekly Summary Card */}
-        {showSummary && habits.length > 0 && user?.email && (
-          <div className="mb-4">
-            <WeeklySummaryCard
-              habits={habits}
-              userEmail={user.email}
-              onDismiss={() => setShowSummary(false)}
-            />
-          </div>
-        )}
-
-        {/* Smart Reminders */}
-        {habits.length > 0 && <SmartReminders habits={habits} />}
 
         {/* Complete All button */}
         {habits.length > 0 && !habits.every((h) => (h.completions || []).includes(today)) && (

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import FreezeConfirmModal from "./FreezeConfirmModal";
@@ -20,7 +20,7 @@ function dismiss(habitId, missedDate) {
  * yesterday (and isn't already frozen or dismissed) above the habit list,
  * rather than requiring the user to notice it on that habit's own card.
  */
-export default function FreezePromptBanner({ habits, frozenHabitIds, isPro, freezesRemaining, onApplyFreeze }) {
+export default function FreezePromptBanner({ habits, frozenHabitIds, isPro, freezesRemaining, onApplyFreeze, onActiveChange }) {
   const [, forceRender] = useState(0);
   const [confirmHabit, setConfirmHabit] = useState(null);
 
@@ -31,6 +31,10 @@ export default function FreezePromptBanner({ habits, frozenHabitIds, isPro, free
     if (isDismissed(h.id, eligibleDate)) return false;
     return true;
   });
+
+  useEffect(() => {
+    onActiveChange?.(!!candidate);
+  }, [!!candidate, onActiveChange]);
 
   if (!candidate) return null;
   const missedDate = getFreezeEligibleDate(candidate);

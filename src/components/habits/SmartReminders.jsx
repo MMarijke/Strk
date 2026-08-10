@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { format, subDays } from "date-fns";
 import { Bell, X, Flame, AlertTriangle, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -81,12 +81,16 @@ const PRIORITY_STYLES = {
   low:    "border-l-4 border-muted-foreground/30 bg-muted/50",
 };
 
-export default function SmartReminders({ habits }) {
+export default function SmartReminders({ habits, onActiveChange }) {
   const [dismissed, setDismissed] = useState(new Set());
   const [collapsed, setCollapsed] = useState(false);
 
   const all = buildReminders(habits);
   const visible = all.filter((r) => !dismissed.has(r.id));
+
+  useEffect(() => {
+    onActiveChange?.(visible.length > 0);
+  }, [visible.length, onActiveChange]);
 
   if (visible.length === 0) return null;
 
