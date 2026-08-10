@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { trackEvent } from "@/lib/analytics";
 
 const DURATIONS = [25, 45, 60];
+const LOBBY_MINUTES = 2;
 
 function genCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -38,7 +39,7 @@ export default function StartFocusModal({ open, onOpenChange, userEmail, userNam
       host_name: userName,
       group_id: groupId || undefined,
       duration_minutes: duration,
-      lobby_ends_at: formatISO(addMinutes(now, 2)),
+      lobby_ends_at: formatISO(addMinutes(now, LOBBY_MINUTES)),
       status: "waiting",
       participant_emails: [userEmail],
       session_code: genCode(),
@@ -95,9 +96,14 @@ export default function StartFocusModal({ open, onOpenChange, userEmail, userNam
             </div>
           )}
 
-          <Button className="w-full rounded-xl h-11 font-semibold" onClick={handleStart} disabled={loading}>
-            {loading ? "Starting…" : "Start Session 🎯"}
-          </Button>
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground text-center">
+              Friends get {LOBBY_MINUTES} minutes to join before this starts
+            </p>
+            <Button className="w-full rounded-xl h-11 font-semibold" onClick={handleStart} disabled={loading}>
+              {loading ? "Starting…" : "Start Session 🎯"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
