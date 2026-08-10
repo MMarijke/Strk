@@ -3,12 +3,10 @@ import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotificat
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { format, subDays } from "date-fns";
-import { ArrowLeft, Users, Trophy, Plus, LogIn, Crown, Medal } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Users, Trophy, Plus, LogIn, Crown, Medal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { calculateStreak } from "@/components/habits/StreakWidget";
 import { getRank } from "@/lib/utils";
 import { getDisplayName } from "@/lib/displayName";
 import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
@@ -25,6 +23,7 @@ import ReactionsInbox from "@/components/social/ReactionsInbox";
 import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
+import { useSubscription } from "@/hooks/useSubscription";
 
 function calcConsistency(completions) {
   if (!completions?.length) return 0;
@@ -70,6 +69,7 @@ function LeaderboardRow({ rank, entry }) {
 
 export default function Social() {
   const { user } = useAuth();
+  const { isPro } = useSubscription();
   const queryClient = useQueryClient();
 
   // Auto-join focus session from URL param
@@ -202,6 +202,19 @@ export default function Social() {
     (g) => g.created_by === user?.email || (g.member_emails || []).includes(user?.email)
   );
 
+  // Checked here, before CreateGroupModal ever opens, rather than letting
+  // it open and then swap to UpgradeModal via its own internal effect --
+  // that open-then-immediately-correct pattern is exactly what produced
+  // the visible flash the design critique flagged. CreateGroupModal keeps
+  // its own paywalled check too, as a safety net for any other caller.
+  const handleOpenCreate = () => {
+    if (myGroups.length >= 2 && !isPro) {
+      setShowUpgrade(true);
+    } else {
+      setShowCreate(true);
+    }
+  };
+
   const joinGroup = (group) => {
     const emails = [...new Set([...(group.member_emails || []), user?.email])];
     trackEvent("group_joined");
@@ -330,7 +343,7 @@ export default function Social() {
 
             myGroups.length === 0 ?
             <div className="space-y-3">
-                <GroupsEmptyState onCreate={() => setShowCreate(true)} onJoin={() => setShowJoin(true)} />
+                <GroupsEmptyState onCreate={handleOpenCreate} onJoin={() => setShowJoin(true)} />
                 <Button variant="outline" className="w-full gap-2 rounded-xl border-primary/30 text-primary hover:bg-primary/5" onClick={() => setShowJoinFocus(true)}>
                   🎯 Join Focus Session
                 </Button>
@@ -338,7 +351,7 @@ export default function Social() {
 
             <div className="space-y-4">
                 <div className="flex gap-2">
-                  <Button className="flex-1 gap-2 rounded-xl" onClick={() => setShowCreate(true)}>
+                  <Button className="flex-1 gap-2 rounded-xl" onClick={handleOpenCreate}>
                     <Plus className="w-4 h-4" /> Create
                   </Button>
                   <Button variant="outline" className="flex-1 gap-2 rounded-xl" onClick={() => setShowJoin(true)}>
