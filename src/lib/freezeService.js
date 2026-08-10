@@ -107,6 +107,23 @@ export async function hasFreezeEverBeenUsed(userEmail) {
   return records.some((r) => (r.used_count || 0) > 0);
 }
 
+/**
+ * A habit must have existed since before `yesterday` (a zeroed-time Date)
+ * to be freeze-eligible. Backfilling via Edit Completions can produce a
+ * completion dated before a habit's own created_date -- perfectly legitimate
+ * for a user reconstructing recent history right after adding a habit --
+ * so this can't be inferred from completions alone; it has to check
+ * created_date explicitly. Exported so any other "is this actually
+ * freeze-eligible" surface (e.g. SmartReminders' "you missed X yesterday"
+ * message) can apply the identical rule instead of re-deriving it.
+ */
+export function isOldEnoughForFreeze(habit, yesterday) {
+  if (!habit.created_date) return true;
+  const createdDate = new Date(habit.created_date);
+  createdDate.setHours(0, 0, 0, 0);
+  return createdDate < yesterday;
+}
+
 export function getFreezeEligibleDate(habit) {
   const completions = habit.completions || [];
   const today = new Date();
@@ -121,12 +138,7 @@ export function getFreezeEligibleDate(habit) {
   if (completions.includes(yesterdayStr) || completions.includes(todayStr)) return null;
   if (completions.length === 0) return null;
 
-  // Habit must have been created before yesterday
-  if (habit.created_date) {
-    const createdDate = new Date(habit.created_date);
-    createdDate.setHours(0, 0, 0, 0);
-    if (createdDate >= yesterday) return null;
-  }
+  if (!isOldEnoughForFreeze(habit, yesterday)) return null;
 
   // Most recent completion must be the day before yesterday
   const sorted = [...completions].sort().reverse();
