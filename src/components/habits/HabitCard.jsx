@@ -109,10 +109,10 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowFreezeModal(true); }}
                   className={cn(
-                    "mt-2 text-xs flex items-center gap-1 transition-colors",
+                    "mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors",
                     (isPro || freezesRemaining > 0)
-                      ? "text-blue-500 hover:text-blue-600"
-                      : "text-muted-foreground/50 hover:text-muted-foreground"
+                      ? "font-semibold bg-gradient-to-r from-primary/15 to-accent/15 border border-primary/25 text-primary hover:from-primary/25 hover:to-accent/25"
+                      : "font-medium bg-muted/60 text-muted-foreground/70 border border-transparent"
                   )}
                 >
                   <span>❄️</span>
