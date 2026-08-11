@@ -43,18 +43,69 @@ export function getTopHabitLastWeek(habits) {
 }
 
 /**
- * Builds per-member weekly stats (using current user's data for "me", zeros for others).
- * Returns array sorted by thisWeekRate desc.
+ * Builds per-member weekly stats. "me" is computed live from the viewer's
+ * own (always fresher) habits query; every other member reads
+ * last_week_completion_rate / prev_week_completion_rate off their
+ * user_profiles row, populated weekly by send-weekly-digest. hasData is
+ * false when that row hasn't been computed yet (new signup, or a private
+ * profile invisible under RLS) -- distinct from a genuine 0%, so the UI
+ * can show "no data yet" instead of a fabricated zero, same distinction
+ * the group leaderboard fix made for best_streak/consistency_score.
+ * Returns array sorted by thisWeekRate desc, hasData: false rows last.
  */
-export function buildMemberWeeklyRankings(memberEmails, userEmail, habits) {
+export function buildMemberWeeklyRankings(memberEmails, userEmail, habits, profiles = []) {
   return memberEmails.map((email) => {
     if (email === userEmail) {
       const thisWeek = calcWeeklyRate(habits, 1);
       const prevWeek = calcWeeklyRate(habits, 2);
-      return { email, name: email.split("@")[0], thisWeek, prevWeek, improvement: thisWeek - prevWeek };
+      return { email, name: email.split("@")[0], thisWeek, prevWeek, improvement: thisWeek - prevWeek, hasData: true };
     }
-    return { email, name: email.split("@")[0], thisWeek: 0, prevWeek: 0, improvement: 0 };
-  }).sort((a, b) => b.thisWeek - a.thisWeek);
+    const profile = profiles.find((p) => p.created_by === email);
+    if (!profile || profile.last_week_completion_rate == null) {
+      return { email, name: email.split("@")[0], thisWeek: null, prevWeek: null, improvement: null, hasData: false };
+    }
+    const thisWeek = profile.last_week_completion_rate;
+    const prevWeek = profile.prev_week_completion_rate;
+    return {
+      email,
+      name: email.split("@")[0],
+      thisWeek,
+      prevWeek: prevWeek ?? 0,
+      improvement: prevWeek != null ? thisWeek - prevWeek : null,
+      hasData: true,
+    };
+  }).sort((a, b) => (b.thisWeek ?? -1) - (a.thisWeek ?? -1));
+}
+
+/**
+ * The group's real top habit for last week, by completion count -- "me"
+ * computed live from real habits data, every other member read off their
+ * last_week_top_habit_name/last_week_top_habit_count (populated weekly by
+ * send-weekly-digest). Returns null if no member has any completions to
+ * report yet. Replaces getTopHabitLastWeek(habits) as used in
+ * GroupWeeklyReport.jsx's "Highest Group Completion" card, which
+ * previously only ever showed the viewer's own top habit mislabeled as
+ * group-wide.
+ */
+export function getGroupTopHabitLastWeek(memberEmails, userEmail, habits, profiles = []) {
+  let best = null;
+
+  const myTop = getTopHabitLastWeek(habits);
+  if (myTop) {
+    const myCount = getWeekCompletions(myTop.completions || [], 1).length;
+    if (myCount > 0) best = { name: myTop.name, count: myCount, email: userEmail };
+  }
+
+  memberEmails.forEach((email) => {
+    if (email === userEmail) return;
+    const profile = profiles.find((p) => p.created_by === email);
+    if (!profile || profile.last_week_top_habit_count == null) return;
+    if (!best || profile.last_week_top_habit_count > best.count) {
+      best = { name: profile.last_week_top_habit_name, count: profile.last_week_top_habit_count, email };
+    }
+  });
+
+  return best;
 }
 
 /**
