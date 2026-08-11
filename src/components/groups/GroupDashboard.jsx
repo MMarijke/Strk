@@ -6,6 +6,7 @@ import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, UserMinus, Setting
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
+import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
 import CreateChallengeModal from "./CreateChallengeModal";
 import InviteMembersSheet from "./InviteMembersSheet";
 import ChallengeLeaderboard from "./ChallengeLeaderboard";
@@ -30,7 +31,12 @@ function calcConsistency(completions) {
 }
 
 function calcScore(habits) {
-  const bestStreak = habits.reduce((m, h) => Math.max(m, calculateStreak(h.completions || [])), 0);
+  // All-time best streak, not calculateStreak()'s "current active streak"
+  // -- matches what the habits_sync_profile_stats trigger computes into
+  // user_profiles.best_streak (and what Social.jsx's leaderboard tab
+  // already expects), so "me" and other members are scored on the same
+  // definition instead of two different metrics under the same label.
+  const bestStreak = habits.reduce((m, h) => Math.max(m, getAllTimeBest(h.completions || [])), 0);
   const consistency = habits.length
     ? Math.round(habits.reduce((s, h) => s + calcConsistency(h.completions || []), 0) / habits.length)
     : 0;
@@ -199,10 +205,27 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
       ? (getDisplayName(email, profiles) !== email.split("@")[0] ? getDisplayName(email, profiles) : (userFullName || getDisplayName(email, profiles)))
       : getDisplayName(email, profiles);
     if (email === userEmail) {
-      return { email, name, isMe: true, ...myStats, topHabit: myTopHabit };
+      return { email, name, isMe: true, ...myStats, topHabit: myTopHabit, hasData: true };
     }
-    return { email, name, isMe: false, score: 0, bestStreak: 0, consistency: 0, topHabit: null };
-  }).sort((a, b) => b.score - a.score);
+    const memberProfile = profiles.find((p) => p.created_by === email);
+    if (!memberProfile) {
+      // Private profile (is_public = false, invisible under RLS) or no
+      // synced stats yet -- an honest "no data" state, not a real 0.
+      // Showing a bare 0 here was the bug: indistinguishable from a
+      // genuine score of zero.
+      return { email, name, isMe: false, score: null, bestStreak: 0, consistency: 0, topHabit: null, hasData: false };
+    }
+    return {
+      email,
+      name,
+      isMe: false,
+      score: (memberProfile.best_streak || 0) * 2 + (memberProfile.consistency_score || 0),
+      bestStreak: memberProfile.best_streak || 0,
+      consistency: memberProfile.consistency_score || 0,
+      topHabit: null,
+      hasData: true,
+    };
+  }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
 
   const categoryCount = {};
   habits.forEach((h) => {
@@ -327,7 +350,7 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate">
-                <span className="mr-1">{getRank(row.score).emoji}</span>
+                {row.hasData && <span className="mr-1">{getRank(row.score).emoji}</span>}
                 {row.name} {row.isMe && <span className="text-xs text-primary font-normal">(you)</span>}
               </p>
               {row.topHabit ? (
@@ -340,8 +363,14 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
               )}
             </div>
             <div className="text-right shrink-0">
-              <p className="text-sm font-bold">{row.score}</p>
-              <p className="text-[10px] text-muted-foreground">pts</p>
+              {row.hasData ? (
+                <>
+                  <p className="text-sm font-bold">{row.score}</p>
+                  <p className="text-[10px] text-muted-foreground">pts</p>
+                </>
+              ) : (
+                <p className="text-[10px] text-muted-foreground italic leading-tight max-w-[60px]">No data visible</p>
+              )}
             </div>
             {row.isMe ? (
               reactionsReceivedToday.length > 0 && (
