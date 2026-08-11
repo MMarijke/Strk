@@ -215,10 +215,13 @@ export default function Social() {
     }
   };
 
-  const joinGroup = (group) => {
-    const emails = [...new Set([...(group.member_emails || []), user?.email])];
+  // JoinGroupModal calls the join_group RPC itself (a non-member can't
+  // SELECT/UPDATE the groups row directly under RLS, see the
+  // 20260811090001 migration) and only invokes this once the join has
+  // actually succeeded server-side -- this just reacts to that result.
+  const handleGroupJoined = () => {
     trackEvent("group_joined");
-    updateGroupMutation.mutate({ id: group.id, data: { member_emails: emails } });
+    queryClient.invalidateQueries({ queryKey: ["groups"] });
   };
 
   const removeMember = (group, email) => {
@@ -411,7 +414,7 @@ export default function Social() {
       <JoinGroupModal
         open={showJoin}
         onOpenChange={setShowJoin}
-        onJoin={joinGroup} />
+        onJoin={handleGroupJoined} />
       
       <JoinFocusModal
         open={showJoinFocus}
