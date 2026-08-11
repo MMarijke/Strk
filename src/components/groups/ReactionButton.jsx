@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 const QUICK_REACTIONS = ["🔥", "💪", "👀", "⚡", "🫶"];
 const DAILY_LIMIT = 3;
 
-export default function ReactionButton({ senderEmail, senderName, recipientEmail, recipientName, groupId, onSend, sentTodayCount = 0 }) {
+export default function ReactionButton({ senderEmail, senderName, recipientEmail, groupId, onSend, sentTodayCount = 0 }) {
   const [open, setOpen] = useState(false);
   const [sent, setSent] = useState(null);
   const ref = useRef(null);
@@ -21,20 +21,30 @@ export default function ReactionButton({ senderEmail, senderName, recipientEmail
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const handleReact = (emoji) => {
+  const handleReact = async (emoji) => {
     if (limited) return;
-    setSent(emoji);
     setOpen(false);
-    onSend({ 
-      emoji, 
-      sender_email: senderEmail, 
-      sender_name: senderName, 
-      recipient_email: recipientEmail, 
-      recipient_name: recipientName,
-      group_id: groupId, 
-      read: false 
-    });
-    setTimeout(() => setSent(null), 2000);
+    try {
+      // Wait for the write to actually land before showing "sent" -- this
+      // used to fire setSent() optimistically and unconditionally, so a
+      // failed insert (e.g. the recipient_name column-mismatch bug) still
+      // looked successful to the sender with no indication anything was
+      // wrong. The failure toast itself is handled by the mutation's
+      // onError in the parent; catch here just prevents the false "sent"
+      // confirmation from showing.
+      await onSend({
+        emoji,
+        sender_email: senderEmail,
+        sender_name: senderName,
+        recipient_email: recipientEmail,
+        group_id: groupId,
+        read: false,
+      });
+      setSent(emoji);
+      setTimeout(() => setSent(null), 2000);
+    } catch {
+      // onError toast already surfaces this; nothing else to do here.
+    }
   };
 
   return (

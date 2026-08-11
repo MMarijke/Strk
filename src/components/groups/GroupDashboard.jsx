@@ -184,6 +184,9 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
       queryClient.invalidateQueries({ queryKey: ["reactions-sent", userEmail] });
       toast.success(`Reaction sent! ${vars.emoji}`, { duration: 2000 });
     },
+    onError: () => {
+      toast.error("Couldn't send that reaction. Please try again.", { duration: 3000 });
+    },
   });
 
   const today = new Date();
@@ -392,10 +395,9 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
                 senderEmail={userEmail}
                 senderName={getDisplayName(userEmail, profiles)}
                 recipientEmail={row.email}
-                recipientName={row.name}
                 groupId={group.id}
                 sentTodayCount={reactionsSentToday}
-                onSend={(data) => createReactionMutation.mutate({ ...data, _recipientName: row.name })}
+                onSend={(data) => createReactionMutation.mutateAsync({ ...data, _recipientName: row.name })}
               />
             )}
             {isAdmin && !row.isMe && (
