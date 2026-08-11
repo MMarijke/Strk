@@ -35,24 +35,36 @@ export default function AddHabitDialog({ open, onOpenChange, onAdd }) {
   const [reminderTime, setReminderTime] = useState("");
   const [reminderDays, setReminderDays] = useState([0, 1, 2, 3, 4, 5, 6]);
   const [category, setCategory] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    onAdd({
-      name: name.trim(),
-      color,
-      frequency,
-      completions: [],
-      ...(description.trim() && { description: description.trim() }),
-      ...(goalPerWeek && { goal_per_week: Number(goalPerWeek) }),
-      ...(reminderTime && { reminder_time: reminderTime, reminder_days: reminderDays }),
-      ...(category && { category }),
-    });
-    // Reset
-    setName(""); setFrequency("daily"); setColor(HABIT_COLORS[0]); setShowSpecifics(false);
-    setDescription(""); setGoalPerWeek(""); setReminderTime(""); setReminderDays([0,1,2,3,4,5,6]); setCategory("");
-    onOpenChange(false);
+    if (!name.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await onAdd({
+        name: name.trim(),
+        color,
+        frequency,
+        completions: [],
+        ...(description.trim() && { description: description.trim() }),
+        ...(goalPerWeek && { goal_per_week: Number(goalPerWeek) }),
+        ...(reminderTime && { reminder_time: reminderTime, reminder_days: reminderDays }),
+        ...(category && { category }),
+      });
+      // Only reset/close once the write actually succeeded -- this used to
+      // fire-and-forget and reset unconditionally, so a failed create
+      // looked identical to a successful one, with the entered habit gone
+      // and nothing left to retry.
+      setName(""); setFrequency("daily"); setColor(HABIT_COLORS[0]); setShowSpecifics(false);
+      setDescription(""); setGoalPerWeek(""); setReminderTime(""); setReminderDays([0,1,2,3,4,5,6]); setCategory("");
+      onOpenChange(false);
+    } catch {
+      // onError toast on the mutation itself surfaces this; leave the
+      // dialog open with the user's input intact so they can just retry.
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -212,8 +224,8 @@ export default function AddHabitDialog({ open, onOpenChange, onAdd }) {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!name.trim()}>
-              Create Habit
+            <Button type="submit" disabled={!name.trim() || submitting}>
+              {submitting ? "Creating…" : "Create Habit"}
             </Button>
           </DialogFooter>
         </form>

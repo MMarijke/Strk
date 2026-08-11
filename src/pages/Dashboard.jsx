@@ -25,6 +25,7 @@ import StartFocusModal from "@/components/focus/StartFocusModal";
 import SessionRoom from "@/components/focus/SessionRoom";
 import { trackEvent } from "@/lib/analytics";
 import { useSubscription } from "@/hooks/useSubscription";
+import { toast } from "sonner";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -81,6 +82,9 @@ export default function Dashboard() {
       trackEvent("habit_created");
       queryClient.invalidateQueries({ queryKey: ["habits", user?.email] });
     },
+    onError: () => {
+      toast.error("Couldn't add that habit. Please try again.", { duration: 3000 });
+    },
   });
 
   // Optimistic toggle mutation
@@ -98,6 +102,7 @@ export default function Dashboard() {
       if (context?.previous) {
         queryClient.setQueryData(["habits", user?.email], context.previous);
       }
+      toast.error("That didn't save. Please try again.", { duration: 3000 });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["habits", user?.email] });
@@ -112,6 +117,9 @@ export default function Dashboard() {
   const deleteMutation = useMutation({
     mutationFn: (id) => Habit.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["habits", user?.email] }),
+    onError: () => {
+      toast.error("Couldn't delete that habit. Please try again.", { duration: 3000 });
+    },
   });
 
   const handleToggleToday = (habit) => {
@@ -382,7 +390,7 @@ export default function Dashboard() {
           </PullToRefresh>
         )}
 
-        <AddHabitDialog open={showAdd} onOpenChange={setShowAdd} onAdd={(data) => createMutation.mutate(data)} />
+        <AddHabitDialog open={showAdd} onOpenChange={setShowAdd} onAdd={(data) => createMutation.mutateAsync(data)} />
         </div>
         <RankUpModal rank={rankUpRank} onClose={() => setRankUpRank(null)} />
         <StartFocusModal
