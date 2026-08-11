@@ -121,7 +121,7 @@ export default function GroupWeeklyReport({ group, habits, userEmail, challenges
 
       {/* Member Rankings */}
       <Card className="border-0 shadow-sm p-4 space-y-2">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Member Rankings — Last Week</p>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Member Rankings: Last Week</p>
         {rankings.map((m, i) => (
           <div key={m.email} className={cn(
             "flex items-center gap-3 p-2 rounded-xl",

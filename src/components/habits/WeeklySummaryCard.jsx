@@ -71,11 +71,11 @@ export default function WeeklySummaryCard({ habits, userEmail, onDismiss }) {
         )}
         <span className="text-xs text-muted-foreground">
           {isUp
-            ? `↑ Up from ${twoWeeksRate}% the week before${lastWeekRate === 100 ? " — perfect week!" : " — great progress!"}`
+            ? `↑ Up from ${twoWeeksRate}% the week before${lastWeekRate === 100 ? ". Perfect week!" : ". Great progress!"}`
             : isDown
-            ? `↓ Down from ${twoWeeksRate}% — you've got this week`
+            ? `↓ Down from ${twoWeeksRate}%. You've got this week`
             : twoWeeksRate === 0
-            ? "First week tracked — nice start!"
+            ? "First week tracked. Nice start!"
             : `Same as last week (${twoWeeksRate}%)`}
         </span>
       </div>
@@ -85,7 +85,7 @@ export default function WeeklySummaryCard({ habits, userEmail, onDismiss }) {
         <div className="flex items-center gap-1.5 mb-3">
           <Flame className="w-3.5 h-3.5 text-accent shrink-0" />
           <span className="text-xs text-foreground font-medium">{topHabit.name}</span>
-          <span className="text-xs text-muted-foreground">— {calculateStreak(topHabit.completions || [])} day streak</span>
+          <span className="text-xs text-muted-foreground">{calculateStreak(topHabit.completions || [])} day streak</span>
         </div>
       )}
 

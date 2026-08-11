@@ -82,7 +82,7 @@ export default function MonthlyReportDialog({ open, onOpenChange, habit }) {
               {completedThisMonth} of {daysInMonth.length} days completed
             </p>
             <p className="text-xs text-muted-foreground">
-              {rate >= 80 ? "Excellent consistency!" : rate >= 50 ? "Good progress, keep going!" : "Room to improve — you've got this!"}
+              {rate >= 80 ? "Excellent consistency!" : rate >= 50 ? "Good progress, keep going!" : "Room to improve. You've got this!"}
             </p>
           </div>
         </div>

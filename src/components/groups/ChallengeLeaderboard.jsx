@@ -183,7 +183,7 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
                   {row.name} {row.isMe && <span className="text-xs text-primary font-normal">(you)</span>}
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-tight">
-                  No matching habit — add "{challenge.habit_name}" to join
+                  No matching habit. Add "{challenge.habit_name}" to join
                 </p>
               </div>
             ) : (

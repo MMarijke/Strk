@@ -119,7 +119,7 @@ export default function OnboardingThemePicker({ onComplete }) {
           </div>
           <h1 className="text-3xl font-extrabold text-foreground tracking-tight mb-2">Make it yours</h1>
           <p className="text-muted-foreground text-sm leading-relaxed">
-            Build streaks. Stay accountable. — Pick a theme to get started.
+            Build streaks. Stay accountable. Pick a theme to get started.
           </p>
         </div>
 

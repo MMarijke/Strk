@@ -18,7 +18,7 @@ export default function InviteMembersSheet({ open, onOpenChange, group }) {
   const [copied, setCopied] = useState(false);
 
   const inviteLink = getInviteLink(group?.invite_code || "");
-  const shareMessage = `Join my group "${group?.name}" on Strk — Build streaks. Stay accountable. ${inviteLink}`;
+  const shareMessage = `Join my group "${group?.name}" on Strk. Build streaks. Stay accountable. ${inviteLink}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(inviteLink);

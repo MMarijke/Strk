@@ -41,7 +41,7 @@ export default function OnboardingDisplayName({ onComplete }) {
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight mb-2">What should we call you?</h1>
           <p className="text-slate-400 text-sm leading-relaxed">
-            Build streaks. Stay accountable. — This name shows up on leaderboards and group views.
+            Build streaks. Stay accountable. This name shows up on leaderboards and group views.
           </p>
         </div>
 

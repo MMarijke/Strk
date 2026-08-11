@@ -163,8 +163,8 @@ Deno.serve(async (req) => {
           console.error(`manage-subscription: malformed priceId received: ${JSON.stringify(requestBody.priceId)}`);
           return jsonResponse({
             error: `Received an invalid priceId from the client: ${JSON.stringify(requestBody.priceId)}. ` +
-              `Expected Paddle's format (pri_ followed by 26 lowercase alphanumeric characters) — ` +
-              `check VITE_PADDLE_MONTHLY_PRICE_ID / VITE_PADDLE_ANNUAL_PRICE_ID in the deployed client build.`,
+              `Expected Paddle's format (pri_ followed by 26 lowercase alphanumeric characters). ` +
+              `Check VITE_PADDLE_MONTHLY_PRICE_ID / VITE_PADDLE_ANNUAL_PRICE_ID in the deployed client build.`,
           }, 400);
         }
         const subscription = await paddleFetch(`/subscriptions/${subscriptionId}`, {

@@ -13,7 +13,7 @@ import { supabase } from "@/api/supabaseClient";
 function translateAuthError(message) {
   const m = (message || "").toLowerCase();
   if (m.includes("rate limit")) {
-    return "You've requested a link recently — please wait a minute before trying again.";
+    return "You've requested a link recently. Please wait a minute before trying again.";
   }
   if (m.includes("unable to validate") || (m.includes("invalid") && m.includes("email"))) {
     return "That doesn't look like a valid email address.";
@@ -62,7 +62,7 @@ export default function Login() {
           </div>
           <h1 className="text-3xl font-extrabold text-foreground tracking-tight mb-2">Sign in</h1>
           <p className="text-muted-foreground text-sm leading-relaxed">
-            Build streaks. Stay accountable. — We'll email you a link, no password needed.
+            Build streaks. Stay accountable. We'll email you a link, no password needed.
           </p>
         </div>
 

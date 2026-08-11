@@ -53,8 +53,8 @@ function topStreakHabit(habits: { name: string; completions: string[] }[]) {
 
 function motivationalMessage(rate: number): string {
   if (rate >= 80) return "You're on fire! Another incredible week in the books 🔥";
-  if (rate >= 50) return "Good effort this week! Even small steps count — keep going 👏";
-  return "Life happens — what matters is you're back. This week is yours 💙";
+  if (rate >= 50) return "Good effort this week! Even small steps count, keep going 👏";
+  return "Life happens. What matters is you're back. This week is yours 💙";
 }
 
 Deno.serve(async (req) => {
