@@ -3,8 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users } from "lucide-react";
-import { Group } from "@/api/entities";
+import { supabase } from "@/api/supabaseClient";
 
 function extractCode(input) {
   // Accept raw code or URL with ?join=CODE
@@ -17,38 +16,33 @@ function extractCode(input) {
 
 export default function JoinGroupModal({ open, onOpenChange, onJoin }) {
   const [input, setInput] = useState("");
-  const [foundGroup, setFoundGroup] = useState(null);
   const [error, setError] = useState("");
-  const [searching, setSearching] = useState(false);
+  const [joining, setJoining] = useState(false);
 
-  const handleLookup = async () => {
+  const handleJoin = async () => {
     setError("");
-    setFoundGroup(null);
     const code = extractCode(input);
     if (!code) {
       setError("Please enter a valid 8-character invite code or link.");
       return;
     }
-    setSearching(true);
-    const results = await Group.filter({ invite_code: code });
-    setSearching(false);
-    if (!results || results.length === 0) {
+    setJoining(true);
+    // join_group does the lookup itself (SECURITY DEFINER, bypasses the
+    // member-only groups_select RLS) and adds the caller in one write --
+    // there's no RLS-visible way to preview the group before joining, since
+    // a non-member can't SELECT it at all.
+    const { data, error: rpcError } = await supabase.rpc("join_group", { p_invite_code: code });
+    setJoining(false);
+    if (rpcError) {
       setError("No group found with that code.");
       return;
     }
-    setFoundGroup(results[0]);
-  };
-
-  const handleJoin = () => {
-    if (foundGroup) {
-      onJoin(foundGroup);
-      handleClose();
-    }
+    onJoin(data);
+    handleClose();
   };
 
   const handleClose = () => {
     setInput("");
-    setFoundGroup(null);
     setError("");
     onOpenChange(false);
   };
@@ -62,39 +56,17 @@ export default function JoinGroupModal({ open, onOpenChange, onJoin }) {
         <div className="space-y-4 mt-2">
           <div className="space-y-1.5">
             <Label>Invite code or link</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="e.g. ABC12345"
-                value={input}
-                onChange={(e) => { setInput(e.target.value); setFoundGroup(null); setError(""); }}
-                onKeyDown={(e) => e.key === "Enter" && handleLookup()}
-              />
-              <Button variant="outline" onClick={handleLookup} disabled={!input.trim() || searching}>
-                {searching ? "..." : "Find"}
-              </Button>
-            </div>
+            <Input
+              placeholder="e.g. ABC12345"
+              value={input}
+              onChange={(e) => { setInput(e.target.value); setError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && handleJoin()}
+            />
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
-
-          {foundGroup && (
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <Users className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <p className="font-semibold text-sm">{foundGroup.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(foundGroup.member_emails || []).length} member{(foundGroup.member_emails || []).length !== 1 ? "s" : ""}
-                  </p>
-                </div>
-              </div>
-              {foundGroup.description && (
-                <p className="text-xs text-muted-foreground">{foundGroup.description}</p>
-              )}
-              <Button className="w-full" onClick={handleJoin}>Join Group</Button>
-            </div>
-          )}
+          <Button className="w-full" onClick={handleJoin} disabled={!input.trim() || joining}>
+            {joining ? "Joining…" : "Join Group"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
