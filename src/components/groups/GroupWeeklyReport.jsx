@@ -4,9 +4,8 @@ import { ArrowLeft, TrendingUp, TrendingDown, Minus, Trophy, Flame, Star, Zap } 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { calcWeeklyRate, buildMemberWeeklyRankings, getTopHabitLastWeek } from "@/lib/groupDigestService";
+import { calcWeeklyRate, buildMemberWeeklyRankings, getGroupTopHabitLastWeek } from "@/lib/groupDigestService";
 import { getDisplayName } from "@/lib/displayName";
-import { calculateStreak } from "@/components/habits/StreakWidget";
 
 function TrendIcon({ diff }) {
   if (diff > 0) return <TrendingUp className="w-4 h-4 text-primary" />;
@@ -35,15 +34,17 @@ export default function GroupWeeklyReport({ group, habits, userEmail, challenges
   const prevWeekRate = calcWeeklyRate(habits, 2);
   const rateDiff = thisWeekRate - prevWeekRate;
 
-  const rankings = buildMemberWeeklyRankings(memberEmails, userEmail, habits)
+  const rankings = buildMemberWeeklyRankings(memberEmails, userEmail, habits, profiles)
     .map((m) => ({ ...m, name: getDisplayName(m.email, profiles) }));
 
-  const topHabit = getTopHabitLastWeek(habits);
+  const groupTopHabit = getGroupTopHabitLastWeek(memberEmails, userEmail, habits, profiles);
 
-  // Most improved: biggest positive week-on-week jump
-  const mostImproved = rankings.reduce((best, m) => (!best || m.improvement > best.improvement) ? m : best, null);
-  // Most consistent: highest thisWeek rate
-  const mostConsistent = rankings[0] || null;
+  // Most improved / most consistent only ever consider members with real
+  // data -- a hasData: false row's null improvement would otherwise win
+  // "Most Improved" by default whenever no one else has a digest run yet.
+  const rankedWithData = rankings.filter((m) => m.hasData);
+  const mostImproved = rankedWithData.reduce((best, m) => (!best || m.improvement > best.improvement) ? m : best, null);
+  const mostConsistent = rankedWithData[0] || null;
 
   // Active challenge
   const now = new Date();
@@ -59,10 +60,6 @@ export default function GroupWeeklyReport({ group, habits, userEmail, challenges
 
   const challengeDaysRemaining = activeChallenge
     ? Math.max(0, Math.ceil((parseISO(activeChallenge.end_date) - now) / (1000 * 60 * 60 * 24)))
-    : 0;
-
-  const myStreak = habits.length
-    ? Math.max(...habits.map((h) => calculateStreak(h.completions || [])))
     : 0;
 
   return (
@@ -135,30 +132,42 @@ export default function GroupWeeklyReport({ group, habits, userEmail, challenges
               <p className="text-sm font-semibold truncate">
                 {m.name} {m.email === userEmail && <span className="text-xs text-primary font-normal">(you)</span>}
               </p>
-              <p className="text-xs text-muted-foreground">{m.thisWeek}% completion</p>
+              {m.hasData ? (
+                <p className="text-xs text-muted-foreground">{m.thisWeek}% completion</p>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">No data yet</p>
+              )}
             </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <TrendIcon diff={m.improvement} />
-              <span className={cn("text-xs font-medium", m.improvement > 0 ? "text-primary" : m.improvement < 0 ? "text-destructive" : "text-muted-foreground")}>
-                {m.improvement > 0 ? `+${m.improvement}` : m.improvement}%
-              </span>
-            </div>
+            {m.hasData && (
+              <div className="flex items-center gap-1 shrink-0">
+                <TrendIcon diff={m.improvement} />
+                <span className={cn("text-xs font-medium", m.improvement > 0 ? "text-primary" : m.improvement < 0 ? "text-destructive" : "text-muted-foreground")}>
+                  {m.improvement > 0 ? `+${m.improvement}` : m.improvement}%
+                </span>
+              </div>
+            )}
           </div>
         ))}
       </Card>
 
-      {/* Top habit */}
-      {topHabit && (
+      {/* Top habit -- genuinely group-wide (see getGroupTopHabitLastWeek);
+          this used to only ever show the viewer's own top habit,
+          mislabeled as if it were the group's */}
+      {groupTopHabit && (
         <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shrink-0">
             <Flame className="w-5 h-5 text-accent" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs text-muted-foreground font-medium">Highest Group Completion</p>
-            <p className="text-sm font-bold truncate">{topHabit.name}</p>
+            <p className="text-sm font-bold truncate">{groupTopHabit.name}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {getDisplayName(groupTopHabit.email, profiles)}
+              {groupTopHabit.email === userEmail && " (you)"}
+            </p>
           </div>
           <span className="text-lg font-bold text-accent shrink-0">
-            {myStreak}d
+            {groupTopHabit.count}×
           </span>
         </div>
       )}

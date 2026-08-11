@@ -4,6 +4,17 @@
 //
 // Set up the schedule via Supabase Dashboard -> Edge Functions -> Cron Jobs
 // (or a pg_cron + pg_net job calling this URL) — see README for details.
+//
+// Also the only place group-weekly-report data gets computed: it persists
+// last_week_completion_rate / prev_week_completion_rate /
+// last_week_top_habit_name / last_week_top_habit_count onto user_profiles
+// for every user with habits, regardless of email_weekly_digest — that
+// flag only gates whether the email itself gets sent, decoupled from
+// whether their groupmates see real weekly numbers. See the 20260811090004
+// migration and groupDigestService.js's buildMemberWeeklyRankings /
+// getGroupTopHabitLastWeek, which read these columns for every member
+// except the viewer (the viewer's own row is always computed live,
+// client-side, from their own fresher habits query).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { emailShell } from "../_shared/email-template.ts";
 
@@ -19,15 +30,40 @@ function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-// The 7 days ending yesterday — assumes this runs Monday morning.
-function lastWeekDates(): string[] {
+// Real Mon-Sun calendar-week boundaries, matching the client's
+// calcWeeklyRate/getWeekCompletions (date-fns startOfWeek/endOfWeek with
+// weekStartsOn: 1) exactly -- not the old "7 days ending yesterday"
+// rolling window, which only produced the same result as a real calendar
+// week if this cron fired precisely Monday morning. Two clients (this
+// function computing other members' rows, the browser computing the
+// viewer's own row live) drifting to different week boundaries would mean
+// "Last Week" disagreeing between the two for the exact same calendar
+// week -- pinning both to the same explicit boundary logic removes that.
+// weeksAgo=1 is the most recently completed week, weeksAgo=2 the one
+// before that.
+function weekBounds(weeksAgo: number): { start: string; end: string } {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const dayOfWeek = now.getDay(); // 0=Sun..6=Sat
+  const sinceMonday = (dayOfWeek + 6) % 7;
+  const thisWeekMonday = new Date(now);
+  thisWeekMonday.setDate(now.getDate() - sinceMonday);
+
+  const start = new Date(thisWeekMonday);
+  start.setDate(thisWeekMonday.getDate() - weeksAgo * 7);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  return { start: isoDate(start), end: isoDate(end) };
+}
+
+function datesInRange(start: string, end: string): string[] {
   const dates: string[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  for (let i = 1; i <= 7; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
+  let d = new Date(start + "T00:00:00");
+  const endD = new Date(end + "T00:00:00");
+  while (d <= endD) {
     dates.push(isoDate(d));
+    d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
   }
   return dates;
 }
@@ -42,6 +78,8 @@ function completionRate(habits: { completions: string[] }[], dates: string[]): n
   return total > 0 ? Math.round((completed / total) * 100) : 0;
 }
 
+// All-time total completions, for the email body only -- unrelated to and
+// deliberately not reused for the week-scoped columns below.
 function topStreakHabit(habits: { name: string; completions: string[] }[]) {
   if (!habits.length) return null;
   return habits.reduce((best, h) => {
@@ -49,6 +87,26 @@ function topStreakHabit(habits: { name: string; completions: string[] }[]) {
     const bestStreak = best ? (best.completions || []).length : -1;
     return streak > bestStreak ? h : best;
   }, null as null | { name: string; completions: string[] });
+}
+
+// Top habit within a specific set of dates, for last_week_top_habit_*.
+// Returns null if the max is 0 (nobody completed anything that week) --
+// deliberately stricter than the client's getTopHabitLastWeek (which
+// happily returns a 0-count "winner"), since this feeds a cross-member
+// "Highest Group Completion" comparison where a fabricated 0-count winner
+// would be misleading rather than just unused, the way it is client-side
+// for a single always-visible viewer.
+function topHabitInRange(
+  habits: { name: string; completions: string[] }[],
+  dates: string[]
+): { name: string; count: number } | null {
+  if (!habits.length) return null;
+  let best: { name: string; count: number } | null = null;
+  for (const h of habits) {
+    const count = dates.filter((d) => (h.completions || []).includes(d)).length;
+    if (!best || count > best.count) best = { name: h.name, count };
+  }
+  return best && best.count > 0 ? best : null;
 }
 
 function motivationalMessage(rate: number): string {
@@ -62,12 +120,18 @@ Deno.serve(async (req) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const dates = lastWeekDates();
+  const lastWeek = weekBounds(1);
+  const prevWeek = weekBounds(2);
+  const lastWeekDates = datesInRange(lastWeek.start, lastWeek.end);
+  const prevWeekDates = datesInRange(prevWeek.start, prevWeek.end);
 
+  // No longer filtered to email_weekly_digest=true here -- stats get
+  // computed for everyone with habits so their groupmates see real
+  // numbers regardless of that opt-in; the flag only gates the email send
+  // further down.
   const { data: profiles, error: profilesError } = await supabase
     .from("user_profiles")
-    .select("created_by_id, created_by, display_name")
-    .eq("email_weekly_digest", true);
+    .select("created_by_id, created_by, display_name, email_weekly_digest");
 
   if (profilesError) {
     console.error("send-weekly-digest: failed to load profiles", profilesError);
@@ -75,6 +139,7 @@ Deno.serve(async (req) => {
   }
 
   let sent = 0;
+  let statsUpdated = 0;
   for (const profile of profiles ?? []) {
     if (!profile.created_by) continue;
 
@@ -88,18 +153,39 @@ Deno.serve(async (req) => {
       console.error("send-weekly-digest: failed to load habits for", profile.created_by, habitsError);
       continue;
     }
-    if (!habits?.length) continue; // nothing to report yet, skip the email
+    if (!habits?.length) continue; // nothing to report yet
 
-    const rate = completionRate(habits, dates);
+    const lastWeekRate = completionRate(habits, lastWeekDates);
+    const prevWeekRate = completionRate(habits, prevWeekDates);
+    const lastWeekTop = topHabitInRange(habits, lastWeekDates);
+
+    const { error: updateError } = await supabase
+      .from("user_profiles")
+      .update({
+        last_week_completion_rate: lastWeekRate,
+        prev_week_completion_rate: prevWeekRate,
+        last_week_top_habit_name: lastWeekTop?.name ?? null,
+        last_week_top_habit_count: lastWeekTop?.count ?? null,
+      })
+      .eq("created_by_id", profile.created_by_id);
+
+    if (updateError) {
+      console.error("send-weekly-digest: failed to update weekly stats for", profile.created_by, updateError);
+    } else {
+      statsUpdated++;
+    }
+
+    if (!profile.email_weekly_digest) continue;
+
     const top = topStreakHabit(habits);
     const name = profile.display_name || profile.created_by.split("@")[0];
 
     const html = emailShell({
-      preheader: `Your week in review: ${rate}% completion rate`,
+      preheader: `Your week in review: ${lastWeekRate}% completion rate`,
       heading: `Your week in review, ${name} 📊`,
       body: `
-        <p>${motivationalMessage(rate)}</p>
-        <p><strong>${rate}%</strong> average completion rate across your habits last week.</p>
+        <p>${motivationalMessage(lastWeekRate)}</p>
+        <p><strong>${lastWeekRate}%</strong> average completion rate across your habits last week.</p>
         ${
           top
             ? `<p>Top habit: <strong>${top.name}</strong> with ${(top.completions || []).length} total completions.</p>`
@@ -123,5 +209,5 @@ Deno.serve(async (req) => {
     else console.error("send-weekly-digest: Resend error for", profile.created_by, res.status, await res.text());
   }
 
-  return new Response(JSON.stringify({ sent, total: profiles?.length ?? 0 }), { status: 200 });
+  return new Response(JSON.stringify({ sent, statsUpdated, total: profiles?.length ?? 0 }), { status: 200 });
 });
