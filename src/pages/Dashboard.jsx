@@ -99,7 +99,14 @@ export default function Dashboard() {
         queryClient.setQueryData(["habits", user?.email], context.previous);
       }
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["habits", user?.email] }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["habits", user?.email] });
+      // habits_sync_profile_stats recomputes user_profiles server-side on
+      // every habits write -- invalidate here too so leaderboards reading
+      // that table (Badges.jsx's Top X%, other members' rows elsewhere)
+      // pick up the fresh value without waiting out its 5min staleTime.
+      queryClient.invalidateQueries({ queryKey: ["user-profiles"] });
+    },
   });
 
   const deleteMutation = useMutation({
