@@ -68,7 +68,7 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
         {inProgressConfirm ? (
           <div className="space-y-4 pt-1">
             <p className="text-sm text-muted-foreground">
-              This session is already in progress — you'll join with less time remaining than
+              This session is already in progress, so you'll join with less time remaining than
               everyone else. Join anyway?
             </p>
             <div className="flex gap-2">

@@ -88,7 +88,7 @@ export default function Subscription() {
   const isAnnual = currentPriceId === PADDLE_ANNUAL_PRICE_ID;
   const targetPlan = isAnnual
     ? { priceId: PADDLE_MONTHLY_PRICE_ID, label: "Switch to Monthly" }
-    : { priceId: PADDLE_ANNUAL_PRICE_ID, label: "Switch to Annual — save 25%" };
+    : { priceId: PADDLE_ANNUAL_PRICE_ID, label: "Switch to Annual: save 25%" };
 
   const pendingCancellation = subscription?.scheduled_change?.action === "cancel";
   const status = subscription?.status;
@@ -141,7 +141,7 @@ export default function Subscription() {
               <div className="flex items-center gap-3 mb-1">
                 <Sparkles className="w-4 h-4 text-primary" />
                 <h2 className="font-semibold text-sm">
-                  Strk Pro — {isAnnual ? "Annual" : "Monthly"}
+                  Strk Pro ({isAnnual ? "Annual" : "Monthly"})
                 </h2>
               </div>
               <p className="text-xs text-muted-foreground mb-4">
@@ -174,11 +174,11 @@ export default function Subscription() {
                 <p className="text-sm text-foreground mb-3 capitalize">
                   {paymentMethod.card.type} •••• {paymentMethod.card.last4}
                   <span className="text-muted-foreground">
-                    {" "}— expires {String(paymentMethod.card.expiry_month).padStart(2, "0")}/{paymentMethod.card.expiry_year}
+                    , expires {String(paymentMethod.card.expiry_month).padStart(2, "0")}/{paymentMethod.card.expiry_year}
                   </span>
                 </p>
               ) : paymentMethod?.paypal ? (
-                <p className="text-sm text-foreground mb-3">PayPal — {paymentMethod.paypal.email}</p>
+                <p className="text-sm text-foreground mb-3">PayPal ({paymentMethod.paypal.email})</p>
               ) : (
                 <p className="text-sm text-muted-foreground mb-3">
                   {paymentMethodsError ? `Couldn't load payment method: ${paymentMethodsError}` : "No payment method on file"}

@@ -318,7 +318,7 @@ export default function Social() {
               habits={habits}
               onInvite={() => {
                 if (navigator.share) {
-                  navigator.share({ title: "Join me on Strk!", text: "Build streaks. Stay accountable. — Join me on Strk!", url: window.location.origin });
+                  navigator.share({ title: "Join me on Strk!", text: "Build streaks. Stay accountable. Join me on Strk!", url: window.location.origin });
                 } else {
                   navigator.clipboard.writeText(window.location.origin);
                   alert("Link copied! Share Strk with friends.");

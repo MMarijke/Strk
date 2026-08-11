@@ -103,7 +103,7 @@ export const BADGES = [
     id: "comeback_kid",
     emoji: "💪",
     name: "Comeback Kid",
-    description: "Resume a broken streak — complete a habit after missing exactly 1 day, or use a streak freeze.",
+    description: "Resume a broken streak: complete a habit after missing exactly 1 day, or use a streak freeze.",
     color: "bg-amber-100 text-amber-700",
     border: "border-amber-200",
     glow: "shadow-amber-200",

@@ -19,10 +19,10 @@ export default function FreezeConfirmModal({ open, onOpenChange, habit, freezesR
         <p className="text-sm text-muted-foreground">
           Protect your streak for{" "}
           <span className="font-semibold text-foreground">{habit?.name}</span>? Yesterday will be
-          marked as frozen — your streak stays alive!
+          marked as frozen, so your streak stays alive!
         </p>
         {isPro ? (
-          <p className="text-sm text-blue-500 font-medium">✨ Pro — unlimited freezes</p>
+          <p className="text-sm text-blue-500 font-medium">✨ Pro: unlimited freezes</p>
         ) : noFreezesLeft ? (
           <div className="rounded-lg bg-muted/60 p-3 space-y-1">
             <p className="text-sm font-semibold text-destructive">No freezes left this month</p>

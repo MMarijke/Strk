@@ -139,7 +139,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       if (secs <= 60 && secs > 55 && !warnedRef.current) {
         warnedRef.current = true;
         if ("Notification" in window && Notification.permission === "granted") {
-          new Notification("Strk Focus", { body: "Focus session ending in 1 minute — finish strong! 💪" });
+          new Notification("Strk Focus", { body: "Focus session ending in 1 minute. Finish strong! 💪" });
         }
       }
 
@@ -163,7 +163,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   };
 
   const handleInvite = () => {
-    const text = `Join my focus session on Strk! Code: ${session.session_code} — ${window.location.origin}?focus=${session.session_code}`;
+    const text = `Join my focus session on Strk! Code: ${session.session_code}. ${window.location.origin}?focus=${session.session_code}`;
     if (navigator.share) navigator.share({ title: "Strk Focus", text });
     else navigator.clipboard.writeText(text);
   };

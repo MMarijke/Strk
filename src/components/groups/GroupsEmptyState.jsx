@@ -10,7 +10,7 @@ export default function GroupsEmptyState({ onCreate, onJoin }) {
       </div>
       <h3 className="text-lg font-bold text-foreground">Track habits together</h3>
       <p className="text-sm text-muted-foreground max-w-xs">
-        Create a group or join one with an invite code — see how your streaks stack up against friends.
+        Create a group or join one with an invite code, and see how your streaks stack up against friends.
       </p>
       <div className="flex gap-3 mt-2">
         <Button onClick={onCreate} className="gap-2 rounded-full px-5">

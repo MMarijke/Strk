@@ -90,10 +90,10 @@ Deno.serve(async (req) => {
     const email = user.email;
     const name = displayName || email.split("@")[0];
     const html = emailShell({
-      preheader: "Welcome to Strk — let's build your first streak.",
+      preheader: "Welcome to Strk. Let's build your first streak.",
       heading: `Welcome, ${name} 🔥`,
       body: `
-        <p>Strk helps you build habits that stick — one day at a time.</p>
+        <p>Strk helps you build habits that stick, one day at a time.</p>
         <p>Here's how to get the most out of it:</p>
         <ul>
           <li>Add your first habit from the Dashboard</li>

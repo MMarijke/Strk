@@ -48,20 +48,20 @@ export function getTopStreakHabit(habits) {
 const MOTIVATIONAL_MESSAGES = {
   high: [
     "You're on fire! Another incredible week in the books 🔥",
-    "Absolutely crushing it — consistency is your superpower! 💪",
+    "Absolutely crushing it, consistency is your superpower! 💪",
     "Look at you go! The habits are building a better you, one day at a time 🌟",
     "Outstanding week! Keep this momentum going 🚀",
-    "You're making it look easy — incredible discipline! ⭐",
+    "You're making it look easy, incredible discipline! ⭐",
   ],
   mid: [
-    "Good effort this week! Even small steps count — keep going 👏",
+    "Good effort this week! Even small steps count, keep going 👏",
     "You showed up, and that's what matters. This week will be even better! 💫",
-    "Solid week! You're building the foundation — keep stacking those days 📈",
-    "Progress over perfection — you're moving in the right direction! 🌱",
+    "Solid week! You're building the foundation, keep stacking those days 📈",
+    "Progress over perfection, you're moving in the right direction! 🌱",
     "Every check-in counts! You've got the momentum to build on 🎯",
   ],
   low: [
-    "Life happens — what matters is you're back. This week is yours 💙",
+    "Life happens. What matters is you're back. This week is yours 💙",
     "Don't be hard on yourself. Every new week is a fresh start 🌅",
     "The best time to reset is today. You've got this! 🤍",
     "Small steps are still steps forward. Be kind to yourself and keep going 🌸",

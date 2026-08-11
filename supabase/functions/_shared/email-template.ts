@@ -65,7 +65,8 @@ export function emailShell({
             <tr>
               <td style="padding:20px 32px;border-top:1px solid ${COLORS.border};">
                 <p style="margin:0;font-size:12px;color:${COLORS.muted};">
-                  Build streaks. Stay accountable. — Strk
+                  Build streaks. Stay accountable.<br />
+                  Strk
                 </p>
               </td>
             </tr>

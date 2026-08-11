@@ -73,7 +73,7 @@ export default function CreateChallengeModal({ open, onOpenChange, group, onCrea
               </select>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Add a habit first — challenges track one of your existing habits.
+                Add a habit first. Challenges track one of your existing habits.
               </p>
             )}
           </div>

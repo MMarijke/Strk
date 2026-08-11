@@ -21,7 +21,7 @@ export function fireHabitNotification(habit, streak) {
   if (!canNotify()) return;
   const streakText = streak > 0 ? ` 🔥 ${streak} day streak` : "";
   const n = new Notification(habit.name, {
-    body: `${habit.name}${streakText} — time to check in!`,
+    body: `${habit.name}${streakText}. Time to check in!`,
     icon: "/favicon.ico",
     tag: `habit-${habit.id}`,
     data: { url: window.location.origin + "/Dashboard" },

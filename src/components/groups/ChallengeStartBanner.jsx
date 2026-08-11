@@ -44,7 +44,7 @@ export default function ChallengeStartBanner({ userEmail, onActiveChange }) {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-bold text-foreground truncate">
-            {notif.started_by_name || "Someone"} started a new challenge — {notif.habit_name}
+            {notif.started_by_name || "Someone"} started a new challenge: {notif.habit_name}
           </p>
           <p className="text-[11px] text-muted-foreground">
             {notif.duration_days} days · {notif.group_name} · Tap to view

@@ -100,7 +100,7 @@ export default function ScoreHistoryChart({ habits, onInvite }) {
 
       <div className="pt-2 border-t border-border">
         <p className="text-sm text-muted-foreground mb-3 text-center">
-          Compete with friends — invite them to join!
+          Compete with friends: invite them to join!
         </p>
         <Button className="w-full gap-2 rounded-xl" onClick={onInvite}>
           <UserPlus className="w-4 h-4" />
