@@ -4,11 +4,11 @@ import { cn } from "@/lib/utils";
 const QUICK_REACTIONS = ["🔥", "💪", "👀", "⚡", "🫶"];
 const DAILY_LIMIT = 3;
 
-export default function ReactionButton({ senderEmail, senderName, recipientEmail, groupId, onSend, sentTodayCount = 0 }) {
+export default function ReactionButton({ recipientEmail, groupId, onSend, sentTodayCount = 0, isPro = false }) {
   const [open, setOpen] = useState(false);
   const [sent, setSent] = useState(null);
   const ref = useRef(null);
-  const limited = sentTodayCount >= DAILY_LIMIT;
+  const limited = !isPro && sentTodayCount >= DAILY_LIMIT;
   const remaining = Math.max(DAILY_LIMIT - sentTodayCount, 0);
 
   // Close on outside click
@@ -32,13 +32,12 @@ export default function ReactionButton({ senderEmail, senderName, recipientEmail
       // wrong. The failure toast itself is handled by the mutation's
       // onError in the parent; catch here just prevents the false "sent"
       // confirmation from showing.
+      // sender_email/sender_name are no longer sent -- send_reaction derives
+      // both server-side (caller's own JWT email, user_profiles.display_name).
       await onSend({
-        emoji,
-        sender_email: senderEmail,
-        sender_name: senderName,
         recipient_email: recipientEmail,
         group_id: groupId,
-        read: false,
+        emoji,
       });
       setSent(emoji);
       setTimeout(() => setSent(null), 2000);
@@ -53,9 +52,11 @@ export default function ReactionButton({ senderEmail, senderName, recipientEmail
       <button
         onClick={() => !limited && setOpen((v) => !v)}
         title={
-          limited 
-            ? "Come back tomorrow to send more reactions." 
-            : `Send reaction (${remaining} left today)`
+          isPro
+            ? "Send reaction"
+            : limited
+              ? "3/3 used today. Upgrade to Pro for unlimited."
+              : `Send reaction (${remaining} left today)`
         }
         className={cn(
           "w-7 h-7 rounded-full flex items-center justify-center text-base transition-all",
