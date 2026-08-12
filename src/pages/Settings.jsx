@@ -14,11 +14,13 @@ import {
 import { useTheme, COLOR_THEMES } from "@/lib/ThemeContext";
 import { cn } from "@/lib/utils";
 import { getWeeklySummaryNotifEnabled, setWeeklySummaryNotifEnabled } from "@/lib/weeklySummaryService";
-import { Habit, UserProfile } from "@/api/entities";
+import { Group, UserProfile } from "@/api/entities";
 import { useAuth } from "@/lib/AuthContext";
 import { getMyProfile, saveMyDisplayName } from "@/lib/displayName";
 import { useSubscription } from "@/hooks/useSubscription";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
+import { toast } from "sonner";
+import { supabase } from "@/api/supabaseClient";
 
 export default function Settings() {
   const { themeId, setThemeId, isDark, setIsDark } = useTheme();
@@ -34,6 +36,20 @@ export default function Settings() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [ownedGroupsWithOthers, setOwnedGroupsWithOthers] = useState([]);
+
+  // Informational only -- no server-side blocking on this. Deletion still
+  // proceeds and cascade-deletes owned groups regardless (see
+  // delete-account edge function); this just makes sure the person knows
+  // that in advance, since it affects other real people's data.
+  useEffect(() => {
+    if (!user?.email) return;
+    Group.filter({ created_by: user.email }).then((groups) => {
+      setOwnedGroupsWithOthers(
+        groups.filter((g) => (g.member_emails || []).some((e) => e !== user.email))
+      );
+    });
+  }, [user?.email]);
 
   useEffect(() => {
     if (!user?.email) return;
@@ -64,13 +80,18 @@ export default function Settings() {
   const handleDeleteAccount = async () => {
     if (!user) return;
     setDeletingAccount(true);
-    // Delete all user habits
-    const habits = await Habit.filter({ created_by: user.email });
-    await Promise.all(habits.map((h) => Habit.delete(h.id)));
-    // Delete user profile
-    const profiles = await UserProfile.filter({ created_by: user.email });
-    await Promise.all(profiles.map((p) => UserProfile.delete(p.id)));
-    // Log out
+    // delete-account handles everything server-side: cancels any active
+    // Paddle subscription, sweeps the user's email out of other people's
+    // groups/challenges/sessions/reactions, then calls the Auth Admin API
+    // to delete auth.users -- which cascades to remove every row the user
+    // owns in one step. See supabase/functions/delete-account/index.ts.
+    const { error } = await supabase.functions.invoke("delete-account");
+    if (error) {
+      const message = await error.context?.json?.().then((b) => b?.error).catch(() => null);
+      setDeletingAccount(false);
+      toast.error(message || "Failed to delete account. Please try again.", { duration: 4000 });
+      return;
+    }
     await logout();
     navigate("/");
   };
@@ -353,7 +374,14 @@ export default function Settings() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete your account?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will permanently delete all your habits, streaks, and progress. You will be logged out immediately. <strong>This action cannot be undone.</strong>
+                    This will permanently delete all your habits, streaks, and progress. You will be logged out immediately.
+                    {ownedGroupsWithOthers.length > 0 && (
+                      <>
+                        {" "}You own {ownedGroupsWithOthers.length} group{ownedGroupsWithOthers.length !== 1 ? "s" : ""} with other members.
+                        Deleting your account will also delete {ownedGroupsWithOthers.length !== 1 ? "those groups" : "that group"} for everyone in {ownedGroupsWithOthers.length !== 1 ? "them" : "it"}.
+                      </>
+                    )}
+                    {" "}<strong>This action cannot be undone.</strong>
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
