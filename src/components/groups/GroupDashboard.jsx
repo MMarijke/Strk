@@ -18,6 +18,8 @@ import { getRank } from "@/lib/utils";
 import { toast } from "sonner";
 import { format as fmtDate } from "date-fns";
 import { trackEvent } from "@/lib/analytics";
+import { useSubscription } from "@/hooks/useSubscription";
+import { supabase } from "@/api/supabaseClient";
 
 const CATEGORY_LABELS = {
   health: "Health", fitness: "Fitness", mindfulness: "Mindfulness",
@@ -78,6 +80,7 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
   const [newName, setNewName] = useState(group.name);
 
   const queryClient = useQueryClient();
+  const { isPro } = useSubscription();
   const isAdmin = group.created_by === userEmail;
   const memberEmails = group.member_emails || [];
 
@@ -178,14 +181,31 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
   });
 
   const createReactionMutation = useMutation({
-    mutationFn: ({ _recipientName, ...data }) => Reaction.create(data),
+    // send_reaction enforces the daily limit (Pro-aware) and group
+    // membership server-side, and derives sender_email/sender_name itself
+    // -- see 20260811090005. The old direct Reaction.create(data) path is
+    // gone; reactions_insert_as_sender was retired in the same migration,
+    // so this RPC is now the only way to insert a reaction at all.
+    mutationFn: ({ recipient_email, emoji, group_id }) =>
+      supabase.rpc("send_reaction", {
+        p_recipient_email: recipient_email,
+        p_emoji: emoji,
+        p_group_id: group_id,
+      }).then(({ data, error }) => {
+        if (error) throw error;
+        return data;
+      }),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ["reactions", userEmail] });
       queryClient.invalidateQueries({ queryKey: ["reactions-sent", userEmail] });
       toast.success(`Reaction sent! ${vars.emoji}`, { duration: 2000 });
     },
-    onError: () => {
-      toast.error("Couldn't send that reaction. Please try again.", { duration: 3000 });
+    onError: (error) => {
+      if (error?.message?.includes("DAILY_LIMIT_REACHED")) {
+        toast.error("You've used all 3 reactions today. Upgrade to Pro for unlimited.", { duration: 3000 });
+      } else {
+        toast.error("Couldn't send that reaction. Please try again.", { duration: 3000 });
+      }
     },
   });
 
@@ -392,12 +412,11 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
               )
             ) : (
               <ReactionButton
-                senderEmail={userEmail}
-                senderName={getDisplayName(userEmail, profiles)}
                 recipientEmail={row.email}
                 groupId={group.id}
                 sentTodayCount={reactionsSentToday}
-                onSend={(data) => createReactionMutation.mutateAsync({ ...data, _recipientName: row.name })}
+                isPro={isPro}
+                onSend={(data) => createReactionMutation.mutateAsync(data)}
               />
             )}
             {isAdmin && !row.isMe && (
