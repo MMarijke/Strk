@@ -76,13 +76,38 @@ create role freeze_rpc_trusted noinherit nologin;
 -- change below succeeds.
 grant freeze_rpc_trusted to current_user;
 grant usage on schema public to freeze_rpc_trusted;
+-- CORRECTED (2026-08-11, delete-account work): ALTER FUNCTION ... OWNER TO
+-- (below) additionally requires CREATE, not just USAGE, on the function's
+-- containing schema for the new owner -- confirmed missing here via
+-- pg_namespace.nspacl against the live database, which shows
+-- freeze_rpc_trusted holding USAGE+CREATE despite this file only ever
+-- having granted USAGE. Hand-patched live at some point, same as the
+-- SECURITY DEFINER correction above, without a tracked migration
+-- recording it. Live grant is untouched by this correction.
+grant create on schema public to freeze_rpc_trusted;
 grant select on public.user_profiles to freeze_rpc_trusted;
 grant select, insert, update on public.streak_freezes to freeze_rpc_trusted;
 
+-- CORRECTED (2026-08-11, delete-account work): this function must be
+-- SECURITY INVOKER, not DEFINER, for the current_user check below to work
+-- at all. A SECURITY DEFINER trigger function resets current_user to ITS
+-- OWN owner the instant it starts running, overwriting whatever role was
+-- actually executing the triggering UPDATE -- so a `current_user =
+-- 'freeze_rpc_trusted'` check inside a DEFINER version of this function
+-- could never see that value; it would always see this function's own
+-- owner instead, and the escape hatch below would never fire, meaning
+-- apply_streak_freeze()'s own legitimate write would always be rejected.
+-- The version originally written here (with SECURITY DEFINER) was hand-
+-- patched live to drop it at some point prior to this correction, without
+-- a tracked migration recording that fix -- confirmed via
+-- pg_get_functiondef against the live database that the deployed function
+-- has never had SECURITY DEFINER despite this file previously claiming it
+-- did. This edit brings the migration source in line with what has
+-- actually been running, rather than leaving the history silently wrong.
+-- The live function itself is untouched by this correction.
 create or replace function public.protect_streak_freezes_fields()
 returns trigger
 language plpgsql
-security definer
 set search_path = public
 as $$
 begin

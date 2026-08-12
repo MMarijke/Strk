@@ -11,6 +11,8 @@ import Social from './pages/Social';
 import Settings from './pages/Settings';
 import Badges from './pages/Badges';
 import Subscription from './pages/Subscription';
+import Terms from './pages/Terms';
+import Privacy from './pages/Privacy';
 import AppLayout from './components/layout/AppLayout';
 import { ThemeProvider, useTheme } from './lib/ThemeContext';
 import OnboardingThemePicker from './components/onboarding/OnboardingThemePicker';
@@ -73,7 +75,19 @@ function App() {
       <ThemeProviderWithUser>
         <QueryClientProvider client={queryClientInstance}>
           <Router>
-            <AuthenticatedApp />
+            {/* /terms and /privacy are matched here, before AuthenticatedApp's
+                auth gate -- AuthenticatedApp short-circuits to <Login/> for
+                *any* path when unauthenticated, so routes nested inside its
+                own <Routes> block are unreachable while logged out. These
+                two must stay publicly reachable (Paddle verification, app
+                store requirements), so they're matched at this top level
+                instead, ahead of the catch-all that hands everything else
+                to AuthenticatedApp. */}
+            <Routes>
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/*" element={<AuthenticatedApp />} />
+            </Routes>
           </Router>
           <Toaster />
         </QueryClientProvider>
