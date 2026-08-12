@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { Mail, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -108,6 +109,18 @@ export default function Login() {
             >
               {status === "sending" ? "Sending…" : "Send sign-in link"}
             </Button>
+
+            <p className="text-center text-xs text-muted-foreground leading-relaxed">
+              By continuing, you agree to our{" "}
+              <Link to="/terms" className="underline underline-offset-2 hover:text-foreground">
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link to="/privacy" className="underline underline-offset-2 hover:text-foreground">
+                Privacy Policy
+              </Link>
+              .
+            </p>
           </form>
         )}
       </div>

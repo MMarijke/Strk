@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles } from "lucide-react";
+import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -296,6 +296,23 @@ export default function Settings() {
               </div>
               <Link to="/Badges">
                 <Button variant="outline" size="sm">View</Button>
+              </Link>
+            </div>
+          </Card>
+
+          {/* Legal */}
+          <Card className="border-0 shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-1">
+              <FileText className="w-4 h-4 text-primary" />
+              <h2 className="font-semibold text-sm">Legal</h2>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">Terms, privacy, and how your data is handled</p>
+            <div className="flex gap-4">
+              <Link to="/terms" className="text-sm font-medium text-primary hover:underline">
+                Terms of Service
+              </Link>
+              <Link to="/privacy" className="text-sm font-medium text-primary hover:underline">
+                Privacy Policy
               </Link>
             </div>
           </Card>
