@@ -226,7 +226,7 @@ export default function Social() {
 
   const removeMember = (group, email) => {
     const emails = (group.member_emails || []).filter((e) => e !== email);
-    updateGroupMutation.mutate({ id: group.id, data: { member_emails: emails } });
+    return updateGroupMutation.mutateAsync({ id: group.id, data: { member_emails: emails } });
   };
 
   const activeGroup = selectedGroup ? groups.find((g) => g.id === selectedGroup) : null;
@@ -340,8 +340,8 @@ export default function Social() {
               userFullName={user?.full_name}
               profiles={profiles}
               onBack={() => setSelectedGroup(null)}
-              onUpdate={(data) => updateGroupMutation.mutate({ id: activeGroup.id, data })}
-              onDelete={() => deleteGroupMutation.mutate(activeGroup.id)}
+              onUpdate={(data) => updateGroupMutation.mutateAsync({ id: activeGroup.id, data })}
+              onDelete={() => deleteGroupMutation.mutateAsync(activeGroup.id)}
               onRemoveMember={(email) => removeMember(activeGroup, email)} /> :
 
             myGroups.length === 0 ?

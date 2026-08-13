@@ -19,7 +19,7 @@ const CATEGORY_LABELS = {
   learning: "📚 Learning", productivity: "⚡ Productivity", social: "🤝 Social", other: "✨ Other",
 };
 
-export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpdateReminder, onApplyFreeze, onUpdate, onArchive, userEmail, isPro }) {
+export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpdateReminder, onApplyFreeze, onUpdate, onArchive, userEmail, isPro, isToggling = false }) {
   const [showReport, setShowReport] = useState(false);
   const [showEditWeek, setShowEditWeek] = useState(false);
   const [showEditReminder, setShowEditReminder] = useState(false);
@@ -139,11 +139,17 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
               >
                 <BarChart2 className="w-4 h-4" />
               </Button>
-              {/* Check button */}
+              {/* Check button -- disabled while isToggling so two rapid
+                  taps can't race: handleToggleToday reads completions off
+                  the habit prop at click time, so a second tap before the
+                  first write lands would compute the same "toggle to X"
+                  twice instead of a true toggle/untoggle pair. */}
               <button
-                onClick={(e) => { e.stopPropagation(); onToggleToday(habit); }}
+                onClick={(e) => { e.stopPropagation(); if (!isToggling) onToggleToday(habit); }}
+                disabled={isToggling}
                 className={cn(
                   "w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 shrink-0",
+                  isToggling && "opacity-60 cursor-not-allowed",
                   isDoneToday
                     ? "text-white shadow-lg"
                     : "bg-muted text-muted-foreground hover:scale-105 hover:bg-muted/80"

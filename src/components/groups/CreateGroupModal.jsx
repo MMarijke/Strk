@@ -25,6 +25,7 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
   const [isPrivate, setIsPrivate] = useState(true);
   const [createdGroup, setCreatedGroup] = useState(null);
   const [copied, setCopied] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   // Free plan is capped at 2 groups — redirect straight to the upgrade flow
   // instead of showing the create-group form.
@@ -36,9 +37,11 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
   }, [open, paywalled]);
 
   const handleCreate = async () => {
+    if (loading) return;
+    setLoading(true);
     const code = generateInviteCode();
     const groupData = {
-      name: name.trim(), 
+      name: name.trim(),
       description: description.trim(),
       is_private: isPrivate,
       invite_code: code,
@@ -55,6 +58,8 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
       setStep("invite");
     } catch (error) {
       console.error("Failed to create group:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -70,6 +75,7 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
     setDescription("");
     setIsPrivate(true);
     setCreatedGroup(null);
+    setLoading(false);
     onOpenChange(false);
   };
 
@@ -109,8 +115,8 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
                 </div>
                 <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
               </div>
-              <Button className="w-full" disabled={!name.trim()} onClick={handleCreate}>
-                Create Group
+              <Button className="w-full" disabled={!name.trim() || loading} onClick={handleCreate}>
+                {loading ? "Creating…" : "Create Group"}
               </Button>
             </div>
           </>
