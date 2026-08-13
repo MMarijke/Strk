@@ -1,6 +1,6 @@
 import React from "react";
-import { Habit } from "@/api/entities";
-import { useQueries } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/api/supabaseClient";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter } from "date-fns";
 import { Crown, Medal, Flame, Trophy } from "lucide-react";
 import { calculateStreak } from "@/components/habits/StreakWidget";
@@ -15,18 +15,14 @@ function RankIcon({ rank }) {
   return <span className="text-xs font-bold text-muted-foreground w-4 text-center">#{rank}</span>;
 }
 
-function getStatsForMember(challenge, habits) {
-  const startDate = parseISO(challenge.start_date);
-  const endDate = parseISO(challenge.end_date);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const effectiveEnd = isAfter(today, endDate) ? endDate : today;
-  const elapsedDays = differenceInDays(effectiveEnd, startDate) + 1;
-
-  const allDays = eachDayOfInterval({ start: startDate, end: endDate }).map((d) =>
-    format(d, "yyyy-MM-dd")
-  );
-  const elapsedDates = allDays.slice(0, Math.max(elapsedDays, 0));
+// elapsedDates/todayStr are computed once at the top of the component and
+// passed in here -- shared with the get_challenge_member_progress RPC
+// call below, so "me" (computed locally, from real live data) and every
+// other member (computed server-side, via the RPC) are always evaluated
+// against the exact same date list, with no risk of the two disagreeing
+// at a day boundary.
+function getStatsForMember(challenge, habits, elapsedDates) {
+  const elapsedDays = elapsedDates.length;
 
   const matchingHabit = habits.find(
     (h) => h.name.toLowerCase() === challenge.habit_name.toLowerCase()
@@ -48,6 +44,21 @@ function getStatsForMember(challenge, habits) {
   return { completedDays, pct, streak, elapsedDays, noMatchingHabit: false };
 }
 
+// Same shape as getStatsForMember's return value, sourced from the RPC's
+// per-member row instead of a local habits array -- get_challenge_member_
+// progress already applies the identical completedDays/streak logic
+// server-side (see the migration), this just fills in pct, which is pure
+// arithmetic with no data dependency.
+function statsFromRpcRow(row, elapsedDates) {
+  const elapsedDays = elapsedDates.length;
+  if (!row || row.no_matching_habit) {
+    return { completedDays: 0, pct: 0, streak: 0, elapsedDays, noMatchingHabit: true };
+  }
+  const completedDays = row.completed_days;
+  const pct = elapsedDays > 0 ? Math.round((completedDays / elapsedDays) * 100) : 0;
+  return { completedDays, pct, streak: row.streak, elapsedDays, noMatchingHabit: false };
+}
+
 export default function ChallengeLeaderboard({ challenge, habits: myHabits, userEmail, profiles = [], onStartNew, isAdmin }) {
   const startDate = parseISO(challenge.start_date);
   const endDate = parseISO(challenge.end_date);
@@ -60,27 +71,52 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
   const daysRemaining = Math.max(totalDays - daysElapsed, 0);
   const progressPct = Math.round((daysElapsed / totalDays) * 100);
 
+  // The stats-relevant elapsed window -- capped at the challenge's own
+  // end_date, not at totalDays like daysElapsed above (that distinction
+  // already existed before this fix, preserved as-is).
+  const effectiveEnd = isAfter(today, endDate) ? endDate : today;
+  const elapsedDayCount = Math.max(differenceInDays(effectiveEnd, startDate) + 1, 0);
+  const allDays = eachDayOfInterval({ start: startDate, end: endDate }).map((d) =>
+    format(d, "yyyy-MM-dd")
+  );
+  const elapsedDates = allDays.slice(0, elapsedDayCount);
+  const todayStr = format(today, "yyyy-MM-dd");
+
   const members = challenge.member_emails || [];
   const otherMembers = members.filter((e) => e !== userEmail);
 
-  // Fetch habits for all other members in parallel
-  const memberHabitQueries = useQueries({
-    queries: otherMembers.map((email) => ({
-      queryKey: ["habits", email],
-      queryFn: () => Habit.filter({ created_by: email }, "-created_date"),
-      staleTime: 30_000,
-    })),
+  // get_challenge_member_progress reads every OTHER member's habits
+  // server-side (bypassing habits_select_own's owner-only RLS the same
+  // way join_group/send_reaction already do for groups/reactions) -- a
+  // plain client fetch can never see another user's habits row at all,
+  // which is why every non-"me" row here used to show "No matching
+  // habit" regardless of real progress. "me" stays computed locally
+  // below, from the live myHabits prop -- same "me is always live-local,
+  // others come from the trusted source" pattern as the group
+  // leaderboard and weekly-report fixes.
+  const { data: memberProgress = [], isLoading } = useQuery({
+    queryKey: ["challenge-progress", challenge.id, elapsedDates.length, todayStr],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_challenge_member_progress", {
+        p_challenge_id: challenge.id,
+        p_elapsed_dates: elapsedDates,
+        p_today: todayStr,
+      });
+      if (error) throw error;
+      return data;
+    },
+    enabled: otherMembers.length > 0,
+    staleTime: 30_000,
   });
 
-  const isLoading = memberHabitQueries.some((q) => q.isLoading);
+  const progressByEmail = new Map(memberProgress.map((row) => [row.email, row]));
 
   // Build rows with real data for everyone
   const rows = members.map((email) => {
     const isMe = email === userEmail;
-    const habits = isMe
-      ? myHabits
-      : (memberHabitQueries[otherMembers.indexOf(email)]?.data || []);
-    const stats = getStatsForMember(challenge, habits);
+    const stats = isMe
+      ? getStatsForMember(challenge, myHabits, elapsedDates)
+      : statsFromRpcRow(progressByEmail.get(email), elapsedDates);
     return {
       email,
       name: getDisplayName(email, profiles),
@@ -89,7 +125,7 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
     };
   }).sort((a, b) => b.pct - a.pct || b.streak - a.streak || b.completedDays - a.completedDays);
 
-  const myStats = getStatsForMember(challenge, myHabits);
+  const myStats = getStatsForMember(challenge, myHabits, elapsedDates);
   const myRank = rows.findIndex((r) => r.isMe) + 1;
   const groupCompletionRate = Math.round(rows.reduce((s, r) => s + r.pct, 0) / Math.max(rows.length, 1));
 
