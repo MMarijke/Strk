@@ -38,30 +38,22 @@ export async function loadMonthRecord(userEmail) {
 }
 
 /**
- * Returns freezes remaining this month.
- * isPro = true → unlimited (returns 999).
+ * Single source of this month's freeze state: how many freezes remain,
+ * and the full { habitId: frozenDateString } map. One loadMonthRecord()
+ * call for both, computed once at the dashboard level and threaded down
+ * as props from there -- replaces getFreezesRemaining()/
+ * getFrozenDateForHabit()/getFrozenHabitIdsThisMonth(), which each
+ * independently re-fetched the same single row (previously called from
+ * Dashboard.jsx twice, FreezeIndicator.jsx once, and every individual
+ * HabitCard twice more -- 2 + 2N requests for N habits, all hitting the
+ * identical row).
+ * isPro = true → freezesRemaining is unlimited (999).
  */
-export async function getFreezesRemaining(userEmail, isPro = false) {
-  if (isPro) return 999;
+export async function getFreezeMonthState(userEmail, isPro = false) {
   const record = await loadMonthRecord(userEmail);
-  return Math.max(0, FREE_FREEZES_PER_MONTH - (record.used_count || 0));
-}
-
-/**
- * Returns the frozen date for a specific habit this month, or null.
- */
-export async function getFrozenDateForHabit(userEmail, habitId) {
-  const record = await loadMonthRecord(userEmail);
-  return (record.frozen_habits || {})[habitId] || null;
-}
-
-/**
- * Returns the set of habit IDs already frozen this month, for filtering
- * candidates in the dashboard-level freeze prompt without a per-habit fetch.
- */
-export async function getFrozenHabitIdsThisMonth(userEmail) {
-  const record = await loadMonthRecord(userEmail);
-  return new Set(Object.keys(record.frozen_habits || {}));
+  const frozenHabits = record.frozen_habits || {};
+  const freezesRemaining = isPro ? 999 : Math.max(0, FREE_FREEZES_PER_MONTH - (record.used_count || 0));
+  return { freezesRemaining, frozenHabits };
 }
 
 /**
