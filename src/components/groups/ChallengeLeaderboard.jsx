@@ -94,7 +94,7 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
   // below, from the live myHabits prop -- same "me is always live-local,
   // others come from the trusted source" pattern as the group
   // leaderboard and weekly-report fixes.
-  const { data: memberProgress = [], isLoading } = useQuery({
+  const { data: memberProgress = [], isLoading, isError, refetch } = useQuery({
     queryKey: ["challenge-progress", challenge.id, elapsedDates.length, todayStr],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("get_challenge_member_progress", {
@@ -111,12 +111,19 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
 
   const progressByEmail = new Map(memberProgress.map((row) => [row.email, row]));
 
-  // Build rows with real data for everyone
+  // Build rows with real data for everyone. A failed RPC must never look
+  // like a teammate who simply hasn't logged the habit -- that ambiguity
+  // is exactly what the RLS fix this leaderboard is built on eliminated
+  // for the "can't see other members at all" case, so a fetch error gets
+  // its own loadError state instead of silently falling through to
+  // statsFromRpcRow's noMatchingHabit default.
   const rows = members.map((email) => {
     const isMe = email === userEmail;
     const stats = isMe
       ? getStatsForMember(challenge, myHabits, elapsedDates)
-      : statsFromRpcRow(progressByEmail.get(email), elapsedDates);
+      : isError
+        ? { completedDays: 0, pct: 0, streak: 0, elapsedDays: elapsedDates.length, noMatchingHabit: false, loadError: true }
+        : statsFromRpcRow(progressByEmail.get(email), elapsedDates);
     return {
       email,
       name: getDisplayName(email, profiles),
@@ -202,6 +209,19 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
           )}
         </div>
 
+        {isError && (
+          <div className="flex items-center justify-between gap-2 mb-3 px-3 py-2 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs">
+            <span>Couldn't load teammates' progress.</span>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              className="font-semibold underline underline-offset-2 shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {rows.map((row, i) => (
           <div key={row.email} className={cn(
             "flex items-center gap-3 p-2 rounded-xl transition-colors",
@@ -213,7 +233,16 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary shrink-0">
               {row.name[0].toUpperCase()}
             </div>
-            {row.noMatchingHabit ? (
+            {row.loadError ? (
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate">
+                  {row.name} {row.isMe && <span className="text-xs text-primary font-normal">(you)</span>}
+                </p>
+                <p className="text-[11px] text-destructive leading-tight">
+                  Couldn't load progress
+                </p>
+              </div>
+            ) : row.noMatchingHabit ? (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold truncate">
                   {row.name} {row.isMe && <span className="text-xs text-primary font-normal">(you)</span>}

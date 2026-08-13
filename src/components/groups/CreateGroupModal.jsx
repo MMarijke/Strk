@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Copy, Share2, Check } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
+import { toast } from "sonner";
 
 function generateInviteCode() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -58,6 +59,7 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
       setStep("invite");
     } catch (error) {
       console.error("Failed to create group:", error);
+      toast.error("Couldn't create that group. Please try again.", { duration: 3000 });
     } finally {
       setLoading(false);
     }
