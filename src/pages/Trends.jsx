@@ -37,7 +37,7 @@ function buildWeeklyData(habits, numWeeks = 12) {
 
 export default function Trends() {
   const { user } = useAuth();
-  const { isPro } = useSubscription();
+  const { isPro, isLoading: subLoading } = useSubscription();
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   const { data: habits = [], isLoading, isError, refetch } = useQuery({
@@ -134,9 +134,13 @@ export default function Trends() {
                 </ResponsiveContainer>
 
                 {/* Free plan only sees the most recent 4 of 12 weeks — the
-                    other 8 (oldest, leftmost) are blurred behind an upsell. */}
-                {!isPro && (
-                  <div className="absolute inset-y-0 left-0 w-2/3 flex items-center justify-center rounded-l-xl bg-background/70 backdrop-blur-md">
+                    other 8 (oldest, leftmost) are blurred behind an upsell.
+                    Starts at left-5 (20px) to clear the YAxis's own width
+                    (width={20} above) so the 0-7 scale stays readable; the
+                    width is reduced by that same 20px so the right edge —
+                    the actual free/paywalled data cutoff — doesn't move. */}
+                {!subLoading && !isPro && (
+                  <div className="absolute inset-y-0 left-5 w-[calc(66.6667%-1.25rem)] flex items-center justify-center rounded-lg bg-background/70 backdrop-blur-md">
                     <div className="text-center px-4">
                       <p className="text-xs font-semibold text-foreground mb-2">
                         Unlock full 12-week trends
