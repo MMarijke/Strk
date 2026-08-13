@@ -87,10 +87,17 @@ export default function Dashboard() {
     },
   });
 
+  // Tracks which habit ids currently have a write in flight -- lets
+  // HabitCard disable just its own check button rather than either doing
+  // nothing (the double-tap race below) or disabling every card's button
+  // for any habit's update.
+  const [pendingHabitIds, setPendingHabitIds] = useState(() => new Set());
+
   // Optimistic toggle mutation
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => Habit.update(id, data),
     onMutate: async ({ id, data }) => {
+      setPendingHabitIds((prev) => new Set(prev).add(id));
       await queryClient.cancelQueries({ queryKey: ["habits", user?.email] });
       const previous = queryClient.getQueryData(["habits", user?.email]);
       queryClient.setQueryData(["habits", user?.email], (old = []) =>
@@ -104,7 +111,12 @@ export default function Dashboard() {
       }
       toast.error("That didn't save. Please try again.", { duration: 3000 });
     },
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
+      setPendingHabitIds((prev) => {
+        const next = new Set(prev);
+        next.delete(variables.id);
+        return next;
+      });
       queryClient.invalidateQueries({ queryKey: ["habits", user?.email] });
       // habits_sync_profile_stats recomputes user_profiles server-side on
       // every habits write -- invalidate here too so leaderboards reading
@@ -382,6 +394,7 @@ export default function Dashboard() {
                       onArchive={handleArchiveHabit}
                       userEmail={user?.email}
                       isPro={isPro}
+                      isToggling={pendingHabitIds.has(habit.id)}
                       />
                   </motion.div>
                 ))}

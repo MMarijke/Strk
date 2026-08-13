@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Trash2, RefreshCw, UserMinus, Settings, Info } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { getDisplayName } from "@/lib/displayName";
-import { cn } from "@/lib/utils";
 
 function generateInviteCode() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -30,30 +29,54 @@ export default function GroupSettingsModal({
   const [confirmRemove, setConfirmRemove] = useState(null); // email
   const [deleteInput, setDeleteInput] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [removingEmail, setRemovingEmail] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const memberEmails = group.member_emails || [];
   const otherMembers = memberEmails.filter((e) => e !== userEmail);
 
-  const handleRename = () => {
-    if (newName.trim() && newName.trim() !== group.name) {
-      onUpdate({ name: newName.trim() });
+  const handleRename = async () => {
+    if (!newName.trim() || newName.trim() === group.name || renaming) return;
+    setRenaming(true);
+    try {
+      await onUpdate({ name: newName.trim() });
+    } finally {
+      setRenaming(false);
     }
   };
 
-  const handleRegenerate = () => {
-    onUpdate({ invite_code: generateInviteCode() });
-    setConfirmRegenerate(false);
+  const handleRegenerate = async () => {
+    if (regenerating) return;
+    setRegenerating(true);
+    try {
+      await onUpdate({ invite_code: generateInviteCode() });
+      setConfirmRegenerate(false);
+    } finally {
+      setRegenerating(false);
+    }
   };
 
-  const handleRemove = (email) => {
-    onRemoveMember(email);
-    setConfirmRemove(null);
+  const handleRemove = async (email) => {
+    if (removingEmail) return;
+    setRemovingEmail(email);
+    try {
+      await onRemoveMember(email);
+      setConfirmRemove(null);
+    } finally {
+      setRemovingEmail(null);
+    }
   };
 
-  const handleDelete = () => {
-    if (deleteInput.trim() === group.name) {
-      onDelete();
+  const handleDelete = async () => {
+    if (deleteInput.trim() !== group.name || deleting) return;
+    setDeleting(true);
+    try {
+      await onDelete();
       onOpenChange(false);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -119,11 +142,11 @@ export default function GroupSettingsModal({
               />
               <Button
                 onClick={handleRename}
-                disabled={!newName.trim() || newName.trim() === group.name}
+                disabled={!newName.trim() || newName.trim() === group.name || renaming}
                 size="sm"
                 className="shrink-0"
               >
-                Save
+                {renaming ? "Saving…" : "Save"}
               </Button>
             </div>
           </div>
@@ -140,10 +163,10 @@ export default function GroupSettingsModal({
                   This will invalidate your current invite link. Are you sure?
                 </p>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={handleRegenerate}>
-                    Yes, regenerate
+                  <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={handleRegenerate} disabled={regenerating}>
+                    {regenerating ? "Regenerating…" : "Yes, regenerate"}
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmRegenerate(false)}>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmRegenerate(false)} disabled={regenerating}>
                     Cancel
                   </Button>
                 </div>
@@ -170,10 +193,10 @@ export default function GroupSettingsModal({
                             Remove {name} from the group?
                           </p>
                           <div className="flex gap-2">
-                            <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => handleRemove(email)}>
-                              Remove
+                            <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => handleRemove(email)} disabled={removingEmail === email}>
+                              {removingEmail === email ? "Removing…" : "Remove"}
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmRemove(null)}>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmRemove(null)} disabled={removingEmail === email}>
                               Cancel
                             </Button>
                           </div>
@@ -222,16 +245,17 @@ export default function GroupSettingsModal({
                     size="sm"
                     variant="destructive"
                     className="h-8 text-xs gap-1"
-                    disabled={deleteInput.trim() !== group.name}
+                    disabled={deleteInput.trim() !== group.name || deleting}
                     onClick={handleDelete}
                   >
-                    <Trash2 className="w-3 h-3" /> Delete Group
+                    <Trash2 className="w-3 h-3" /> {deleting ? "Deleting…" : "Delete Group"}
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
                     className="h-8 text-xs"
                     onClick={() => { setShowDeleteConfirm(false); setDeleteInput(""); }}
+                    disabled={deleting}
                   >
                     Cancel
                   </Button>
