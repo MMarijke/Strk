@@ -109,7 +109,7 @@ export default function Social() {
     staleTime: 5 * 60 * 1000
   });
 
-  const { data: groups = [] } = useQuery({
+  const { data: groups = [], isLoading: groupsLoading } = useQuery({
     queryKey: ["groups", user?.email],
     queryFn: () => user?.email ?
     Group.filter({
@@ -348,6 +348,11 @@ export default function Social() {
               onUpdate={(data) => updateGroupMutation.mutateAsync({ id: activeGroup.id, data })}
               onDelete={() => deleteGroupMutation.mutateAsync(activeGroup.id)}
               onRemoveMember={(email) => removeMember(activeGroup, email)} /> :
+
+            groupsLoading ?
+            <div className="space-y-3">
+                {[1, 2].map((i) => <div key={i} className="h-20 rounded-xl bg-card animate-pulse" />)}
+              </div> :
 
             myGroups.length === 0 ?
             <div className="space-y-3">

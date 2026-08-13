@@ -16,6 +16,13 @@ import { useSubscription } from "@/hooks/useSubscription";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
 import { HABIT_COLORS as STROKE_COLORS } from "@/lib/utils";
 
+// STROKE_COLORS has 8 entries; the 9th+ uncustomized habit reuses one of
+// them via i % STROKE_COLORS.length, which makes two lines identical and
+// indistinguishable in the chart. Habits past the first full cycle get a
+// dash pattern layered on top of the repeated color so they stay visually
+// distinct instead of overlapping.
+const DASH_PATTERNS = [undefined, "6 3", "2 3", "1 4"];
+
 function buildWeeklyData(habits, numWeeks = 12) {
   const today = new Date();
   const weeks = Array.from({ length: numWeeks }, (_, i) => {
@@ -124,17 +131,21 @@ export default function Trends() {
                         iconType="circle"
                         iconSize={8}
                       />
-                      {habits.map((h, i) => (
-                        <Line
-                          key={h.id}
-                          type="monotone"
-                          dataKey={h.name}
-                          stroke={h.color || STROKE_COLORS[i % STROKE_COLORS.length]}
-                          strokeWidth={2}
-                          dot={false}
-                          activeDot={{ r: 4 }}
-                        />
-                      ))}
+                      {habits.map((h, i) => {
+                        const colorCycle = Math.floor(i / STROKE_COLORS.length);
+                        return (
+                          <Line
+                            key={h.id}
+                            type="monotone"
+                            dataKey={h.name}
+                            stroke={h.color || STROKE_COLORS[i % STROKE_COLORS.length]}
+                            strokeDasharray={!h.color ? DASH_PATTERNS[colorCycle % DASH_PATTERNS.length] : undefined}
+                            strokeWidth={2}
+                            dot={false}
+                            activeDot={{ r: 4 }}
+                          />
+                        );
+                      })}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
