@@ -168,6 +168,41 @@ export default function Dashboard() {
     updateMutation.mutate({ id, data: { archived: true } });
   };
 
+  // "Complete All" writes every not-yet-done habit in one tap, so a
+  // misfire silently corrupts the day's real completion record. Rather
+  // than block on a confirm dialog for what's usually an intentional,
+  // low-risk action, it fires immediately and offers a short Undo
+  // window -- each habit's pre-toggle completions array is captured
+  // here (habits' state at click time, before today gets appended), so
+  // Undo just restores exactly that, not "clear today for everyone".
+  const handleCompleteAll = () => {
+    const toComplete = habits.filter((h) => !(h.completions || []).includes(today));
+    if (toComplete.length === 0) return;
+
+    toComplete.forEach((h) => {
+      updateMutation.mutate({ id: h.id, data: { completions: [...(h.completions || []), today] } });
+    });
+
+    toast(
+      <div className="flex items-center justify-between gap-3 w-full">
+        <p className="text-sm text-foreground">
+          Completed {toComplete.length} habit{toComplete.length !== 1 ? "s" : ""} for today
+        </p>
+        <button
+          className="text-xs font-semibold text-primary hover:underline shrink-0"
+          onClick={() => {
+            toComplete.forEach((h) => {
+              updateMutation.mutate({ id: h.id, data: { completions: h.completions || [] } });
+            });
+          }}
+        >
+          Undo
+        </button>
+      </div>,
+      { duration: 5000 }
+    );
+  };
+
   const RANK_ORDER = ["ember", "flame", "blaze", "inferno", "legend"];
 
   // Check for rank-up whenever habits or profile change
@@ -326,13 +361,7 @@ export default function Dashboard() {
               variant="outline"
               size="sm"
               className="gap-1.5 rounded-full px-4 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                habits.forEach((h) => {
-                  if (!(h.completions || []).includes(today)) {
-                    updateMutation.mutate({ id: h.id, data: { completions: [...(h.completions || []), today] } });
-                  }
-                });
-              }}
+              onClick={handleCompleteAll}
             >
               <CheckCheck className="w-4 h-4" />
               Complete All

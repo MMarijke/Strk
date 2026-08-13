@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { format } from "date-fns";
-import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2 } from "lucide-react";
+import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn, HABIT_COLORS } from "@/lib/utils";
@@ -29,7 +29,6 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
   const [showEditReminder, setShowEditReminder] = useState(false);
   const [showFreezeModal, setShowFreezeModal] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const [actionsVisible, setActionsVisible] = useState(false);
 
   const today = format(new Date(), "yyyy-MM-dd");
@@ -55,12 +54,9 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <button
-                  onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-                  className="font-semibold text-[15px] text-foreground hover:text-primary transition-colors text-left break-words"
-                >
+                <p className="font-semibold text-[15px] text-foreground text-left break-words">
                   {habit.name}
-                </button>
+                </p>
                 {habit.reminder_time && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowEditReminder(true); }}
@@ -107,6 +103,21 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* Always-visible affordance that Edit/Completions/Report
+                  actions exist — the three buttons below stay hidden at
+                  rest so they don't compete with the check button, but
+                  without this there was previously no visible hint that
+                  tapping the card revealed anything at all. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground/60 hover:text-foreground shrink-0"
+                onClick={(e) => { e.stopPropagation(); setActionsVisible((v) => !v); }}
+                title="More actions"
+                aria-label="More actions"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </Button>
               {/* Secondary action buttons — visible when card is tapped */}
               <Button
                 variant="ghost"

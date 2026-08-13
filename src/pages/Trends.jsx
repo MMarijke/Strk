@@ -16,6 +16,13 @@ import { useSubscription } from "@/hooks/useSubscription";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
 import { HABIT_COLORS as STROKE_COLORS } from "@/lib/utils";
 
+// STROKE_COLORS has 8 entries; the 9th+ uncustomized habit reuses one of
+// them via i % STROKE_COLORS.length, which makes two lines identical and
+// indistinguishable in the chart. Habits past the first full cycle get a
+// dash pattern layered on top of the repeated color so they stay visually
+// distinct instead of overlapping.
+const DASH_PATTERNS = [undefined, "6 3", "2 3", "1 4"];
+
 function buildWeeklyData(habits, numWeeks = 12) {
   const today = new Date();
   const weeks = Array.from({ length: numWeeks }, (_, i) => {
@@ -37,7 +44,7 @@ function buildWeeklyData(habits, numWeeks = 12) {
 
 export default function Trends() {
   const { user } = useAuth();
-  const { isPro } = useSubscription();
+  const { isPro, isLoading: subLoading } = useSubscription();
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   const { data: habits = [], isLoading, isError, refetch } = useQuery({
@@ -87,56 +94,88 @@ export default function Trends() {
             <Card className="p-5 border-0 shadow-sm">
               <h2 className="font-semibold text-sm mb-4">Weekly Completions per Habit</h2>
               <div className="relative">
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={weeklyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis
-                      dataKey="week"
-                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                      axisLine={false}
-                      tickLine={false}
-                      interval={2}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                      axisLine={false}
-                      tickLine={false}
-                      domain={[0, 7]}
-                      ticks={[0, 1, 2, 3, 4, 5, 6, 7]}
-                      width={20}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                      formatter={(val, name) => [`${val} days`, name]}
-                    />
-                    <Legend
-                      wrapperStyle={{ fontSize: "11px", paddingTop: "12px" }}
-                      iconType="circle"
-                      iconSize={8}
-                    />
-                    {habits.map((h, i) => (
-                      <Line
-                        key={h.id}
-                        type="monotone"
-                        dataKey={h.name}
-                        stroke={h.color || STROKE_COLORS[i % STROKE_COLORS.length]}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4 }}
+                {/* The SVG chart conveys nothing to a screen reader on its
+                    own (no ARIA, no text nodes); it's hidden from the
+                    accessibility tree and replaced with the sr-only table
+                    below, which carries the same weeklyData. */}
+                <div aria-hidden="true">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={weeklyData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis
+                        dataKey="week"
+                        tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval={2}
                       />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                        axisLine={false}
+                        tickLine={false}
+                        domain={[0, 7]}
+                        ticks={[0, 1, 2, 3, 4, 5, 6, 7]}
+                        width={20}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "hsl(var(--card))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                        formatter={(val, name) => [`${val} days`, name]}
+                      />
+                      <Legend
+                        wrapperStyle={{ fontSize: "11px", paddingTop: "12px" }}
+                        iconType="circle"
+                        iconSize={8}
+                      />
+                      {habits.map((h, i) => {
+                        const colorCycle = Math.floor(i / STROKE_COLORS.length);
+                        return (
+                          <Line
+                            key={h.id}
+                            type="monotone"
+                            dataKey={h.name}
+                            stroke={h.color || STROKE_COLORS[i % STROKE_COLORS.length]}
+                            strokeDasharray={!h.color ? DASH_PATTERNS[colorCycle % DASH_PATTERNS.length] : undefined}
+                            strokeWidth={2}
+                            dot={false}
+                            activeDot={{ r: 4 }}
+                          />
+                        );
+                      })}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <table className="sr-only">
+                  <caption>Weekly habit completions, last 12 weeks (days completed out of 7 per week)</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Week</th>
+                      {habits.map((h) => <th key={h.id} scope="col">{h.name}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weeklyData.map((row) => (
+                      <tr key={row.week}>
+                        <th scope="row">{row.week}</th>
+                        {habits.map((h) => <td key={h.id}>{row[h.name]} of 7 days</td>)}
+                      </tr>
                     ))}
-                  </LineChart>
-                </ResponsiveContainer>
+                  </tbody>
+                </table>
 
                 {/* Free plan only sees the most recent 4 of 12 weeks — the
-                    other 8 (oldest, leftmost) are blurred behind an upsell. */}
-                {!isPro && (
-                  <div className="absolute inset-y-0 left-0 w-2/3 flex items-center justify-center rounded-l-xl bg-background/70 backdrop-blur-md">
+                    other 8 (oldest, leftmost) are blurred behind an upsell.
+                    Starts at left-5 (20px) to clear the YAxis's own width
+                    (width={20} above) so the 0-7 scale stays readable; the
+                    width is reduced by that same 20px so the right edge —
+                    the actual free/paywalled data cutoff — doesn't move. */}
+                {!subLoading && !isPro && (
+                  <div className="absolute inset-y-0 left-5 w-[calc(66.6667%-1.25rem)] flex items-center justify-center rounded-lg bg-background/70 backdrop-blur-md">
                     <div className="text-center px-4">
                       <p className="text-xs font-semibold text-foreground mb-2">
                         Unlock full 12-week trends
