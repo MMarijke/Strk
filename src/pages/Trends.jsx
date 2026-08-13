@@ -40,7 +40,7 @@ export default function Trends() {
   const { isPro } = useSubscription();
   const [showUpgrade, setShowUpgrade] = useState(false);
 
-  const { data: habits = [], isLoading } = useQuery({
+  const { data: habits = [], isLoading, isError, refetch } = useQuery({
     queryKey: ["habits", user?.email],
     queryFn: () => user?.email
       ? Habit.filter({ created_by: user.email }, "-created_date")
@@ -70,6 +70,14 @@ export default function Trends() {
           <div className="space-y-4">
             {[1, 2].map((i) => <div key={i} className="h-48 rounded-xl bg-card animate-pulse" />)}
           </div>
+        ) : isError ? (
+          <Card className="border-0 shadow-sm p-5 border border-destructive/20">
+            <p className="text-sm font-semibold text-destructive mb-1">Couldn't load your trends</p>
+            <p className="text-xs text-muted-foreground mb-4">
+              Something went wrong fetching your habit history. Please try again.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => refetch()}>Try again</Button>
+          </Card>
         ) : habits.length === 0 ? (
           <div className="text-center py-20 text-muted-foreground">No habits yet</div>
         ) : (
