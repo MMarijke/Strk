@@ -76,6 +76,17 @@ function createEntity(table) {
       return mapRow(row);
     },
 
+    // Batched multi-row insert -- one round-trip instead of N separate
+    // .create() calls in a Promise.all. .single() (used by create()
+    // above) only accepts exactly one returned row, so this needs its own
+    // method rather than a variadic version of create().
+    async createMany(dataArray) {
+      if (!dataArray.length) return [];
+      const { data: rows, error } = await supabase.from(table).insert(dataArray).select();
+      if (error) throw error;
+      return rows.map(mapRow);
+    },
+
     async update(id, data) {
       const { data: row, error } = await supabase.from(table).update(data).eq('id', id).select().single();
       if (error) throw error;

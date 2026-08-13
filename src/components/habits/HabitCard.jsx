@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { format } from "date-fns";
 import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,14 +12,18 @@ import { calculateStreak } from "./StreakWidget";
 import EditReminderDialog from "./EditReminderDialog";
 import FreezeConfirmModal from "./FreezeConfirmModal";
 import EditHabitModal from "./EditHabitModal";
-import { getFreezeEligibleDate, getFrozenDateForHabit, getFreezesRemaining } from "@/lib/freezeService";
+import { getFreezeEligibleDate } from "@/lib/freezeService";
 
 const CATEGORY_LABELS = {
   health: "🍎 Health", fitness: "💪 Fitness", mindfulness: "🧘 Mindfulness",
   learning: "📚 Learning", productivity: "⚡ Productivity", social: "🤝 Social", other: "✨ Other",
 };
 
-export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpdateReminder, onApplyFreeze, onUpdate, onArchive, userEmail, isPro, isToggling = false }) {
+// frozenDate/freezesRemaining come from Dashboard.jsx's single
+// getFreezeMonthState() call, not fetched per-card -- every HabitCard
+// used to independently re-fetch the same one streak_freezes row via its
+// own useEffect, 2 requests per card, on every dashboard load.
+export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpdateReminder, onApplyFreeze, onUpdate, onArchive, userEmail, isPro, isToggling = false, frozenDate = null, freezesRemaining = 0 }) {
   const [showReport, setShowReport] = useState(false);
   const [showEditWeek, setShowEditWeek] = useState(false);
   const [showEditReminder, setShowEditReminder] = useState(false);
@@ -27,14 +31,6 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
   const [showEdit, setShowEdit] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [actionsVisible, setActionsVisible] = useState(false);
-  const [frozenDate, setFrozenDate] = useState(null);
-  const [freezesRemaining, setFreezesRemaining] = useState(isPro ? 999 : 0);
-
-  useEffect(() => {
-    if (!userEmail) return;
-    getFrozenDateForHabit(userEmail, habit.id).then(setFrozenDate);
-    getFreezesRemaining(userEmail, isPro).then(setFreezesRemaining);
-  }, [userEmail, habit.id, isPro]);
 
   const today = format(new Date(), "yyyy-MM-dd");
   const completions = habit.completions || [];

@@ -13,7 +13,7 @@ import HabitCard from "@/components/habits/HabitCard";
 import StatsBar from "@/components/habits/StatsBar";
 import AddHabitDialog from "@/components/habits/AddHabitDialog";
 import FreezeIndicator from "@/components/habits/FreezeIndicator";
-import { applyFreeze, getFreezesRemaining, getFrozenHabitIdsThisMonth } from "@/lib/freezeService";
+import { applyFreeze, getFreezeMonthState } from "@/lib/freezeService";
 import { isSummaryVisible, scheduleWeeklySummaryNotif } from "@/lib/weeklySummaryService";
 import ChallengeBanner from "@/components/habits/ChallengeBanner";
 import PullToRefresh from "@/components/dashboard/PullToRefresh";
@@ -36,15 +36,22 @@ export default function Dashboard() {
   const [userProfile, setUserProfile] = useState(null);
   const [showFocusModal, setShowFocusModal] = useState(false);
   const [activeSession, setActiveSession] = useState(null);
-  const [freezesRemaining, setFreezesRemaining] = useState(0);
-  const [frozenHabitIds, setFrozenHabitIds] = useState(new Set());
+  // null (not 0) while unloaded, so FreezeIndicator can distinguish "not
+  // fetched yet" from a genuine, confirmed zero and render nothing rather
+  // than flash "0 freezes" for the brief window before this resolves --
+  // null behaves identically to 0 in every `> 0`/`<= 0` comparison
+  // elsewhere, so nothing downstream needed to change for this.
+  const [freezesRemaining, setFreezesRemaining] = useState(null);
+  const [frozenHabits, setFrozenHabits] = useState({});
   const rankCheckTimeout = useRef(null);
   const queryClient = useQueryClient();
 
   const refreshFreezeState = useCallback(() => {
     if (!user?.email) return;
-    getFreezesRemaining(user.email, isPro).then(setFreezesRemaining);
-    getFrozenHabitIdsThisMonth(user.email).then(setFrozenHabitIds);
+    getFreezeMonthState(user.email, isPro).then(({ freezesRemaining: remaining, frozenHabits: frozen }) => {
+      setFreezesRemaining(remaining);
+      setFrozenHabits(frozen);
+    });
   }, [user?.email, isPro]);
 
   useEffect(() => {
@@ -274,7 +281,7 @@ export default function Dashboard() {
             <RankCard score={calculateScore(habits)} />
             {user?.email && (
               <div className="flex justify-end">
-                <FreezeIndicator userEmail={user.email} isPro={isPro} />
+                <FreezeIndicator isPro={isPro} freezesRemaining={freezesRemaining} />
               </div>
             )}
           </div>
@@ -293,7 +300,7 @@ export default function Dashboard() {
           <TodayTray
             habits={habits}
             userEmail={user.email}
-            frozenHabitIds={frozenHabitIds}
+            frozenHabitIds={new Set(Object.keys(frozenHabits))}
             isPro={isPro}
             freezesRemaining={freezesRemaining}
             onApplyFreeze={handleApplyFreeze}
@@ -395,6 +402,8 @@ export default function Dashboard() {
                       userEmail={user?.email}
                       isPro={isPro}
                       isToggling={pendingHabitIds.has(habit.id)}
+                      frozenDate={frozenHabits[habit.id] || null}
+                      freezesRemaining={freezesRemaining}
                       />
                   </motion.div>
                 ))}

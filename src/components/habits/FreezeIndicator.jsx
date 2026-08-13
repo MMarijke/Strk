@@ -1,23 +1,22 @@
-import React, { useState, useEffect } from "react";
-import { getFreezesRemaining, getNextRefreshDateStr } from "@/lib/freezeService";
+import React from "react";
+import { getNextRefreshDateStr } from "@/lib/freezeService";
 
-export default function FreezeIndicator({ userEmail, isPro = false }) {
-  const [remaining, setRemaining] = useState(null);
-
-  useEffect(() => {
-    if (!userEmail) return;
-    getFreezesRemaining(userEmail, isPro).then(setRemaining);
-  }, [userEmail, isPro]);
-
-  if (remaining === null) return null;
+// freezesRemaining comes from Dashboard.jsx's single getFreezeMonthState()
+// call, not fetched here -- this used to independently re-fetch the same
+// streak_freezes row Dashboard.jsx (and every HabitCard) already fetch.
+// null (not a number) means "not loaded yet", matching Dashboard.jsx's
+// initial state, so this renders nothing during that brief window instead
+// of flashing "0 freezes" before the real value arrives.
+export default function FreezeIndicator({ isPro = false, freezesRemaining = null }) {
+  if (freezesRemaining === null) return null;
 
   return (
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 rounded-full px-3 py-1.5">
       <span>❄️</span>
       {isPro ? (
         <span>Unlimited freezes (Pro)</span>
-      ) : remaining > 0 ? (
-        <span>{remaining} freeze{remaining !== 1 ? "s" : ""} this month</span>
+      ) : freezesRemaining > 0 ? (
+        <span>{freezesRemaining} freeze{freezesRemaining !== 1 ? "s" : ""} this month</span>
       ) : (
         <span>0 freezes, resets {getNextRefreshDateStr()}</span>
       )}

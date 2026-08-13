@@ -95,7 +95,12 @@ export default function Social() {
     Habit.filter({ created_by: user.email }, "-created_date") :
     [],
     enabled: !!user?.email,
-    staleTime: 2 * 60 * 1000
+    // Matches Dashboard.jsx's staleTime on this same query key -- was
+    // 2min here, unset (defaulting to 0) on GroupDashboard.jsx's copy of
+    // this same query, so navigating Dashboard -> Social -> into a group
+    // triggered a background refetch of the full habits list at each
+    // step even when the data was already fresh.
+    staleTime: 5 * 60 * 1000
   });
 
   const { data: profiles = [] } = useQuery({

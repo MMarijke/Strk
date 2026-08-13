@@ -115,6 +115,9 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
       ? Habit.filter({ created_by: userEmail }, "-created_date")
       : [],
     enabled: !!userEmail,
+    // Matches Dashboard.jsx/Social.jsx's staleTime on this same query key
+    // -- see Social.jsx's comment on its own habits query for why.
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: challenges = [] } = useQuery({
@@ -137,23 +140,24 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
       queryClient.invalidateQueries({ queryKey: ["group-challenges"] });
       queryClient.invalidateQueries({ queryKey: ["challenge-notifications"] });
 
-      // Fire a ChallengeNotification for every member except the admin who started it
+      // Fire a ChallengeNotification for every member except the admin who
+      // started it -- one batched insert instead of N separate .create()
+      // calls, since these are naturally one write (same challenge, same
+      // starter, only recipient_email varies per row).
       const otherMembers = (group.member_emails || []).filter((e) => e !== userEmail);
       const adminName = getDisplayName(userEmail, profiles) || userFullName || userEmail.split("@")[0];
-      await Promise.all(
-        otherMembers.map((email) =>
-          ChallengeNotification.create({
-            challenge_id: newChallenge.id,
-            group_id: group.id,
-            group_name: group.name,
-            habit_name: newChallenge.habit_name,
-            duration_days: vars.duration_days,
-            started_by_email: userEmail,
-            started_by_name: adminName,
-            recipient_email: email,
-            dismissed: false,
-          })
-        )
+      await ChallengeNotification.createMany(
+        otherMembers.map((email) => ({
+          challenge_id: newChallenge.id,
+          group_id: group.id,
+          group_name: group.name,
+          habit_name: newChallenge.habit_name,
+          duration_days: vars.duration_days,
+          started_by_email: userEmail,
+          started_by_name: adminName,
+          recipient_email: email,
+          dismissed: false,
+        }))
       );
 
       // Show a 5s toast for the admin with details and a "View Challenge" action
