@@ -87,51 +87,75 @@ export default function Trends() {
             <Card className="p-5 border-0 shadow-sm">
               <h2 className="font-semibold text-sm mb-4">Weekly Completions per Habit</h2>
               <div className="relative">
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={weeklyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis
-                      dataKey="week"
-                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                      axisLine={false}
-                      tickLine={false}
-                      interval={2}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                      axisLine={false}
-                      tickLine={false}
-                      domain={[0, 7]}
-                      ticks={[0, 1, 2, 3, 4, 5, 6, 7]}
-                      width={20}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                      formatter={(val, name) => [`${val} days`, name]}
-                    />
-                    <Legend
-                      wrapperStyle={{ fontSize: "11px", paddingTop: "12px" }}
-                      iconType="circle"
-                      iconSize={8}
-                    />
-                    {habits.map((h, i) => (
-                      <Line
-                        key={h.id}
-                        type="monotone"
-                        dataKey={h.name}
-                        stroke={h.color || STROKE_COLORS[i % STROKE_COLORS.length]}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4 }}
+                {/* The SVG chart conveys nothing to a screen reader on its
+                    own (no ARIA, no text nodes); it's hidden from the
+                    accessibility tree and replaced with the sr-only table
+                    below, which carries the same weeklyData. */}
+                <div aria-hidden="true">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={weeklyData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis
+                        dataKey="week"
+                        tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval={2}
                       />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                        axisLine={false}
+                        tickLine={false}
+                        domain={[0, 7]}
+                        ticks={[0, 1, 2, 3, 4, 5, 6, 7]}
+                        width={20}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "hsl(var(--card))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                        formatter={(val, name) => [`${val} days`, name]}
+                      />
+                      <Legend
+                        wrapperStyle={{ fontSize: "11px", paddingTop: "12px" }}
+                        iconType="circle"
+                        iconSize={8}
+                      />
+                      {habits.map((h, i) => (
+                        <Line
+                          key={h.id}
+                          type="monotone"
+                          dataKey={h.name}
+                          stroke={h.color || STROKE_COLORS[i % STROKE_COLORS.length]}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <table className="sr-only">
+                  <caption>Weekly habit completions, last 12 weeks (days completed out of 7 per week)</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Week</th>
+                      {habits.map((h) => <th key={h.id} scope="col">{h.name}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weeklyData.map((row) => (
+                      <tr key={row.week}>
+                        <th scope="row">{row.week}</th>
+                        {habits.map((h) => <td key={h.id}>{row[h.name]} of 7 days</td>)}
+                      </tr>
                     ))}
-                  </LineChart>
-                </ResponsiveContainer>
+                  </tbody>
+                </table>
 
                 {/* Free plan only sees the most recent 4 of 12 weeks — the
                     other 8 (oldest, leftmost) are blurred behind an upsell.
