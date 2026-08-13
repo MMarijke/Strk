@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GroupChallenge, Group } from "@/api/entities";
-import { format, parseISO, differenceInDays, isAfter } from "date-fns";
+import { supabase } from "@/api/supabaseClient";
+import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter } from "date-fns";
 import { Trophy, Flame } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getChallengeStats } from "@/components/groups/ChallengeLeaderboard";
@@ -60,17 +61,66 @@ export default function ChallengeBanner({ userEmail, habits }) {
       (c.member_emails || []).includes(userEmail);
   });
 
+  // challenge/elapsedDates/the RPC query below are all computed
+  // unconditionally, ahead of the `if (!activeChallenges.length) return
+  // null` below -- Hooks must be called in the same order on every
+  // render, so the useQuery call can't move after that early return;
+  // instead it's always called, just disabled (enabled: false) when
+  // there's no active challenge.
+  const challenge = activeChallenges[0] || null;
+  const startDate = challenge ? parseISO(challenge.start_date) : null;
+  const endDate = challenge ? parseISO(challenge.end_date) : null;
+
+  // Mirrors ChallengeLeaderboard.jsx's own elapsedDates computation --
+  // getChallengeStats (aka getStatsForMember) requires this instead of
+  // the userEmail this call site used to pass, which the function never
+  // actually read.
+  const effectiveEnd = challenge && isAfter(today, endDate) ? endDate : today;
+  const elapsedDayCount = challenge ? Math.max(differenceInDays(effectiveEnd, startDate) + 1, 0) : 0;
+  const allDays = challenge
+    ? eachDayOfInterval({ start: startDate, end: endDate }).map((d) => format(d, "yyyy-MM-dd"))
+    : [];
+  const elapsedDates = allDays.slice(0, elapsedDayCount);
+  const todayStr = format(today, "yyyy-MM-dd");
+
+  const members = challenge?.member_emails || [];
+  const otherMembers = members.filter((e) => e !== userEmail);
+
+  // get_challenge_member_progress reads every OTHER member's habits
+  // server-side (bypassing habits_select_own's owner-only RLS the same
+  // way join_group/send_reaction already do) -- a plain client fetch can
+  // never see another user's habits row at all. "me" stays computed
+  // locally below, from the live habits prop. Same queryKey shape as
+  // ChallengeLeaderboard.jsx's identical call, so the two share a cache
+  // entry (and one network request) when the same challenge is open in
+  // both places on the same day.
+  const { data: memberProgress = [] } = useQuery({
+    queryKey: ["challenge-progress", challenge?.id, elapsedDates.length, todayStr],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_challenge_member_progress", {
+        p_challenge_id: challenge.id,
+        p_elapsed_dates: elapsedDates,
+        p_today: todayStr,
+      });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!challenge && otherMembers.length > 0,
+    staleTime: 30_000,
+  });
+
   if (!activeChallenges.length) return null;
 
-  const challenge = activeChallenges[0];
-  const endDate = parseISO(challenge.end_date);
   const daysRemaining = differenceInDays(endDate, today) + 1;
+  const myStats = getChallengeStats(challenge, habits, elapsedDates);
 
-  const myStats = getChallengeStats(challenge, habits, userEmail);
-  const members = challenge.member_emails || [];
+  const progressByEmail = new Map(memberProgress.map((row) => [row.email, row]));
   const rows = members.map((email) => {
     if (email === userEmail) return { email, pct: myStats.pct, streak: myStats.streak };
-    return { email, pct: 0, streak: 0 };
+    const row = progressByEmail.get(email);
+    if (!row || row.no_matching_habit) return { email, pct: 0, streak: 0 };
+    const pct = elapsedDates.length > 0 ? Math.round((row.completed_days / elapsedDates.length) * 100) : 0;
+    return { email, pct, streak: row.streak };
   }).sort((a, b) => b.pct - a.pct || b.streak - a.streak);
   const myRank = rows.findIndex((r) => r.email === userEmail) + 1;
 
