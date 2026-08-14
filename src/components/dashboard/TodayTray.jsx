@@ -39,6 +39,7 @@ export default function TodayTray({
   onApplyFreeze,
   onOpenSession,
   onFocusInviteJoined,
+  onReminderClick,
   showSummary,
   onDismissSummary,
 }) {
@@ -112,7 +113,7 @@ export default function TodayTray({
       )}
 
       <div className={cn(!isVisible("reminders") && "hidden")}>
-        <SmartReminders habits={habits} onActiveChange={onRemindersActiveChange} />
+        <SmartReminders habits={habits} onActiveChange={onRemindersActiveChange} onReminderClick={onReminderClick} />
       </div>
 
       {showSummary && (

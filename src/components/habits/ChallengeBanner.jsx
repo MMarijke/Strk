@@ -139,7 +139,7 @@ function ChallengeCard({ challenge, habits, userEmail, today, memberProgress }) 
   const myRank = rows.findIndex((r) => r.email === userEmail) + 1;
 
   return (
-    <Link to="/Social">
+    <Link to="/Social" state={{ selectGroup: challenge.group_id }}>
       <div className="rounded-xl bg-gradient-to-r from-accent/10 to-primary/10 border border-accent/20 px-4 py-3 flex items-center gap-3 hover:shadow-md transition-shadow cursor-pointer">
         <div className="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center shrink-0">
           <Trophy className="w-4 h-4 text-accent" />

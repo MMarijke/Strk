@@ -37,7 +37,7 @@ export default function ChallengeStartBanner({ userEmail, onActiveChange }) {
   const notif = notifications[0];
 
   return (
-    <Link to="/Social" className="block mb-4">
+    <Link to="/Social" state={{ selectGroup: notif.group_id }} className="block mb-4">
       <div className="rounded-xl bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20 px-4 py-3 flex items-center gap-3 hover:shadow-md transition-shadow">
         <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
           <Trophy className="w-4 h-4 text-primary" />

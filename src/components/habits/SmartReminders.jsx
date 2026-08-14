@@ -25,6 +25,7 @@ function buildReminders(habits) {
       reminders.push({
         id: `streak-${habit.id}`,
         type: "streak",
+        habitId: habit.id,
         habitName: habit.name,
         color: habit.color,
         message: `${streak}-day streak at risk! Complete "${habit.name}" today.`,
@@ -49,6 +50,7 @@ function buildReminders(habits) {
         reminders.push({
           id: `missed-${habit.id}`,
           type: "missed",
+          habitId: habit.id,
           habitName: habit.name,
           color: habit.color,
           message: `You missed "${habit.name}" yesterday. Get back on track!`,
@@ -70,6 +72,7 @@ function buildReminders(habits) {
         reminders.push({
           id: `goal-${habit.id}`,
           type: "goal",
+          habitId: habit.id,
           habitName: habit.name,
           color: habit.color,
           message: `Need ${needed} more day${needed > 1 ? "s" : ""} this week to hit your "${habit.name}" goal.`,
@@ -91,7 +94,7 @@ const PRIORITY_STYLES = {
   low:    "border-l-4 border-muted-foreground/30 bg-muted/50",
 };
 
-export default function SmartReminders({ habits, onActiveChange }) {
+export default function SmartReminders({ habits, onActiveChange, onReminderClick }) {
   const [dismissed, setDismissed] = useState(new Set());
   const [collapsed, setCollapsed] = useState(false);
 
@@ -137,8 +140,12 @@ export default function SmartReminders({ habits, onActiveChange }) {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onReminderClick?.(r.habitId)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onReminderClick?.(r.habitId); }}
                   className={cn(
-                    "flex items-start gap-3 rounded-xl p-3 pr-2",
+                    "flex items-start gap-3 rounded-xl p-3 pr-2 cursor-pointer",
                     PRIORITY_STYLES[r.priority]
                   )}
                   style={{ borderColor: r.priority === "medium" ? r.color : undefined }}
@@ -154,7 +161,7 @@ export default function SmartReminders({ habits, onActiveChange }) {
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
-                    onClick={() => setDismissed((prev) => new Set([...prev, r.id]))}
+                    onClick={(e) => { e.stopPropagation(); setDismissed((prev) => new Set([...prev, r.id])); }}
                   >
                     <X className="w-3 h-3" />
                   </Button>

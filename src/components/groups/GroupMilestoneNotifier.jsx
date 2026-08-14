@@ -30,10 +30,15 @@ export default function GroupMilestoneNotifier({ groups, habits, userEmail }) {
           // Notify for each group the user is in
           myGroups.forEach((group) => {
             const name = userEmail.split("@")[0];
-            new Notification(`${name} just hit a ${milestone}-day streak on ${habit.name} 🔥`, {
+            const notification = new Notification(`${name} just hit a ${milestone}-day streak on ${habit.name} 🔥`, {
               body: `Amazing work in ${group.name}! Keep it going!`,
               icon: "/favicon.ico",
             });
+            // Minimal, deliberate scope call: just refocus the tab. Not
+            // deep-linking into the specific group the way the in-app
+            // challenge notifications now do -- worth revisiting with the
+            // same location.state hand-off pattern if this turns out to matter.
+            notification.onclick = () => window.focus();
           });
         }
       });
