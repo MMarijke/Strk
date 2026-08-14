@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import confetti from "canvas-confetti";
 import { Crown, Medal, RotateCcw, List, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,18 @@ export default function ChallengeCompleteScreen({ challenge, rows, groupCompleti
       <div className="rounded-2xl bg-gradient-to-br from-yellow-400/20 via-accent/15 to-primary/15 border border-yellow-400/30 p-6 text-center space-y-3">
         <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Challenge Complete 🎉</p>
 
-        <div className="text-6xl animate-bounce">🏆</div>
+        {/* One-shot authored entrance for this screen's single celebratory
+            moment -- replaces the infinite Tailwind bounce keyframe this
+            emoji used to loop on, which read as dated next to the rest
+            of this hero's polish. */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.5, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="text-6xl"
+        >
+          🏆
+        </motion.div>
 
         {/* Winner avatar */}
         <div className="flex flex-col items-center gap-1">
