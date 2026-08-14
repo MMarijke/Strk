@@ -43,10 +43,12 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
 
   return (
     <>
-      <Card
-        className="group relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 bg-card cursor-pointer"
-        onClick={() => setActionsVisible((v) => !v)}
-      >
+      {/* No longer toggles actionsVisible on tap -- now that the kebab
+          button below is a real, discoverable affordance for that, a
+          whole-card tap target was a second, overlapping way to trigger
+          the same thing, which is exactly the "which tap zone does what"
+          ambiguity flagged during polish. */}
+      <Card className="group relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 bg-card">
         <div className="absolute top-0 left-0 w-1 h-full rounded-l-lg" style={{ backgroundColor: color }} />
 
         <div className="p-5 pl-6">
@@ -127,6 +129,7 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
                 onClick={(e) => { e.stopPropagation(); setActionsVisible((v) => !v); }}
                 title="More actions"
                 aria-label="More actions"
+                aria-expanded={actionsVisible}
               >
                 <MoreVertical className="w-4 h-4" />
               </Button>

@@ -183,7 +183,7 @@ export default function Dashboard() {
       updateMutation.mutate({ id: h.id, data: { completions: [...(h.completions || []), today] } });
     });
 
-    toast(
+    const toastId = toast(
       <div className="flex items-center justify-between gap-3 w-full">
         <p className="text-sm text-foreground">
           Completed {toComplete.length} habit{toComplete.length !== 1 ? "s" : ""} for today
@@ -194,6 +194,7 @@ export default function Dashboard() {
             toComplete.forEach((h) => {
               updateMutation.mutate({ id: h.id, data: { completions: h.completions || [] } });
             });
+            toast.dismiss(toastId);
           }}
         >
           Undo
