@@ -341,6 +341,7 @@ export default function Social() {
             {activeGroup ?
             <GroupDashboard
               group={activeGroup}
+              userId={user?.id}
               userEmail={user?.email}
               userFullName={user?.full_name}
               profiles={profiles}
@@ -388,7 +389,7 @@ export default function Social() {
                         <p className="font-semibold text-sm">{group.name}</p>
                         <p className="text-xs text-muted-foreground">
                           {(group.member_emails || []).length} member{(group.member_emails || []).length !== 1 ? "s" : ""}
-                          {group.created_by === user?.email && " · Admin"}
+                          {group.created_by_id === user?.id && " · Admin"}
                         </p>
                         {group.description &&
                     <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{group.description}</p>

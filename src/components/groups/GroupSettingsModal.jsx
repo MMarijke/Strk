@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Trash2, RefreshCw, UserMinus, Settings, Info } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { getDisplayName } from "@/lib/displayName";
+import { toast } from "sonner";
 
 function generateInviteCode() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -42,6 +43,9 @@ export default function GroupSettingsModal({
     setRenaming(true);
     try {
       await onUpdate({ name: newName.trim() });
+    } catch (error) {
+      console.error("Failed to rename group:", error);
+      toast.error("Couldn't rename the group. Please try again.", { duration: 3000 });
     } finally {
       setRenaming(false);
     }
@@ -53,6 +57,9 @@ export default function GroupSettingsModal({
     try {
       await onUpdate({ invite_code: generateInviteCode() });
       setConfirmRegenerate(false);
+    } catch (error) {
+      console.error("Failed to regenerate invite link:", error);
+      toast.error("Couldn't regenerate the invite link. Please try again.", { duration: 3000 });
     } finally {
       setRegenerating(false);
     }
@@ -64,6 +71,9 @@ export default function GroupSettingsModal({
     try {
       await onRemoveMember(email);
       setConfirmRemove(null);
+    } catch (error) {
+      console.error("Failed to remove member:", error);
+      toast.error("Couldn't remove that member. Please try again.", { duration: 3000 });
     } finally {
       setRemovingEmail(null);
     }
@@ -75,6 +85,9 @@ export default function GroupSettingsModal({
     try {
       await onDelete();
       onOpenChange(false);
+    } catch (error) {
+      console.error("Failed to delete group:", error);
+      toast.error("Couldn't delete the group. Please try again.", { duration: 3000 });
     } finally {
       setDeleting(false);
     }
