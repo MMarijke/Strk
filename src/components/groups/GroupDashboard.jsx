@@ -363,7 +363,14 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
 
       {/* Leaderboard */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Leaderboard</p>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Leaderboard</p>
+        {/* Same formula, same caption, as the global Leaderboard tab in
+            Social.jsx -- "pts" without this was one of three differently
+            -defined "leaderboard" scores in the app sharing identical
+            crown/medal chrome, with no way to tell them apart. */}
+        <p className="text-[11px] text-muted-foreground mb-3">
+          Score = Best Streak × 2 + Consistency %
+        </p>
         {rows.map((row, i) => (
           <div key={row.email} className={cn(
             "flex items-center gap-3 p-2 rounded-xl",

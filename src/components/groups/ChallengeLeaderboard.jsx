@@ -200,7 +200,7 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
 
       {/* Leaderboard */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             {challenge.habit_name} · Live Rankings
           </p>
@@ -208,6 +208,14 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
             <span className="text-[10px] text-muted-foreground animate-pulse">Updating…</span>
           )}
         </div>
+        {/* This ranks by % of challenge days completed, not the
+            Best-Streak×2+Consistency "points" formula the global and
+            group leaderboards use -- called out explicitly so the same
+            crown/medal chrome doesn't read as the same score everywhere
+            it appears. */}
+        <p className="text-[11px] text-muted-foreground mb-3">
+          Ranked by % of challenge days completed
+        </p>
 
         {isError && (
           <div className="flex items-center justify-between gap-2 mb-3 px-3 py-2 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs">

@@ -299,7 +299,14 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5 rounded-full px-3" onClick={() => setShowFocusModal(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 rounded-full px-3"
+              onClick={() => setShowFocusModal(true)}
+              aria-label="Start focus session"
+              title="Start focus session"
+            >
               <Timer className="w-4 h-4" />
             </Button>
             <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 rounded-full px-4">
