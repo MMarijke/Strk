@@ -4,6 +4,7 @@
  */
 import { StreakFreeze } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
+import { format } from "date-fns";
 
 export const FREE_FREEZES_PER_MONTH = 2;
 
@@ -123,8 +124,12 @@ export function getFreezeEligibleDate(habit) {
 
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10);
-  const todayStr = today.toISOString().slice(0, 10);
+  // format() (local time) not toISOString() (UTC) -- for any timezone
+  // ahead of UTC, local midnight already falls on the previous UTC
+  // calendar day, so a UTC-based string here silently ran a day behind
+  // the real local date, delaying freeze eligibility by an extra day.
+  const yesterdayStr = format(yesterday, "yyyy-MM-dd");
+  const todayStr = format(today, "yyyy-MM-dd");
 
   // Already completed yesterday or today — streak not broken
   if (completions.includes(yesterdayStr) || completions.includes(todayStr)) return null;
@@ -137,7 +142,7 @@ export function getFreezeEligibleDate(habit) {
   const mostRecent = sorted[0];
   const dayBeforeYesterday = new Date(yesterday);
   dayBeforeYesterday.setDate(yesterday.getDate() - 1);
-  const dayBeforeYesterdayStr = dayBeforeYesterday.toISOString().slice(0, 10);
+  const dayBeforeYesterdayStr = format(dayBeforeYesterday, "yyyy-MM-dd");
 
   return mostRecent === dayBeforeYesterdayStr ? yesterdayStr : null;
 }
