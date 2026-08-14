@@ -127,3 +127,21 @@ export const ChallengeNotification = {
     return () => supabase.removeChannel(channel);
   },
 };
+
+// Same shape as ChallengeNotification -- see 20260814090001_focus_session_notifications.sql.
+export const FocusSessionNotification = {
+  ...createEntity('focus_session_notifications'),
+
+  subscribe(callback) {
+    const channel = supabase
+      .channel('focus_session_notifications_inserts')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'focus_session_notifications' },
+        (payload) => callback({ type: 'create', data: mapRow(payload.new), id: payload.new.id })
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  },
+};

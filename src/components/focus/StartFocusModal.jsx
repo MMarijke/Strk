@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Group, FocusSession } from "@/api/entities";
+import { Group, FocusSession, FocusSessionNotification } from "@/api/entities";
 import { addMinutes, formatISO } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import { trackEvent } from "@/lib/analytics";
@@ -48,6 +48,30 @@ export default function StartFocusModal({ open, onOpenChange, userEmail, userNam
     setLoading(false);
     onOpenChange(false);
     onSessionCreated(session);
+
+    // Fire-and-forget: the host must not wait on this to land in their own
+    // lobby. Only fires when a group was actually picked (groupId truthy) --
+    // no group selected means no one gets notified, same as today.
+    if (groupId) {
+      const group = groups.find((g) => g.id === groupId);
+      const otherMembers = (group?.member_emails || []).filter((e) => e !== userEmail);
+      if (otherMembers.length > 0) {
+        FocusSessionNotification.createMany(
+          otherMembers.map((email) => ({
+            session_id: session.id,
+            session_code: session.session_code,
+            group_id: groupId,
+            group_name: group.name,
+            host_email: userEmail,
+            host_name: userName,
+            duration_minutes: duration,
+            lobby_ends_at: session.lobby_ends_at,
+            recipient_email: email,
+            dismissed: false,
+          }))
+        ).catch((err) => console.warn("Failed to notify group of focus session:", err));
+      }
+    }
   };
 
   return (

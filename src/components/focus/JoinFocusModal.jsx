@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { supabase } from "@/api/supabaseClient";
+import { joinFocusSession } from "@/lib/focusSessionJoin";
+import JoinInProgressConfirm from "./JoinInProgressConfirm";
 
 export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessionJoined }) {
   const [code, setCode] = useState("");
@@ -12,12 +13,6 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
   // requirement 5: don't silently join with a different remaining time
   // than everyone else, ask first.
   const [inProgressConfirm, setInProgressConfirm] = useState(false);
-
-  const callJoin = (confirmActive) =>
-    supabase.rpc("join_focus_session", {
-      p_session_code: code.trim().toUpperCase(),
-      p_confirm_active: confirmActive,
-    });
 
   const reset = () => {
     setLoading(false);
@@ -31,11 +26,11 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
     setLoading(true);
     setError("");
 
-    const { data, error: rpcError } = await callJoin(false);
+    const result = await joinFocusSession(code);
+    setLoading(false);
 
-    if (rpcError) {
-      setLoading(false);
-      if (rpcError.message?.includes("SESSION_IN_PROGRESS")) {
+    if (!result.ok) {
+      if (result.reason === "IN_PROGRESS") {
         setInProgressConfirm(true);
         return;
       }
@@ -44,17 +39,17 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
     }
 
     onOpenChange(false);
-    onSessionJoined(data);
+    onSessionJoined(result.session);
     reset();
   };
 
   const handleJoinAnyway = async () => {
     setLoading(true);
-    const { data, error: rpcError } = await callJoin(true);
+    const result = await joinFocusSession(code, true);
     setLoading(false);
-    if (rpcError) { setError("Failed to join session"); return; }
+    if (!result.ok) { setError("Failed to join session"); return; }
     onOpenChange(false);
-    onSessionJoined(data);
+    onSessionJoined(result.session);
     reset();
   };
 
@@ -66,20 +61,7 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
         </DialogHeader>
 
         {inProgressConfirm ? (
-          <div className="space-y-4 pt-1">
-            <p className="text-sm text-muted-foreground">
-              This session is already in progress, so you'll join with less time remaining than
-              everyone else. Join anyway?
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 rounded-xl h-11" onClick={reset}>
-                Cancel
-              </Button>
-              <Button className="flex-1 rounded-xl h-11 font-semibold" onClick={handleJoinAnyway} disabled={loading}>
-                {loading ? "Joining…" : "Join Anyway"}
-              </Button>
-            </div>
-          </div>
+          <JoinInProgressConfirm onCancel={reset} onConfirm={handleJoinAnyway} loading={loading} />
         ) : (
           <div className="space-y-4 pt-1">
             <Input
