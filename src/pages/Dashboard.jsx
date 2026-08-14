@@ -46,6 +46,7 @@ export default function Dashboard() {
   // elsewhere, so nothing downstream needed to change for this.
   const [freezesRemaining, setFreezesRemaining] = useState(null);
   const [frozenHabits, setFrozenHabits] = useState({});
+  const [highlightedHabitId, setHighlightedHabitId] = useState(null);
   const rankCheckTimeout = useRef(null);
   const queryClient = useQueryClient();
 
@@ -244,6 +245,15 @@ export default function Dashboard() {
     await queryClient.invalidateQueries({ queryKey: ["habits", user?.email] });
   }, [queryClient, user?.email]);
 
+  // SmartReminders' rows were previously a dead click -- each reminder is
+  // tied to a specific habit, so tapping one scrolls to and briefly
+  // highlights that habit's card instead of doing nothing.
+  const handleReminderClick = (habitId) => {
+    setHighlightedHabitId(habitId);
+    document.getElementById(`habit-${habitId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => setHighlightedHabitId(null), 1600);
+  };
+
   // Start reminder scheduler
   useEffect(() => {
     startReminderScheduler(
@@ -365,6 +375,7 @@ export default function Dashboard() {
             onApplyFreeze={handleApplyFreeze}
             onOpenSession={(s) => setActiveSession(s)}
             onFocusInviteJoined={(s) => setActiveSession(s)}
+            onReminderClick={handleReminderClick}
             showSummary={showSummary && habits.length > 0}
             onDismissSummary={() => setShowSummary(false)}
           />
@@ -438,6 +449,7 @@ export default function Dashboard() {
                 {habits.map((habit) => (
                   <motion.div
                     key={habit.id}
+                    id={`habit-${habit.id}`}
                     layout
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -446,6 +458,7 @@ export default function Dashboard() {
                   >
                     <HabitCard
                       habit={habit}
+                      isHighlighted={highlightedHabitId === habit.id}
                       onToggleToday={handleToggleToday}
                       onDelete={(id) => deleteMutation.mutate(id)}
                       onUpdateCompletions={handleUpdateCompletions}

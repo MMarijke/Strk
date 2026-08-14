@@ -19,7 +19,7 @@ export default function ReactionsInbox({ reactions }) {
         <div
           key={r.id}
           className={cn(
-            "flex items-center gap-3 p-3 rounded-xl transition-colors",
+            "flex items-center gap-3 p-3 rounded-xl transition-colors cursor-default",
             !r.read ? "bg-primary/5 ring-1 ring-primary/10" : "bg-muted/40"
           )}
         >

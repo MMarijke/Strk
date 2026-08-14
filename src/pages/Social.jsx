@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
@@ -71,6 +72,8 @@ export default function Social() {
   const { user } = useAuth();
   const { isPro } = useSubscription();
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // Auto-join focus session from URL param
   useEffect(() => {
@@ -88,6 +91,18 @@ export default function Social() {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [activeSession, setActiveSession] = useState(null);
   const [activeTab, setActiveTab] = useState("leaderboard");
+
+  // ChallengeStartBanner/ChallengeBanner (Dashboard.jsx) deep-link here via
+  // router state instead of landing generically on whatever tab happened
+  // to be active -- same location.state hand-off pattern as
+  // Dashboard.jsx's joinFocusSession consumer.
+  useEffect(() => {
+    if (location.state?.selectGroup) {
+      setSelectedGroup(location.state.selectGroup);
+      setActiveTab("groups");
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   const { data: habits = [] } = useQuery({
     queryKey: ["habits", user?.email],

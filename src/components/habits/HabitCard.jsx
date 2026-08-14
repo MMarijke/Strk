@@ -23,7 +23,7 @@ const CATEGORY_LABELS = {
 // getFreezeMonthState() call, not fetched per-card -- every HabitCard
 // used to independently re-fetch the same one streak_freezes row via its
 // own useEffect, 2 requests per card, on every dashboard load.
-export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpdateReminder, onApplyFreeze, onUpdate, onArchive, userEmail, isPro, isToggling = false, frozenDate = null, freezesRemaining = 0 }) {
+export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpdateReminder, onApplyFreeze, onUpdate, onArchive, userEmail, isPro, isToggling = false, frozenDate = null, freezesRemaining = 0, isHighlighted = false }) {
   const [showReport, setShowReport] = useState(false);
   const [showEditWeek, setShowEditWeek] = useState(false);
   const [showEditReminder, setShowEditReminder] = useState(false);
@@ -44,7 +44,10 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
   return (
     <>
       <Card
-        className="group relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 bg-card cursor-pointer"
+        className={cn(
+          "group relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 bg-card cursor-pointer",
+          isHighlighted && "ring-2 ring-primary ring-offset-2 ring-offset-background"
+        )}
         onClick={() => setActionsVisible((v) => !v)}
       >
         <div className="absolute top-0 left-0 w-1 h-full rounded-l-lg" style={{ backgroundColor: color }} />
