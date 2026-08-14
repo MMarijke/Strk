@@ -69,7 +69,7 @@ function getInviteLink(code) {
   return `${window.location.origin}?join=${code}`;
 }
 
-export default function GroupDashboard({ group, userEmail, userFullName, profiles = [], onBack, onUpdate, onDelete, onRemoveMember }) {
+export default function GroupDashboard({ group, userId, userEmail, userFullName, profiles = [], onBack, onUpdate, onDelete, onRemoveMember }) {
   const [showSettings, setShowSettings] = useState(false);
   const [copied, setCopied] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null);
@@ -81,7 +81,12 @@ export default function GroupDashboard({ group, userEmail, userFullName, profile
 
   const queryClient = useQueryClient();
   const { isPro } = useSubscription();
-  const isAdmin = group.created_by === userEmail;
+  // created_by_id (uuid, RLS-authoritative) not created_by (email) -- the
+  // latter is a denormalized display column that was backfilled with the
+  // migration-runner's own session (no end-user JWT) for every group that
+  // existed before it was added, so it's wrong for pre-migration groups
+  // and silently hides the real owner's admin controls (including Delete).
+  const isAdmin = group.created_by_id === userId;
   const memberEmails = group.member_emails || [];
 
   const todayStr = fmtDate(new Date(), "yyyy-MM-dd");
