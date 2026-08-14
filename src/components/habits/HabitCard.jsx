@@ -87,18 +87,30 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
 
               {/* Freeze prompt */}
               {canShowFreezePrompt && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowFreezeModal(true); }}
-                  className={cn(
-                    "mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors",
-                    (isPro || freezesRemaining > 0)
-                      ? "font-semibold bg-gradient-to-r from-primary/15 to-accent/15 border border-primary/25 text-primary hover:from-primary/25 hover:to-accent/25"
-                      : "font-medium bg-muted/60 text-muted-foreground/70 border border-transparent"
+                <div className="mt-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowFreezeModal(true); }}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors",
+                      (isPro || freezesRemaining > 0)
+                        ? "font-semibold bg-gradient-to-r from-primary/15 to-accent/15 border border-primary/25 text-primary hover:from-primary/25 hover:to-accent/25"
+                        : "font-medium bg-muted/60 text-muted-foreground/70 border border-transparent"
+                    )}
+                  >
+                    <span>❄️</span>
+                    {isPro ? "Freeze streak (Pro)" : freezesRemaining > 0 ? "Freeze?" : "No freezes left this month"}
+                  </button>
+                  {/* Reassurance for the one moment this card has no good
+                      news: streak broke and there's no freeze left to
+                      save it. Every other outcome (rank up, freeze
+                      applied) gets a celebratory moment elsewhere in the
+                      app -- this was previously the one silent valley. */}
+                  {!isPro && freezesRemaining <= 0 && (
+                    <p className="mt-1 text-[11px] text-muted-foreground/80 leading-snug">
+                      No freezes left, but today's a clean slate — check in to start a new streak.
+                    </p>
                   )}
-                >
-                  <span>❄️</span>
-                  {isPro ? "Freeze streak (Pro)" : freezesRemaining > 0 ? "Freeze?" : "No freezes left this month"}
-                </button>
+                </div>
               )}
             </div>
 
