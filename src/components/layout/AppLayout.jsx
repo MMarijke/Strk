@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { Reaction } from "@/api/entities";
 import BottomTabBar from "./BottomTabBar";
+import FocusInviteListener from "@/components/focus/FocusInviteListener";
 
 // Pages that show the bottom tab bar
 const TAB_PAGES = ["/Dashboard", "/Trends", "/Social", "/Settings", "/Badges"];
@@ -25,6 +26,7 @@ export default function AppLayout() {
 
   return (
     <div className="flex flex-col min-h-screen">
+      {user?.email && <FocusInviteListener userEmail={user.email} />}
       <main className={showTabs ? "pb-[calc(3.75rem+env(safe-area-inset-bottom))]" : ""}>
         <Outlet />
       </main>

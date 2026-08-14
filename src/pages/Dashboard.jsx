@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { UserProfile, Habit, Group } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
@@ -30,6 +31,8 @@ import { toast } from "sonner";
 export default function Dashboard() {
   const { user } = useAuth();
   const { isPro } = useSubscription();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [rankUpRank, setRankUpRank] = useState(null);
@@ -281,6 +284,19 @@ export default function Dashboard() {
     }
   }, [user]);
 
+  // FocusInviteListener (mounted globally in AppLayout.jsx) can only get a
+  // user from an arbitrary page (Trends/Social/Settings/...) into a live
+  // session by routing them here and handing the already-joined session off
+  // via router state -- this is the only page that renders SessionRoom for
+  // the "just joined" path. Clear the state immediately after consuming it
+  // so it doesn't re-fire on remount or browser back/forward.
+  useEffect(() => {
+    if (location.state?.joinFocusSession) {
+      setActiveSession(location.state.joinFocusSession);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state, location.pathname, navigate]);
+
   const today = format(new Date(), "yyyy-MM-dd");
 
   return (
@@ -348,6 +364,7 @@ export default function Dashboard() {
             freezesRemaining={freezesRemaining}
             onApplyFreeze={handleApplyFreeze}
             onOpenSession={(s) => setActiveSession(s)}
+            onFocusInviteJoined={(s) => setActiveSession(s)}
             showSummary={showSummary && habits.length > 0}
             onDismissSummary={() => setShowSummary(false)}
           />
