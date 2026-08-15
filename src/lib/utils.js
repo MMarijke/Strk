@@ -1,7 +1,27 @@
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { format, subDays } from "date-fns";
-import { calculateStreak } from "@/components/habits/StreakWidget";
+
+// Longest-ever run of consecutive-day completions, not just the current
+// active one -- moved here (from MilestoneBadges.jsx, which now imports it
+// back) so calculateScore below can use the same definition of "best
+// streak" the leaderboards and the server-side habits_sync_profile_stats
+// trigger already use, instead of pointing lib/utils.js at a component
+// file (MilestoneBadges.jsx itself imports cn from here, so the reverse
+// direction would be a real import cycle).
+export function getAllTimeBest(completions) {
+  if (!completions || completions.length === 0) return 0;
+  const sorted = [...completions].sort();
+  let best = 1, cur = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = new Date(sorted[i - 1] + "T00:00:00");
+    const curr = new Date(sorted[i] + "T00:00:00");
+    const diff = (curr - prev) / (1000 * 60 * 60 * 24);
+    if (diff === 1) { cur++; best = Math.max(best, cur); }
+    else if (diff > 1) cur = 1;
+  }
+  return best;
+}
 
 export function calculateScore(habits) {
   if (!habits || !habits.length) return 0;
@@ -14,8 +34,12 @@ export function calculateScore(habits) {
       return s + Math.round((last30.filter((d) => c.includes(d)).length / 30) * 100);
     }, 0) / habits.length
   );
+  // All-time-best, not current active streak -- matches the definition
+  // leaderboards (Social.jsx, GroupDashboard.jsx) and the server-synced
+  // user_profiles.best_streak column already use, so a user's own rank
+  // reads the same everywhere instead of disagreeing with itself.
   const bestStreak = Math.max(
-    ...habits.map((h) => calculateStreak(h.completions || [])), 0
+    ...habits.map((h) => getAllTimeBest(h.completions || [])), 0
   );
   return bestStreak * 2 + consistency;
 }

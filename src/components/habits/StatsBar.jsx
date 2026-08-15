@@ -20,7 +20,7 @@ export default function StatsBar({ habits }) {
   const stats = [
   { label: "Today", value: `${completedToday}/${totalHabits}`, icon: CalendarCheck, color: "text-primary" },
   { label: "Habits", value: totalHabits, icon: Target, color: "text-chart-3" },
-  { label: "Best Streak", value: longestStreak, icon: Flame, color: "text-accent" }];
+  { label: "Current Streak", value: longestStreak, icon: Flame, color: "text-accent" }];
 
 
   return (
