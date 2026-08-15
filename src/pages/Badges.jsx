@@ -6,14 +6,12 @@ import { Card } from "@/components/ui/card";
 import { Habit, Group, UserBadge, UserProfile } from "@/api/entities";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
-import { cn } from "@/lib/utils";
+import { cn, getRank, calculateScore } from "@/lib/utils";
 import { evaluateBadges, STREAK_BADGE_IDS, getStreakBadgeEarnedDate } from "@/lib/badgeDefinitions";
 import { hasFreezeEverBeenUsed } from "@/lib/freezeService";
 import BadgeCelebrationModal from "@/components/badges/BadgeCelebrationModal";
 import { motion } from "framer-motion";
-import { format, subDays } from "date-fns";
-import { getRank, calculateScore } from "@/lib/utils";
-import { calculateStreak } from "@/components/habits/StreakWidget";
+import { format } from "date-fns";
 import RankUpModal from "@/components/rank/RankUpModal";
 
 function ProgressBar({ current, total }) {
@@ -210,16 +208,9 @@ export default function Badges() {
     prevEarnedIds.current = currentEarnedIds;
   }, [habits, allMyGroups, persistedBadges]);
 
-  // Compute rank
-  const last30 = Array.from({ length: 30 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
-  const consistency = habits.length
-    ? Math.round(habits.reduce((s, h) => {
-        const c = h.completions || [];
-        return s + Math.round((last30.filter((d) => c.includes(d)).length / 30) * 100);
-      }, 0) / habits.length)
-    : 0;
-  const bestStreak = habits.length ? Math.max(...habits.map((h) => calculateStreak(h.completions || [])), 0) : 0;
-  const myScore = bestStreak * 2 + consistency;
+  // Compute rank -- calculateScore/getRank, same shared formula RankCard
+  // and the leaderboards use, instead of a separate inline copy.
+  const myScore = calculateScore(habits);
   const myRank = getRank(myScore);
   const { nextRank } = myRank;
   const progressPct = nextRank
