@@ -175,7 +175,7 @@ export default function Trends() {
                     width is reduced by that same 20px so the right edge —
                     the actual free/paywalled data cutoff — doesn't move. */}
                 {!subLoading && !isPro && (
-                  <div className="absolute inset-y-0 left-5 w-[calc(66.6667%-1.25rem)] flex items-center justify-center rounded-lg bg-background/70 backdrop-blur-md">
+                  <div className="absolute inset-y-0 left-5 w-[calc(66.6667%_-_1.25rem)] flex items-center justify-center rounded-lg bg-background/70 backdrop-blur-md">
                     <div className="text-center px-4">
                       <p className="text-xs font-semibold text-foreground mb-2">
                         Unlock full 12-week trends

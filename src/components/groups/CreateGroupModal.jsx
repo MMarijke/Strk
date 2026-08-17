@@ -85,7 +85,7 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
 
   return (
     <Dialog open={open && !paywalled} onOpenChange={handleClose}>
-      <DialogContent className="max-w-sm w-[calc(100%-2rem)] mx-auto overflow-y-auto max-h-[90vh]">
+      <DialogContent className="max-w-sm w-[calc(100%_-_2rem)] mx-auto overflow-y-auto max-h-[90vh]">
         {step === "form" ? (
           <>
             <DialogHeader>
