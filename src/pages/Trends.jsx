@@ -150,11 +150,21 @@ export default function Trends() {
                   </ResponsiveContainer>
                 </div>
 
-                {/* DIAGNOSTIC: temporarily disabled, not removed, to test
-                    whether this table is the source of the mobile
-                    page-wide zoom/horizontal-overflow bug. Restore once
-                    confirmed or ruled out -- see conversation history.
-                <table className="sr-only">
+                {/* table-fixed (table-layout: fixed) is load-bearing here,
+                    not cosmetic -- table-layout: auto (the default) sizes
+                    columns from cell content regardless of the sr-only
+                    class's own width: 1px, so this table's unwrapped
+                    "N of 7 days" cells (white-space: nowrap, also from
+                    sr-only) were computing a real multi-hundred-px content
+                    width that escaped sr-only's overflow: hidden clipping
+                    on some mobile browsers, widening the whole page.
+                    table-layout: fixed makes column sizing depend only on
+                    the table's own set width, never on cell content, which
+                    keeps it fully constrained to sr-only's 1px regardless
+                    of cell text length. Confirmed via a real-device test
+                    (see conversation history) that this was the actual
+                    cause of the mobile zoom/horizontal-overflow bug. */}
+                <table className="sr-only table-fixed">
                   <caption>Weekly habit completions, last 12 weeks (days completed out of 7 per week)</caption>
                   <thead>
                     <tr>
@@ -171,7 +181,6 @@ export default function Trends() {
                     ))}
                   </tbody>
                 </table>
-                */}
 
                 {/* Free plan only sees the most recent 4 of 12 weeks — the
                     other 8 (oldest, leftmost) are blurred behind an upsell.
