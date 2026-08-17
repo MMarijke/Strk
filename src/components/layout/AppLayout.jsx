@@ -27,7 +27,7 @@ export default function AppLayout() {
   return (
     <div className="flex flex-col min-h-screen">
       {user?.email && <FocusInviteListener userEmail={user.email} />}
-      <main className={showTabs ? "pb-[calc(3.75rem+env(safe-area-inset-bottom))]" : ""}>
+      <main className={showTabs ? "pb-[calc(3.75rem_+_env(safe-area-inset-bottom))]" : ""}>
         <Outlet />
       </main>
       {showTabs && <BottomTabBar unreadReactions={unreadReactions} />}
