@@ -150,6 +150,10 @@ export default function Trends() {
                   </ResponsiveContainer>
                 </div>
 
+                {/* DIAGNOSTIC: temporarily disabled, not removed, to test
+                    whether this table is the source of the mobile
+                    page-wide zoom/horizontal-overflow bug. Restore once
+                    confirmed or ruled out -- see conversation history.
                 <table className="sr-only">
                   <caption>Weekly habit completions, last 12 weeks (days completed out of 7 per week)</caption>
                   <thead>
@@ -167,6 +171,7 @@ export default function Trends() {
                     ))}
                   </tbody>
                 </table>
+                */}
 
                 {/* Free plan only sees the most recent 4 of 12 weeks — the
                     other 8 (oldest, leftmost) are blurred behind an upsell.
