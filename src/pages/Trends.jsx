@@ -150,37 +150,37 @@ export default function Trends() {
                   </ResponsiveContainer>
                 </div>
 
-                {/* table-fixed (table-layout: fixed) is load-bearing here,
-                    not cosmetic -- table-layout: auto (the default) sizes
-                    columns from cell content regardless of the sr-only
-                    class's own width: 1px, so this table's unwrapped
-                    "N of 7 days" cells (white-space: nowrap, also from
-                    sr-only) were computing a real multi-hundred-px content
-                    width that escaped sr-only's overflow: hidden clipping
-                    on some mobile browsers, widening the whole page.
-                    table-layout: fixed makes column sizing depend only on
-                    the table's own set width, never on cell content, which
-                    keeps it fully constrained to sr-only's 1px regardless
-                    of cell text length. Confirmed via a real-device test
-                    (see conversation history) that this was the actual
-                    cause of the mobile zoom/horizontal-overflow bug. */}
-                <table className="sr-only table-fixed">
-                  <caption>Weekly habit completions, last 12 weeks (days completed out of 7 per week)</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Week</th>
-                      {habits.map((h) => <th key={h.id} scope="col">{h.name}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
+                {/* table-layout: fixed (previous fix) only controls column
+                    sizing once the table's own box is already constrained
+                    -- it doesn't touch the separate, long-standing
+                    cross-browser inconsistency in how `overflow`/`width`
+                    apply to a <table>'s anonymous "table wrapper box" vs.
+                    its inner table box. That's a real, sometimes-engine
+                    -specific gap, not something fixable from inside the
+                    table model. Replacing the table with a plain <dl>
+                    sidesteps it entirely: a <dl> is an ordinary block box,
+                    governed by the same simple, universally-consistent
+                    overflow model every other sr-only element on this
+                    page (and site) already relies on safely. Confirmed via
+                    a real-device test that table-layout: fixed alone did
+                    not fully resolve the mobile zoom bug (see conversation
+                    history) -- this replaces that approach, not layers on
+                    top of it. Conveys the identical per-week, per-habit
+                    data the table did, just as term/description pairs
+                    instead of rows/cells. */}
+                <div className="sr-only">
+                  <p>Weekly habit completions, last 12 weeks (days completed out of 7 per week).</p>
+                  <dl>
                     {weeklyData.map((row) => (
-                      <tr key={row.week}>
-                        <th scope="row">{row.week}</th>
-                        {habits.map((h) => <td key={h.id}>{row[h.name]} of 7 days</td>)}
-                      </tr>
+                      <React.Fragment key={row.week}>
+                        <dt>{row.week}</dt>
+                        <dd>
+                          {habits.map((h) => `${h.name}: ${row[h.name]} of 7 days`).join(". ")}
+                        </dd>
+                      </React.Fragment>
                     ))}
-                  </tbody>
-                </table>
+                  </dl>
+                </div>
 
                 {/* Free plan only sees the most recent 4 of 12 weeks — the
                     other 8 (oldest, leftmost) are blurred behind an upsell.
