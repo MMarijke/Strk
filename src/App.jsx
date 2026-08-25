@@ -33,13 +33,35 @@ function ThemeProviderWithUser({ children }) {
 }
 
 const AuthenticatedApp = () => {
-  const { isAuthenticated, isLoadingAuth } = useAuth();
+  const { isAuthenticated, isLoadingAuth, sessionCheckFailed } = useAuth();
   const { onboarded, onboardStep, completeTheme, completeDisplayName } = useTheme();
 
   if (isLoadingAuth) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  // Distinct from a normal logged-out visitor -- this means the initial
+  // session check itself never completed (a hang past the timeout, or a
+  // rejected getSession() call), not that we confirmed there's no
+  // session. Surfacing that difference instead of silently falling
+  // through to the ordinary Login screen, which would look identical to
+  // "you're just not signed in" and hide that something actually broke.
+  if (sessionCheckFailed) {
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-sm text-muted-foreground max-w-xs">
+          Couldn't verify your session. Please check your connection and refresh.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded-xl bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold"
+        >
+          Refresh
+        </button>
       </div>
     );
   }
