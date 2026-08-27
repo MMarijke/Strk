@@ -1,3 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
+import { CheckCircle2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Toaster } from "@/components/ui/sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -32,14 +36,70 @@ function ThemeProviderWithUser({ children }) {
   );
 }
 
+// How long the "you're back" confirmation stays up after a late self-heal
+// (see the wasFailedRef effect below) before handing off to the next
+// screen -- long enough that a thumb already mid-motion toward the old
+// Refresh button lands on inert confirmation text instead of whatever
+// renders next.
+const RECOVERY_CONFIRM_MS = 900;
+
+// Same icon tile Login.jsx opens with (w-14 h-14 rounded-2xl bg-primary/10
+// + 🔥). Reused as-is, not reinvented, so the loading/recovery/failure
+// states that bracket Login on every app open read as one continuous,
+// intentionally-branded sequence instead of unbranded scaffolding
+// sandwiched between two branded screens. Purely decorative -- the
+// actual state is always carried by real text and roles below it, so
+// this stays out of the accessibility tree.
+function BrandMark() {
+  return (
+    <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center" aria-hidden="true">
+      <span className="text-2xl">🔥</span>
+    </div>
+  );
+}
+
 const AuthenticatedApp = () => {
-  const { isAuthenticated, isLoadingAuth, sessionCheckFailed } = useAuth();
+  const { isAuthenticated, isLoadingAuth, sessionCheckFailed, sessionCheckOffline, sessionCheckAttempts } = useAuth();
   const { onboarded, onboardStep, completeTheme, completeDisplayName } = useTheme();
+
+  // The session-check-failed screen can clear itself on its own (a late
+  // getSession()/onAuthStateChange resolution after the timeout already
+  // fired -- see AuthContext's "self-healing" comment). Swapping the
+  // whole screen out instantly the moment that happens risks a mid-tap:
+  // someone's thumb moving toward the old Refresh button can land on
+  // whatever renders in its place instead. Holding a brief inert
+  // confirmation here first closes that gap.
+  const wasFailedRef = useRef(false);
+  const [justRecovered, setJustRecovered] = useState(false);
+
+  useEffect(() => {
+    if (sessionCheckFailed) {
+      wasFailedRef.current = true;
+      return;
+    }
+    if (!wasFailedRef.current) return;
+    wasFailedRef.current = false;
+    setJustRecovered(true);
+    const timer = setTimeout(() => setJustRecovered(false), RECOVERY_CONFIRM_MS);
+    return () => clearTimeout(timer);
+  }, [sessionCheckFailed]);
 
   if (isLoadingAuth) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin"></div>
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-4" role="status">
+        <BrandMark />
+        <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" aria-hidden="true"></div>
+        <span className="sr-only">Checking your session…</span>
+      </div>
+    );
+  }
+
+  if (justRecovered) {
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center" role="status">
+        <BrandMark />
+        <CheckCircle2 className="w-8 h-8 text-emerald-600" aria-hidden="true" />
+        <p className="text-sm text-muted-foreground">You're back — continuing…</p>
       </div>
     );
   }
@@ -51,17 +111,28 @@ const AuthenticatedApp = () => {
   // through to the ordinary Login screen, which would look identical to
   // "you're just not signed in" and hide that something actually broke.
   if (sessionCheckFailed) {
+    const failureMessage = sessionCheckOffline
+      ? "You're offline. Reconnect, then tap Refresh to pick up where you left off."
+      : sessionCheckAttempts >= 2
+        ? "Still having trouble reaching our servers. Check your connection, then try again."
+        : "Couldn't verify your session. Please check your connection and refresh.";
+
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-sm text-muted-foreground max-w-xs">
-          Couldn't verify your session. Please check your connection and refresh.
+        <BrandMark />
+        <p className="text-sm text-muted-foreground max-w-xs" role="alert">
+          {failureMessage}
         </p>
-        <button
+        <Button
           onClick={() => window.location.reload()}
-          className="rounded-xl bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold"
+          size="lg"
+          className={cn(
+            "w-full max-w-xs rounded-2xl h-14 text-base font-bold transition-all duration-300",
+            "shadow-xl"
+          )}
         >
           Refresh
-        </button>
+        </Button>
       </div>
     );
   }

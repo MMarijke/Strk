@@ -12,6 +12,17 @@ const AuthContext = createContext();
 // reload. 8-10s is generous for a normal session check but short enough
 // that a real hang doesn't leave someone staring at a spinner.
 const SESSION_CHECK_TIMEOUT_MS = 9000;
+// Used instead of the above when navigator.onLine already reports false
+// at the moment the check starts -- the network layer has already told
+// us there's nothing to wait for, so there's no reason to make the user
+// sit through the full "maybe it's just slow" timeout.
+const OFFLINE_SESSION_CHECK_TIMEOUT_MS = 2000;
+// Persisted in sessionStorage, not just React state, because the only
+// recovery action the failure screen offers is a full page reload,
+// which wipes in-memory state -- without this, every reload would look
+// like a first-ever failure and the app could never tell the user this
+// is a repeat.
+const SESSION_CHECK_ATTEMPT_KEY = 'strk-session-check-attempts';
 
 // Shapes the Supabase auth user + profile row into the { id, email, full_name, role }
 // object the rest of the app already expects (Dashboard, Social, Badges, PageNotFound, etc.)
@@ -46,13 +57,51 @@ export const AuthProvider = ({ children }) => {
   // silently treating an unverifiable state as a normal logged-out
   // visitor and dropping them into Login with no explanation.
   const [sessionCheckFailed, setSessionCheckFailed] = useState(false);
+  // Captured once, at the moment a failure is recorded, from
+  // navigator.onLine -- not read live in the UI -- so the failure
+  // screen's copy describes the condition that actually caused THIS
+  // failure, not whatever the network happens to be doing by render time.
+  const [sessionCheckOffline, setSessionCheckOffline] = useState(false);
+  // See SESSION_CHECK_ATTEMPT_KEY above for why this reads sessionStorage.
+  const [sessionCheckAttempts, setSessionCheckAttempts] = useState(() => {
+    try {
+      return Number(sessionStorage.getItem(SESSION_CHECK_ATTEMPT_KEY)) || 0;
+    } catch {
+      return 0;
+    }
+  });
   // Track the last authenticated email so we can detect session switches
   const lastEmailRef = useRef(null);
+
+  const recordSessionCheckFailure = () => {
+    setSessionCheckAttempts((n) => {
+      const next = n + 1;
+      try {
+        sessionStorage.setItem(SESSION_CHECK_ATTEMPT_KEY, String(next));
+      } catch {
+        // Best-effort persistence only (e.g. blocked in some private
+        // browsing modes) -- the in-memory count above still applies
+        // for the rest of this page life.
+      }
+      return next;
+    });
+  };
+
+  const clearSessionCheckAttempts = () => {
+    setSessionCheckAttempts(0);
+    try {
+      sessionStorage.removeItem(SESSION_CHECK_ATTEMPT_KEY);
+    } catch {
+      // best-effort only, see recordSessionCheckFailure
+    }
+  };
 
   const applySession = async (session) => {
     try {
       setAuthError(null);
       setSessionCheckFailed(false);
+      setSessionCheckOffline(false);
+      clearSessionCheckAttempts();
       const nextUser = await buildUser(session?.user ?? null);
 
       // Session-switch detection: if a different user just authenticated,
@@ -80,9 +129,16 @@ export const AuthProvider = ({ children }) => {
     // timeout below from overwriting a result that already arrived.
     let settled = false;
 
+    // Short-circuit the wait when the browser already knows it's
+    // offline -- see OFFLINE_SESSION_CHECK_TIMEOUT_MS above.
+    const startedOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const timeoutMs = startedOffline ? OFFLINE_SESSION_CHECK_TIMEOUT_MS : SESSION_CHECK_TIMEOUT_MS;
+
     const timeoutId = setTimeout(() => {
       if (!active || settled) return;
-      console.error(`Auth session check timed out after ${SESSION_CHECK_TIMEOUT_MS}ms with no response.`);
+      console.error(`Auth session check timed out after ${timeoutMs}ms with no response.`);
+      setSessionCheckOffline(startedOffline);
+      recordSessionCheckFailure();
       setSessionCheckFailed(true);
       setIsLoadingAuth(false);
       // Deliberately not marked settled=true: if getSession() or
@@ -90,7 +146,7 @@ export const AuthProvider = ({ children }) => {
       // connection rather than a true hang), applySession still runs and
       // clears sessionCheckFailed -- self-healing rather than a dead end
       // that requires a manual reload to recover from.
-    }, SESSION_CHECK_TIMEOUT_MS);
+    }, timeoutMs);
 
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
@@ -108,6 +164,8 @@ export const AuthProvider = ({ children }) => {
         // somewhere usable, but sessionCheckFailed keeps that distinct
         // from a real "no session" visitor -- see the App.jsx screen.
         console.error('Auth session check failed:', error);
+        setSessionCheckOffline(typeof navigator !== 'undefined' && navigator.onLine === false);
+        recordSessionCheckFailure();
         setSessionCheckFailed(true);
         setUser(null);
         setIsAuthenticated(false);
@@ -152,6 +210,8 @@ export const AuthProvider = ({ children }) => {
       isLoadingAuth,
       authError,
       sessionCheckFailed,
+      sessionCheckOffline,
+      sessionCheckAttempts,
       logout,
     }}>
       {children}
