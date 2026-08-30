@@ -19,3 +19,4 @@ export const getSubscriptionDetails = () => callManageSubscription("get");
 export const switchSubscriptionPlan = (priceId) => callManageSubscription("switch_plan", { priceId });
 export const cancelSubscription = () => callManageSubscription("cancel");
 export const resumeSubscription = () => callManageSubscription("resume");
+export const getPaddlePrices = (priceIds) => callManageSubscription("get_prices", { priceIds });

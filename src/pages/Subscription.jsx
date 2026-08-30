@@ -7,7 +7,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { cn } from "@/lib/utils";
+import { cn, formatPrice } from "@/lib/utils";
 import {
   getSubscriptionDetails, switchSubscriptionPlan, cancelSubscription, resumeSubscription,
 } from "@/lib/manageSubscription";
@@ -30,16 +30,6 @@ const STATUS_STYLES = {
 function formatDate(iso) {
   if (!iso) return null;
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function formatPrice(price) {
-  if (!price?.unit_price) return null;
-  const amount = Number(price.unit_price.amount) / 100;
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: price.unit_price.currency_code }).format(amount);
-  } catch {
-    return `$${amount.toFixed(2)}`;
-  }
 }
 
 export default function Subscription() {
