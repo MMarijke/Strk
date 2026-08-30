@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
-  let requestBody: { action?: string; priceId?: string };
+  let requestBody: { action?: string; priceId?: string; priceIds?: unknown };
   try {
     requestBody = await req.json();
   } catch {
@@ -115,6 +115,27 @@ Deno.serve(async (req) => {
 
   const rateLimitResponse = await checkRateLimit(rateLimiter, user.id, CORS_HEADERS);
   if (rateLimitResponse) return rateLimitResponse;
+
+  // get_prices is a public catalog lookup, not an action on an existing
+  // subscription -- it needs neither a user_profiles row nor a stored
+  // paddle_subscription_id, so it's handled here, before the "no
+  // subscription on file" gate below that every other action requires.
+  if (requestBody.action === "get_prices") {
+    const requested = Array.isArray(requestBody.priceIds) ? requestBody.priceIds : [];
+    const validIds = requested.filter((id) => typeof id === "string" && PRICE_ID_PATTERN.test(id));
+    if (validIds.length === 0) {
+      return jsonResponse({ error: "priceIds must be a non-empty array of valid Paddle price ids" }, 400);
+    }
+    try {
+      const prices = await paddleFetch(`/prices?id=${validIds.join(",")}`);
+      return jsonResponse({ prices });
+    } catch (err) {
+      console.error("manage-subscription get_prices error:", err);
+      const message = err instanceof Error ? err.message : "Unknown error";
+      await captureException(err, { userId: user.id, action: "get_prices" });
+      return jsonResponse({ error: message }, 502);
+    }
+  }
 
   const { data: profile } = await supabase
     .from("user_profiles")

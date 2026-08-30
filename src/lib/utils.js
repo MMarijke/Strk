@@ -46,7 +46,22 @@ export function calculateScore(habits) {
 
 export function cn(...inputs) {
   return twMerge(clsx(inputs))
-} 
+}
+
+// Shared by Subscription.jsx (a live subscription's price) and
+// UpgradeModal.jsx (the live catalog price via usePaddlePrices) -- both
+// consume the identical Paddle price-object shape (unit_price: { amount,
+// currency_code }), so one implementation instead of two copies that can
+// drift out of sync.
+export function formatPrice(price) {
+  if (!price?.unit_price) return null;
+  const amount = Number(price.unit_price.amount) / 100;
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: price.unit_price.currency_code }).format(amount);
+  } catch {
+    return `$${amount.toFixed(2)}`;
+  }
+}
 
 export const isIframe = window.self !== window.top;
 

@@ -3,6 +3,8 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/AuthContext";
 import { openCheckout, PADDLE_MONTHLY_PRICE_ID, PADDLE_ANNUAL_PRICE_ID } from "@/lib/paddle";
+import { usePaddlePrices } from "@/hooks/usePaddlePrices";
+import { formatPrice } from "@/lib/utils";
 
 const BENEFITS = [
   { emoji: "🔥", label: "Unlimited groups" },
@@ -10,8 +12,20 @@ const BENEFITS = [
   { emoji: "📊", label: "Full 12-week analytics" },
 ];
 
+// Price display is purely cosmetic -- openCheckout() below always opens
+// with the real priceId regardless of whether this label resolved, so a
+// slow/failed fetch degrades the copy, never the ability to check out.
+function PriceLabel({ price, isLoading, suffix, fallback }) {
+  if (isLoading) {
+    return <span className="inline-block h-4 w-14 rounded bg-current/20 animate-pulse align-middle" />;
+  }
+  const label = formatPrice(price);
+  return label ? <>{label} {suffix}</> : fallback;
+}
+
 export default function UpgradeModal({ onClose }) {
   const { user } = useAuth();
+  const { monthly, annual, isLoading } = usePaddlePrices();
 
   const handleMonthly = () => openCheckout(PADDLE_MONTHLY_PRICE_ID, user?.email);
   const handleAnnual = () => openCheckout(PADDLE_ANNUAL_PRICE_ID, user?.email);
@@ -55,7 +69,7 @@ export default function UpgradeModal({ onClose }) {
             size="lg"
             className="w-full h-12 rounded-2xl font-semibold"
           >
-            $4.99 / month
+            <PriceLabel price={monthly} isLoading={isLoading} suffix="/ month" fallback="Monthly" />
           </Button>
 
           <div className="relative">
@@ -67,7 +81,7 @@ export default function UpgradeModal({ onClose }) {
               size="lg"
               className="w-full h-14 rounded-2xl font-bold text-base"
             >
-              $44.99 / year
+              <PriceLabel price={annual} isLoading={isLoading} suffix="/ year" fallback="Annual — save 25%" />
             </Button>
           </div>
         </div>
