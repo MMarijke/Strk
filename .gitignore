@@ -35,3 +35,6 @@ supabase/.temp/
 
 # Browser network captures — can contain live Authorization headers/cookies
 *.har
+
+.vercel
+.env*
