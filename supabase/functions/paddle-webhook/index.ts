@@ -17,6 +17,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { initSentry, captureException } from "../_shared/sentry.ts";
+import { isFromPaddle } from "../_shared/paddle-ip-allowlist.ts";
 
 initSentry("paddle-webhook");
 
@@ -143,6 +144,15 @@ async function processEvent(event: { event_type: string; data: Record<string, un
 
 Deno.serve(async (req) => {
   try {
+    // Second, independent layer on top of the signature check below --
+    // rejects anything not sent from one of Paddle's published IPs. See
+    // _shared/paddle-ip-allowlist.ts for why this fails open rather than
+    // closed when the caller IP or Paddle's IP list can't be resolved.
+    if (!(await isFromPaddle(req))) {
+      console.error("paddle-webhook: rejected request from non-Paddle IP", req.headers.get("x-forwarded-for"));
+      return new Response("Forbidden", { status: 403 });
+    }
+
     const rawBody = await req.text();
     const signature = req.headers.get("paddle-signature") ?? "";
 
