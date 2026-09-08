@@ -5,10 +5,11 @@ import { cn } from '@/lib/utils';
 import { Toaster } from "@/components/ui/sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import Login from './pages/Login';
+import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
 import Trends from './pages/Trends';
 import Social from './pages/Social';
@@ -59,6 +60,7 @@ function BrandMark() {
 }
 
 const AuthenticatedApp = () => {
+  const { pathname } = useLocation();
   const { isAuthenticated, isLoadingAuth, sessionCheckFailed, sessionCheckOffline, sessionCheckAttempts } = useAuth();
   const { onboarded, onboardStep, completeTheme, completeDisplayName } = useTheme();
 
@@ -137,8 +139,15 @@ const AuthenticatedApp = () => {
     );
   }
 
+  // "/" is the public landing page (product description + live pricing --
+  // see PRODUCT.md/Landing.jsx), "/login" is the bare sign-in form it links
+  // to. Any other path while logged out (a bookmarked /Dashboard link,
+  // say) sends the visitor to the landing page rather than straight into a
+  // context-free sign-in form.
   if (!isAuthenticated) {
-    return <Login />;
+    if (pathname === "/login") return <Login />;
+    if (pathname !== "/") return <Navigate to="/" replace />;
+    return <Landing />;
   }
 
   if (!onboarded) {
@@ -149,6 +158,7 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/Dashboard" replace />} />
+      <Route path="/login" element={<Navigate to="/Dashboard" replace />} />
       <Route element={<AppLayout />}>
         <Route path="/Dashboard" element={<Dashboard />} />
         <Route path="/Trends" element={<Trends />} />
@@ -169,10 +179,11 @@ function App() {
         <QueryClientProvider client={queryClientInstance}>
           <Router>
             {/* /terms and /privacy are matched here, before AuthenticatedApp's
-                auth gate -- AuthenticatedApp short-circuits to <Login/> for
-                *any* path when unauthenticated, so routes nested inside its
-                own <Routes> block are unreachable while logged out. These
-                two must stay publicly reachable (Paddle verification, app
+                auth gate -- AuthenticatedApp only renders <Landing/> for "/"
+                and <Login/> for "/login" when unauthenticated, redirecting
+                every other path (including these two) to "/" before its own
+                nested <Routes> ever sees them. These two must stay publicly
+                reachable regardless of auth state (Paddle verification, app
                 store requirements), so they're matched at this top level
                 instead, ahead of the catch-all that hands everything else
                 to AuthenticatedApp. */}

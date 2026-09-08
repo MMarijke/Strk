@@ -18,6 +18,12 @@ initSentry("manage-subscription");
 // via Upstash Redis — a separate service from Postgres, so this adds no
 // load to the database at all, just one REST round-trip per request.
 const rateLimiter = createRateLimiter("manage-subscription", 30, "1 h");
+// get_prices is reachable by anyone, signed in or not (see below) -- there's
+// no user id to scope a limit to, so this is keyed on IP instead. 60/hour is
+// generous for real visitors (react-query already caches this for an hour
+// client-side, so a real browser sends at most one of these per session)
+// while still bounding how hard an anonymous caller can hit our PADDLE_API_KEY.
+const pricesRateLimiter = createRateLimiter("manage-subscription-prices", 60, "1 h");
 
 const PADDLE_API_KEY = Deno.env.get("PADDLE_API_KEY")!;
 
@@ -83,6 +89,16 @@ async function paddleFetch(path: string, options: RequestInit = {}) {
 // into an immediately readable error instead of a cryptic Paddle 400.
 const PRICE_ID_PATTERN = /^pri_[a-z\d]{26}$/;
 
+// Supabase's edge runtime sits behind a proxy that sets x-forwarded-for to
+// "<client>, <proxy1>, ..." -- the first entry is the original caller. Only
+// used to key the anonymous get_prices rate limit below; every other action
+// still requires a real signed-in user (see auth.getUser() further down).
+function callerIp(req: Request): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
+  return req.headers.get("x-real-ip") ?? "unknown";
+}
+
 Deno.serve(async (req) => {
   // Preflight — browsers send this before the real POST because it carries
   // a JSON body plus a custom Authorization header. Must return 200 with
@@ -102,25 +118,15 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
 
-  // Forward the caller's JWT so this client is scoped to them — the
-  // user_profiles RLS policy (owner-only select) does the access control.
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
-  });
-
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    return jsonResponse({ error: "Unauthorized" }, 401);
-  }
-
-  const rateLimitResponse = await checkRateLimit(rateLimiter, user.id, CORS_HEADERS);
-  if (rateLimitResponse) return rateLimitResponse;
-
-  // get_prices is a public catalog lookup, not an action on an existing
-  // subscription -- it needs neither a user_profiles row nor a stored
-  // paddle_subscription_id, so it's handled here, before the "no
-  // subscription on file" gate below that every other action requires.
+  // get_prices is a public catalog lookup -- it needs no signed-in user, no
+  // user_profiles row, and no stored paddle_subscription_id, so it's handled
+  // here, before auth.getUser() below requires a real session. This is what
+  // lets the public pricing page show live prices to a logged-out visitor
+  // (and, not incidentally, what a Paddle verification reviewer sees too).
   if (requestBody.action === "get_prices") {
+    const rateLimitResponse = await checkRateLimit(pricesRateLimiter, callerIp(req), CORS_HEADERS);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const requested = Array.isArray(requestBody.priceIds) ? requestBody.priceIds : [];
     const validIds = requested.filter((id) => typeof id === "string" && PRICE_ID_PATTERN.test(id));
     if (validIds.length === 0) {
@@ -132,10 +138,26 @@ Deno.serve(async (req) => {
     } catch (err) {
       console.error("manage-subscription get_prices error:", err);
       const message = err instanceof Error ? err.message : "Unknown error";
-      await captureException(err, { userId: user.id, action: "get_prices" });
+      await captureException(err, { action: "get_prices" });
       return jsonResponse({ error: message }, 502);
     }
   }
+
+  // Every other action manages an existing subscription and requires a real
+  // signed-in user -- forward the caller's JWT so this client is scoped to
+  // them; the user_profiles RLS policy (owner-only select) does the access
+  // control.
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
+  });
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return jsonResponse({ error: "Unauthorized" }, 401);
+  }
+
+  const rateLimitResponse = await checkRateLimit(rateLimiter, user.id, CORS_HEADERS);
+  if (rateLimitResponse) return rateLimitResponse;
 
   const { data: profile } = await supabase
     .from("user_profiles")
