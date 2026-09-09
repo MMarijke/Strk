@@ -151,9 +151,14 @@ export const AuthProvider = ({ children }) => {
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
         if (!active) return;
+        // Deliberately NOT marking settled/clearing the timeout yet -- see
+        // below. applySession() below still has its own unguarded network
+        // call (the profiles lookup in buildUser), and the timeout needs to
+        // stay armed against that too, not just this getSession() call.
+        await applySession(session);
+        if (!active) return;
         settled = true;
         clearTimeout(timeoutId);
-        await applySession(session);
         setIsLoadingAuth(false);
       })
       .catch((error) => {
@@ -181,9 +186,12 @@ export const AuthProvider = ({ children }) => {
     // from already-cached state and clear the spinner regardless.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!active) return;
+      // See the matching comment in the getSession() branch above -- the
+      // timeout stays armed until applySession() itself has finished.
+      await applySession(session);
+      if (!active) return;
       settled = true;
       clearTimeout(timeoutId);
-      await applySession(session);
       setIsLoadingAuth(false);
     });
 

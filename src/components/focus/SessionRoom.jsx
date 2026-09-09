@@ -177,7 +177,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
 
   if (completed) {
     return (
-      <div className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center p-8 text-center">
+      <div className="fixed inset-0 z-[60] bg-background flex flex-col items-center justify-center p-8 text-center">
         <div className="text-7xl mb-4">🎉</div>
         <h1 className="text-3xl font-extrabold text-foreground mb-2">Session Complete!</h1>
         <p className="text-muted-foreground mb-1">{session.duration_minutes} minutes of deep focus</p>
@@ -197,7 +197,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   const inLobby = session.status === "waiting";
 
   return (
-    <div className="fixed inset-0 z-50 bg-background flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+    <div className="fixed inset-0 z-[60] bg-background flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div>
@@ -209,7 +209,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
         </Button>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center gap-8 px-6">
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center gap-8 px-6 py-6">
         {/* Countdown */}
         <div className="text-center">
           {inLobby && (
