@@ -23,6 +23,12 @@
     --accent-foreground: 220 20% 10%;
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 98%;
+    /* Same value as Tailwind's green-500 -- this token replaces three
+       separate raw `bg-green-500` presence-dot usages (SessionRoom.jsx,
+       FocusSessionBanner.jsx, and the landing page's copy of the same
+       treatment) with one shared source, so it can't drift across them
+       and theme-switching can reach it if ever needed. */
+    --success: 142 71% 45%;
     --border: 220 10% 90%;
     --input: 220 10% 90%;
     --ring: 34 80% 55%;
@@ -54,11 +60,16 @@
     --secondary: 60 8% 16%;
     --secondary-foreground: 40 10% 95%;
     --muted: 60 8% 16%;
-    --muted-foreground: 220 10% 55%;
+    /* Was 55% -- measured contrast against --card (60 5% 14%) at exactly
+       4.32:1, under the 4.5:1 WCAG AA floor for normal text. 58% clears it
+       at ~4.8:1 with the same hue/saturation, so it still reads as the same
+       muted gray-blue, just barely lighter. */
+    --muted-foreground: 220 10% 58%;
     --accent: 42 90% 68%;
     --accent-foreground: 220 20% 10%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
+    --success: 142 71% 45%;
     --border: 60 5% 20%;
     --input: 60 5% 20%;
     --ring: 34 80% 55%;
@@ -95,5 +106,21 @@
   input, textarea, [contenteditable] {
     user-select: text;
     -webkit-user-select: text;
+  }
+}
+
+/* Targeted, not a blanket "kill all animation" rule -- that would also
+   flatten transitions that communicate real state changes (hover, focus,
+   modal open/close). Tailwind's three built-in infinite-loop utilities
+   are purely ambient/decorative wherever they're used in this app (a
+   presence dot, a "live" indicator ping) -- the thing they're indicating
+   is still conveyed by their static color/position once the loop stops,
+   so removing the motion loses nothing but the part that bothers
+   vestibular-sensitive visitors. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-ping,
+  .animate-bounce {
+    animation: none;
   }
 }

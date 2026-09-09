@@ -9,11 +9,14 @@ export default function LandingFooter() {
           <span className="font-black text-foreground tracking-tight">Strk</span>
         </div>
         <p className="text-xs text-muted-foreground">Build streaks. Stay accountable.</p>
+        {/* py-3 -my-3 grows each link's tap target to ~44px without
+            shifting the visible gap between them or the surrounding rows --
+            same fix as the hero's "See plans and pricing" link. */}
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <Link to="/terms" className="underline underline-offset-2 hover:text-foreground">
+          <Link to="/terms" className="underline underline-offset-2 hover:text-foreground py-3 -my-3 px-1 -mx-1">
             Terms of Service
           </Link>
-          <Link to="/privacy" className="underline underline-offset-2 hover:text-foreground">
+          <Link to="/privacy" className="underline underline-offset-2 hover:text-foreground py-3 -my-3 px-1 -mx-1">
             Privacy Policy
           </Link>
         </div>

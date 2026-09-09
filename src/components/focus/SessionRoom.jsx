@@ -32,7 +32,7 @@ function ParticipantList({ participants }) {
                 <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg">
                   {initials}
                 </div>
-                <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-background animate-pulse" />
+                <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-success border-2 border-background animate-pulse" />
               </div>
               <span className="text-[11px] text-muted-foreground max-w-[56px] truncate text-center">{name}</span>
             </div>
