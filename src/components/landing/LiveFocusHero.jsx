@@ -31,7 +31,7 @@ function DemoParticipant({ initial, name }) {
         <div className="w-11 h-11 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
           {initial}
         </div>
-        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-background animate-pulse" />
+        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-success border-2 border-background animate-pulse" />
       </div>
       <span className="text-[11px] text-muted-foreground">{name}</span>
     </div>
@@ -41,11 +41,30 @@ function DemoParticipant({ initial, name }) {
 export default function LiveFocusHero() {
   const [secsLeft, setSecsLeft] = useState(DEMO_START_SECS);
 
+  // Backgrounded/inactive tabs don't need this ticking -- it's decorative,
+  // not a real timer anyone is waiting on, so there's nothing lost by
+  // pausing it out of view and nothing to catch up on resume (it just
+  // resumes counting down from wherever it was).
   useEffect(() => {
-    const t = setInterval(() => {
-      setSecsLeft((s) => (s <= 0 ? DEMO_START_SECS : s - 1));
-    }, 1000);
-    return () => clearInterval(t);
+    let t = null;
+    const tick = () => setSecsLeft((s) => (s <= 0 ? DEMO_START_SECS : s - 1));
+    const start = () => {
+      if (t === null) t = setInterval(tick, 1000);
+    };
+    const stop = () => {
+      if (t !== null) {
+        clearInterval(t);
+        t = null;
+      }
+    };
+    const handleVisibility = () => (document.hidden ? stop() : start());
+
+    start();
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   return (
@@ -66,13 +85,18 @@ export default function LiveFocusHero() {
       </div>
 
       <div className="max-w-xs mx-auto rounded-3xl bg-card border border-border shadow-xl px-6 py-7">
-        <div className="flex items-center justify-center gap-1.5 mb-4">
+        {/* A returning visitor (scroll away, scroll back) sees this same
+            card mid-loop a second time -- upweighted from a barely-visible
+            caption to an actual badge, and the copy names the loop outright,
+            so a second glance reads as "yes, still a demo" rather than
+            "why does my session look different now". */}
+        <div className="flex items-center justify-center gap-1.5 mb-4 bg-primary/10 rounded-full px-2.5 py-1 w-fit mx-auto">
           <span className="relative flex h-1.5 w-1.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
           </span>
-          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
-            Live demo · focus session
+          <span className="text-xs font-bold text-primary uppercase tracking-wide">
+            Demo · loops continuously
           </span>
         </div>
 
@@ -106,7 +130,15 @@ export default function LiveFocusHero() {
             Sign in
           </Button>
         </Link>
-        <a href="#pricing" className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">
+        {/* The only in-page nav on this site -- was text-xs with zero
+            padding, giving it an effective tap height of ~16px next to
+            a 56px primary button. py-3 -my-3 grows the hit area to a
+            comfortable thumb target without shifting the visible gap
+            to the button above it. */}
+        <a
+          href="#pricing"
+          className="text-sm font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground py-3 -my-3 px-2 -mx-2"
+        >
           See plans and pricing
         </a>
       </div>

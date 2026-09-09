@@ -89,6 +89,22 @@ async function paddleFetch(path: string, options: RequestInit = {}) {
 // into an immediately readable error instead of a cryptic Paddle 400.
 const PRICE_ID_PATTERN = /^pri_[a-z\d]{26}$/;
 
+// get_prices is reachable by anonymous callers (the public pricing page),
+// unlike switch_plan (authenticated, and only ever affects the caller's own
+// subscription) -- so it needs more than a format check, or it's an open
+// proxy for reading ANY price object in the live Paddle account, including
+// ones never meant to be public (archived tiers, test prices, whatever else
+// is sitting in the catalog). These aren't secrets -- they're the same
+// VITE_PADDLE_*_PRICE_ID values already shipped in the client bundle -- just
+// mirrored here as edge secrets so the server has its own copy to check
+// against. If unset, PUBLIC_PRICE_IDS is empty and get_prices fails closed
+// (every id rejected, 400) rather than silently allowing everything.
+const PUBLIC_PRICE_IDS = new Set(
+  [Deno.env.get("PADDLE_MONTHLY_PRICE_ID"), Deno.env.get("PADDLE_ANNUAL_PRICE_ID")].filter(
+    (id): id is string => Boolean(id)
+  )
+);
+
 // Supabase's edge runtime sits behind a proxy that sets x-forwarded-for to
 // "<client>, <proxy1>, ..." -- the first entry is the original caller. Only
 // used to key the anonymous get_prices rate limit below; every other action
@@ -128,7 +144,9 @@ Deno.serve(async (req) => {
     if (rateLimitResponse) return rateLimitResponse;
 
     const requested = Array.isArray(requestBody.priceIds) ? requestBody.priceIds : [];
-    const validIds = requested.filter((id) => typeof id === "string" && PRICE_ID_PATTERN.test(id));
+    const validIds = requested.filter(
+      (id) => typeof id === "string" && PRICE_ID_PATTERN.test(id) && PUBLIC_PRICE_IDS.has(id)
+    );
     if (validIds.length === 0) {
       return jsonResponse({ error: "priceIds must be a non-empty array of valid Paddle price ids" }, 400);
     }

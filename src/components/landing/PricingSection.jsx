@@ -34,8 +34,21 @@ function PriceLine({ price, isLoading }) {
   );
 }
 
+// Computed from the live fetched prices rather than a hardcoded "25%" --
+// this is exactly the "remembered number" PRODUCT.md says the pricing
+// surface must never display, so if Paddle's catalog prices ever drift
+// apart this recalculates instead of silently going stale.
+function annualSavingsPct(monthly, annual) {
+  const monthlyCents = Number(monthly?.unit_price?.amount);
+  const annualCents = Number(annual?.unit_price?.amount);
+  if (!monthlyCents || !annualCents) return null;
+  return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
+}
+
 export default function PricingSection() {
-  const { monthly, isLoading } = usePaddlePrices();
+  const { monthly, annual, isLoading } = usePaddlePrices();
+  const annualLabel = formatPrice(annual);
+  const savingsPct = annualSavingsPct(monthly, annual);
 
   return (
     <section id="pricing" className="px-6 py-14 max-w-2xl mx-auto scroll-mt-6">
@@ -62,8 +75,12 @@ export default function PricingSection() {
             ))}
           </ul>
           <Link to="/login">
+            {/* Parallel to Pro's "Sign in to go Pro" below -- both buttons
+                and the hero's "Sign in" now share one verb family so three
+                buttons routing to the same passwordless /login don't read
+                as three different flows. */}
             <Button variant="outline" className="w-full rounded-2xl h-11 font-semibold">
-              Get started free
+              Sign in to start free
             </Button>
           </Link>
         </div>
@@ -81,6 +98,11 @@ export default function PricingSection() {
           <h3 className="font-bold text-sm text-foreground mb-1">Pro</h3>
           <div className="mb-5">
             <PriceLine price={monthly} isLoading={isLoading} />
+            {!isLoading && annualLabel && (
+              <p className="text-xs text-muted-foreground mt-1.5">
+                or {annualLabel}/year{savingsPct ? ` — save ${savingsPct}%` : ""}
+              </p>
+            )}
           </div>
           <ul className="space-y-2.5 mb-6 flex-1">
             {PRO_INCLUDES.map((item) => (
@@ -97,7 +119,7 @@ export default function PricingSection() {
       </div>
 
       <p className="text-center text-xs text-muted-foreground mt-6">
-        Annual billing (save 25%) available after signing in. Prices shown are live from Paddle.
+        Prices shown are live from Paddle.
       </p>
     </section>
   );

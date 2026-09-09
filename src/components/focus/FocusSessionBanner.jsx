@@ -65,7 +65,7 @@ export default function FocusSessionBanner({ userEmail, onOpen, onActiveChange }
             : `${minsLeft} min${minsLeft !== 1 ? "s" : ""} left · tap to return`}
         </p>
       </div>
-      <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
+      <span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" />
     </button>
   );
 }
