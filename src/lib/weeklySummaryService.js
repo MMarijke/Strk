@@ -78,13 +78,19 @@ export function getMotivationalMessage(rate, lastMessage) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+// Was gated to isMonday(new Date()) -- meaning anyone who didn't happen to
+// open the app on Monday itself never saw that week's recap at all, not
+// just later. thisMonday already identifies "this week" regardless of
+// which day it currently is (startOfWeek always resolves to the current
+// week's Monday), so the dismissedWeek check alone is sufficient: the card
+// now surfaces on the first open of the week, whichever day that is, and
+// keeps showing until dismissed or the week rolls over.
 export function isSummaryVisible(userEmail) {
-  if (!isMonday(new Date())) return false;
   const key = getKey(userEmail);
   const raw = localStorage.getItem(key);
+  const thisMonday = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
   if (!raw) return true;
   const state = JSON.parse(raw);
-  const thisMonday = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
   return state.dismissedWeek !== thisMonday;
 }
 
