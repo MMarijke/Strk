@@ -277,6 +277,18 @@ export default function Dashboard() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Same queryKey as Social.jsx's leaderboard query -- shares one cached
+  // "all profiles" list across pages instead of each page fetching its own
+  // copy. Needed here for WeeklySummaryCard's group-rank line, which reuses
+  // groupDigestService's buildMemberWeeklyRankings (the same helper
+  // GroupWeeklyReport.jsx already uses) rather than re-deriving ranking
+  // logic a second time.
+  const { data: profiles = [] } = useQuery({
+    queryKey: ["user-profiles"],
+    queryFn: () => UserProfile.list("-best_streak"),
+    staleTime: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
     if (!user?.email) return;
     startDigestScheduler(
@@ -378,6 +390,9 @@ export default function Dashboard() {
             onReminderClick={handleReminderClick}
             showSummary={showSummary && habits.length > 0}
             onDismissSummary={() => setShowSummary(false)}
+            groups={groupsForDigest}
+            profiles={profiles}
+            freezesUsedThisMonth={Object.keys(frozenHabits).length}
           />
         )}
 

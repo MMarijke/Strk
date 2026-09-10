@@ -286,7 +286,10 @@ export default function Settings() {
               <BarChart2 className="w-4 h-4 text-primary" />
               <h2 className="font-semibold text-sm">Weekly Summary</h2>
             </div>
-            <p className="text-xs text-muted-foreground mb-4">Get a Monday recap of last week's progress</p>
+            {/* No longer Monday-specific -- isSummaryVisible() now surfaces
+                the card on the first open of the week, whichever day that
+                is, not only if that happens to be Monday itself. */}
+            <p className="text-xs text-muted-foreground mb-4">Get a recap of last week's progress</p>
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="weekly-notif" className="text-sm font-medium">Monday Notification</Label>

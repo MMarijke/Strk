@@ -42,6 +42,9 @@ export default function TodayTray({
   onReminderClick,
   showSummary,
   onDismissSummary,
+  groups,
+  profiles,
+  freezesUsedThisMonth,
 }) {
   const [activeSet, setActiveSet] = useState(() => new Set());
   const [expanded, setExpanded] = useState(false);
@@ -118,7 +121,14 @@ export default function TodayTray({
 
       {showSummary && (
         <div className={cn("mb-4", !isVisible("weeklySummary") && "hidden")}>
-          <WeeklySummaryCard habits={habits} userEmail={userEmail} onDismiss={onDismissSummary} />
+          <WeeklySummaryCard
+            habits={habits}
+            userEmail={userEmail}
+            onDismiss={onDismissSummary}
+            groups={groups}
+            profiles={profiles}
+            freezesUsedThisMonth={freezesUsedThisMonth}
+          />
         </div>
       )}
 
