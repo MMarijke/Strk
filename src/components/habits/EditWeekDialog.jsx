@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { format, subDays, isSameDay } from "date-fns";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FROZEN_CELL_STYLE, FROZEN_CELL_TITLE } from "./frozenCell";
 
 export default function EditWeekDialog({ open, onOpenChange, habit, onSave, frozenDate }) {
   const color = habit?.color || "hsl(152, 55%, 42%)";
@@ -68,8 +69,8 @@ export default function EditWeekDialog({ open, onOpenChange, habit, onSave, froz
                   isToday && !done && !isFrozen && "ring-2 ring-offset-1 ring-border font-bold",
                   isFrozen && "cursor-default"
                 )}
-                style={done ? { backgroundColor: color } : isFrozen ? { backgroundColor: "#3b82f6" } : undefined}
-                title={isFrozen ? "Streak freeze applied" : format(date, "EEE, MMM d")}
+                style={done ? { backgroundColor: color } : isFrozen ? FROZEN_CELL_STYLE : undefined}
+                title={isFrozen ? FROZEN_CELL_TITLE : format(date, "EEE, MMM d")}
               >
                 <span className="text-[11px] leading-none">{format(date, "d")}</span>
                 <span className="text-[9px] leading-none opacity-70">{format(date, "MMM")}</span>

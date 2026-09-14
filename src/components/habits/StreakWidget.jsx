@@ -2,6 +2,7 @@ import React from "react";
 import { format, subDays, isSameDay, parseISO } from "date-fns";
 import { Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FROZEN_CELL_STYLE, FROZEN_CELL_TITLE } from "./frozenCell";
 
 function calculateStreak(completions, frozenDate = null) {
   // Build effective completions including frozen date
@@ -84,8 +85,8 @@ export default function StreakWidget({ completions = [], color = "hsl(var(--prim
                 day.isCompleted ? "scale-100" : day.isFrozen ? "scale-100" : "bg-muted scale-90",
                 day.isToday && !day.isCompleted && !day.isFrozen && "ring-2 ring-border ring-offset-1 ring-offset-background"
               )}
-              style={day.isCompleted ? { backgroundColor: color } : day.isFrozen ? { backgroundColor: "#3b82f6" } : undefined}
-              title={day.isFrozen ? "Streak freeze applied" : undefined}
+              style={day.isCompleted ? { backgroundColor: color } : day.isFrozen ? FROZEN_CELL_STYLE : undefined}
+              title={day.isFrozen ? FROZEN_CELL_TITLE : undefined}
             >
               {day.isCompleted && (
                 <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
