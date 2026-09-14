@@ -6,22 +6,30 @@
 // carrying status: "active" (or "trialing"). We treat those as the
 // "activated" case and subscription.canceled/paused as deactivation.
 //
-// We resolve the Strk user by email rather than Paddle's customer_id,
-// because on a user's very first purchase we have no stored customer_id yet
-// to join on. Subscription events don't reliably include the customer's
-// email directly (only customer_id), so src/lib/paddle.js stamps
-// custom_data.email at checkout time — that custom_data reliably propagates
-// to the resulting subscription events, giving us a dependable join key
-// from the very first webhook delivery.
+// We resolve the Strk user in two steps, neither of which trusts anything
+// client-controlled:
+//   1. Once we've seen a customer before, join on Paddle's own
+//      customer_id (stored on user_profiles by a prior event) — this value
+//      is entirely Paddle-assigned, never client input.
+//   2. On a user's very first purchase we have no stored customer_id yet.
+//      For that case only, custom_data.checkoutToken carries a short-lived,
+//      HMAC-signed token minted by create-checkout-token for the
+//      *authenticated* caller — see _shared/checkout-token.ts. This
+//      replaces an earlier version that resolved users by a raw,
+//      client-supplied custom_data.email, which let anyone bind a real
+//      purchase to an arbitrary victim's account. Do not reintroduce an
+//      email-based fallback here.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { initSentry, captureException } from "../_shared/sentry.ts";
 import { isFromPaddle } from "../_shared/paddle-ip-allowlist.ts";
+import { verifyCheckoutToken } from "../_shared/checkout-token.ts";
 
 initSentry("paddle-webhook");
 
 const WEBHOOK_SECRET = Deno.env.get("PADDLE_WEBHOOK_SECRET")!;
+const CHECKOUT_TOKEN_SECRET = Deno.env.get("PADDLE_CHECKOUT_TOKEN_SECRET")!;
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -43,18 +51,27 @@ function verifySignature(rawBody: string, header: string): boolean {
 
 const ACTIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
 
-// Subscription/transaction events carry customer_id but not reliably the
-// customer's email, and price-level custom_data (on the catalog price
-// object) is unrelated catalog metadata — not what's stamped at checkout.
-// src/lib/paddle.js stamps custom_data.email on the checkout itself, which
-// Paddle propagates onto the resulting transaction/subscription objects, so
-// that's the reliable path; data.customer?.email is a defensive fallback.
-function resolveEmail(data: Record<string, unknown>): string | undefined {
+// Resolves the Strk user id for a Paddle event without trusting anything
+// client-controlled — see the file header for the two-step strategy.
+async function resolveUserId(data: Record<string, unknown>): Promise<string | undefined> {
+  const customerId = data.customer_id as string | undefined;
+  if (customerId) {
+    const { data: byCustomer } = await supabase
+      .from("user_profiles")
+      .select("created_by_id")
+      .eq("paddle_customer_id", customerId)
+      .maybeSingle();
+    if (byCustomer) return byCustomer.created_by_id as string;
+  }
+
   const customData = data.custom_data as Record<string, unknown> | null;
-  return (
-    (customData?.email as string | undefined) ??
-    ((data.customer as Record<string, unknown> | undefined)?.email as string | undefined)
-  );
+  const token = customData?.checkoutToken as string | undefined;
+  if (token) {
+    const uid = verifyCheckoutToken(token, CHECKOUT_TOKEN_SECRET);
+    if (uid) return uid;
+  }
+
+  return undefined;
 }
 
 function firstItemPriceId(data: Record<string, unknown>): string | null {
@@ -77,9 +94,9 @@ function managementUrls(data: Record<string, unknown>): {
 }
 
 async function applySubscriptionEvent(eventType: string, data: Record<string, unknown>) {
-  const email = resolveEmail(data);
-  if (!email) {
-    console.error(`paddle-webhook: no resolvable email on ${eventType} (${data.id})`);
+  const userId = await resolveUserId(data);
+  if (!userId) {
+    console.error(`paddle-webhook: no resolvable user for ${eventType} (${data.id})`);
     return;
   }
 
@@ -103,7 +120,7 @@ async function applySubscriptionEvent(eventType: string, data: Record<string, un
       subscription_status: status,
       plan,
     })
-    .eq("created_by", email);
+    .eq("created_by_id", userId);
 
   if (error) throw error;
 }
@@ -113,9 +130,9 @@ async function applySubscriptionEvent(eventType: string, data: Record<string, un
 // completed payment grants access even if the subscription event is
 // delayed, without overriding subscription.* as the authoritative status.
 async function applyTransactionCompleted(data: Record<string, unknown>) {
-  const email = resolveEmail(data);
-  if (!email) {
-    console.error(`paddle-webhook: no resolvable email on transaction.completed (${data.id})`);
+  const userId = await resolveUserId(data);
+  if (!userId) {
+    console.error(`paddle-webhook: no resolvable user for transaction.completed (${data.id})`);
     return;
   }
 
@@ -127,7 +144,7 @@ async function applyTransactionCompleted(data: Record<string, unknown>) {
       paddle_subscription_id: (data.subscription_id as string | undefined) ?? null,
       paddle_price_id: firstItemPriceId(data),
     })
-    .eq("created_by", email);
+    .eq("created_by_id", userId);
 
   if (error) throw error;
 }
