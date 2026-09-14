@@ -20,7 +20,12 @@ export default function StatsBar({ habits }) {
   const stats = [
   { label: "Today", value: `${completedToday}/${totalHabits}`, icon: CalendarCheck, color: "text-primary" },
   { label: "Habits", value: totalHabits, icon: Target, color: "text-chart-3" },
-  { label: "Current Streak", value: longestStreak, icon: Flame, color: "text-accent" }];
+  // "Current Streak" implied one specific habit's streak -- this is
+  // actually the max across every habit, which is ambiguous the moment
+  // someone has habits with different streak lengths. "Best Streak" was
+  // avoided since that term is already used elsewhere (RankCard, Social's
+  // leaderboard) for the all-time-best-ever metric, a different number.
+  { label: "Top Streak", value: longestStreak, icon: Flame, color: "text-accent" }];
 
 
   return (
