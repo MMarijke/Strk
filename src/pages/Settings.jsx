@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText } from "lucide-react";
+import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,6 +14,8 @@ import {
 import { useTheme, COLOR_THEMES } from "@/lib/ThemeContext";
 import { cn } from "@/lib/utils";
 import { getWeeklySummaryNotifEnabled, setWeeklySummaryNotifEnabled } from "@/lib/weeklySummaryService";
+import { getAnalyticsConsent, setAnalyticsConsent } from "@/lib/analyticsConsent";
+import { initAnalytics, disableAnalyticsCapturing } from "@/lib/analytics";
 import { Group, UserProfile } from "@/api/entities";
 import { useAuth } from "@/lib/AuthContext";
 import { getMyProfile, saveMyDisplayName } from "@/lib/displayName";
@@ -29,6 +31,7 @@ export default function Settings() {
   const navigate = useNavigate();
   const notifSupported = "Notification" in window && Notification.permission === "granted";
   const [weeklySummaryNotif, setWeeklySummaryNotif] = useState(getWeeklySummaryNotifEnabled);
+  const [analyticsConsent, setAnalyticsConsentState] = useState(() => getAnalyticsConsent() === "granted");
   const [profile, setProfile] = useState(null);
   const [displayName, setDisplayName] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -75,6 +78,15 @@ export default function Settings() {
     if (profile?.id) {
       UserProfile.update(profile.id, { email_weekly_digest: val }).then((updated) => setProfile(updated));
     }
+  };
+
+  // Lets someone revisit the AnalyticsConsentBanner decision anytime --
+  // GDPR/POPIA requires withdrawing consent to be as easy as giving it.
+  const handleAnalyticsConsentToggle = (val) => {
+    setAnalyticsConsentState(val);
+    setAnalyticsConsent(val ? "granted" : "denied");
+    if (val) initAnalytics();
+    else disableAnalyticsCapturing();
   };
 
   const handleDeleteAccount = async () => {
@@ -321,6 +333,30 @@ export default function Settings() {
               <Link to="/Badges">
                 <Button variant="outline" size="sm">View</Button>
               </Link>
+            </div>
+          </Card>
+
+          {/* Analytics Consent */}
+          <Card className="border-0 shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-1">
+              <ShieldCheck className="w-4 h-4 text-primary" />
+              <h2 className="font-semibold text-sm">Analytics</h2>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Help us improve Strk with privacy-friendly usage analytics. No data is sold or shared with advertisers.
+            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="analytics-consent" className="text-sm font-medium">Allow Analytics</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {analyticsConsent ? "Currently sharing anonymous usage data" : "Currently opted out"}
+                </p>
+              </div>
+              <Switch
+                id="analytics-consent"
+                checked={analyticsConsent}
+                onCheckedChange={handleAnalyticsConsentToggle}
+              />
             </div>
           </Card>
 

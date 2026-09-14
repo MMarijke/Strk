@@ -22,6 +22,7 @@ import AppLayout from './components/layout/AppLayout';
 import { ThemeProvider, useTheme } from './lib/ThemeContext';
 import OnboardingThemePicker from './components/onboarding/OnboardingThemePicker';
 import OnboardingDisplayName from './components/onboarding/OnboardingDisplayName';
+import AnalyticsConsentBanner from './components/legal/AnalyticsConsentBanner';
 
 // Sits inside AuthProvider so it can read the authenticated user id
 // and pass it to ThemeProvider for per-user localStorage key scoping.
@@ -194,6 +195,7 @@ function App() {
             </Routes>
           </Router>
           <Toaster />
+          <AnalyticsConsentBanner />
         </QueryClientProvider>
       </ThemeProviderWithUser>
     </AuthProvider>
