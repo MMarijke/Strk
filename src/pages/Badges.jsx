@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Habit, Group, UserBadge, UserProfile } from "@/api/entities";
+import { supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { cn, getRank, calculateScore } from "@/lib/utils";
@@ -186,19 +187,16 @@ export default function Badges() {
       const badge = merged.find((b) => b.id === newIds[0]);
       if (badge) setCelebrationBadge(badge);
 
-      // Persist each newly earned badge (skip ones already in DB, never overwrite)
+      // Persist each newly earned badge (skip ones already in DB, never overwrite).
+      // Routed through the award_badge() RPC rather than a direct
+      // UserBadge.create() -- eligibility is recomputed and verified
+      // server-side from the caller's real habits/groups/streak_freezes,
+      // not trusted from this client-side evaluateBadges() pass, which now
+      // only drives the UI (progress bars, locked/earned display).
       newIds.forEach((badgeId) => {
         if (!persistedMap[badgeId]) {
-          const badge = merged.find((b) => b.id === badgeId);
-          // Use retroactive date for streak badges, today for everything else
-          const earnedDate = (badge?.earned_date && badge.earned_date !== "recently")
-            ? badge.earned_date
-            : today;
-          UserBadge.create({
-            user_email: user.email,
-            badge_id: badgeId,
-            earned_date: earnedDate,
-          }).then(() => {
+          supabase.rpc("award_badge", { p_badge_id: badgeId, p_today: today }).then(({ data, error }) => {
+            if (error || !data?.success) return;
             queryClient.invalidateQueries({ queryKey: ["user-badges", user.email] });
           });
         }
