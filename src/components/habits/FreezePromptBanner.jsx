@@ -70,6 +70,7 @@ export default function FreezePromptBanner({ habits, frozenHabitIds, isPro, free
           variant="ghost"
           className="shrink-0 h-7 w-7 rounded-full hover:bg-primary/10"
           onClick={handleDismiss}
+          aria-label="Dismiss"
         >
           <X className="w-3.5 h-3.5 text-muted-foreground" />
         </Button>

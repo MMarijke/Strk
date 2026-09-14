@@ -55,7 +55,7 @@ export default function MonthlyReportDialog({ open, onOpenChange, habit }) {
 
         {/* Month navigator */}
         <div className="flex items-center justify-between">
-          <Button variant="ghost" size="icon" onClick={() => setViewDate(subMonths(viewDate, 1))}>
+          <Button variant="ghost" size="icon" onClick={() => setViewDate(subMonths(viewDate, 1))} aria-label="Previous month">
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <span className="font-semibold text-sm">{format(viewDate, "MMMM yyyy")}</span>
@@ -64,6 +64,7 @@ export default function MonthlyReportDialog({ open, onOpenChange, habit }) {
             size="icon"
             onClick={() => setViewDate(addMonths(viewDate, 1))}
             disabled={isSameMonth(viewDate, new Date())}
+            aria-label="Next month"
           >
             <ChevronRight className="w-4 h-4" />
           </Button>

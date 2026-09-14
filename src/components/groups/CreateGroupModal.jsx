@@ -142,6 +142,7 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
                     variant="outline"
                     size="icon"
                     onClick={() => handleCopy(createdGroup?.invite_code, "code")}
+                    aria-label={copied === "code" ? "Copied!" : "Copy invite code"}
                   >
                     {copied === "code" ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
                   </Button>
@@ -158,6 +159,7 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
                     variant="outline"
                     size="icon"
                     onClick={() => handleCopy(inviteLink, "link")}
+                    aria-label={copied === "link" ? "Copied!" : "Copy invite link"}
                   >
                     {copied === "link" ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
                   </Button>
@@ -166,6 +168,7 @@ export default function CreateGroupModal({ open, onOpenChange, onCreate, userEma
                       variant="outline"
                       size="icon"
                       onClick={() => navigator.share({ title: createdGroup?.name, url: inviteLink })}
+                      aria-label="Share invite link"
                     >
                       <Share2 className="w-4 h-4" />
                     </Button>

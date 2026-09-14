@@ -66,7 +66,7 @@ export default function GroupWeeklyReport({ group, habits, userEmail, challenges
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="rounded-full shrink-0" onClick={onBack}>
+        <Button variant="ghost" size="icon" className="rounded-full shrink-0" onClick={onBack} aria-label="Back to group">
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div>
