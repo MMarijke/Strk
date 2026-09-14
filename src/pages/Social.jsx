@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -39,7 +39,7 @@ function RankIcon({ rank }) {
   return <span className="text-sm font-bold text-muted-foreground w-5 text-center">#{rank}</span>;
 }
 
-function LeaderboardRow({ rank, entry }) {
+const LeaderboardRow = React.memo(function LeaderboardRow({ rank, entry }) {
   return (
     <div className={cn(
       "flex items-center gap-3 p-3 rounded-xl transition-colors",
@@ -66,7 +66,7 @@ function LeaderboardRow({ rank, entry }) {
       </div>
     </div>);
 
-}
+});
 
 export default function Social() {
   const { user } = useAuth();
@@ -186,37 +186,42 @@ export default function Social() {
     }
   });
 
-  // Build leaderboard from profiles + current user's own data
-  const myDisplayName = getDisplayName(user?.email, profiles) !== user?.email?.split("@")[0] ?
-  getDisplayName(user?.email, profiles) :
-  user?.full_name || getDisplayName(user?.email, profiles);
+  // Build leaderboard from profiles + current user's own data. Memoized so
+  // LeaderboardRow (React.memo below) can actually skip re-rendering when
+  // unrelated Social state changes -- this array (and every entry object
+  // in it) was previously rebuilt from scratch on every render regardless.
+  const leaderboard = useMemo(() => {
+    const myDisplayName = getDisplayName(user?.email, profiles) !== user?.email?.split("@")[0] ?
+    getDisplayName(user?.email, profiles) :
+    user?.full_name || getDisplayName(user?.email, profiles);
 
-  const myBestStreak = Math.max(...habits.map((h) => getAllTimeBest(h.completions || [])), 0);
-  const myConsistency = habits.length ?
-  Math.round(habits.reduce((s, h) => s + calcConsistency(h.completions || []), 0) / habits.length) :
-  0;
+    const myBestStreak = Math.max(...habits.map((h) => getAllTimeBest(h.completions || [])), 0);
+    const myConsistency = habits.length ?
+    Math.round(habits.reduce((s, h) => s + calcConsistency(h.completions || []), 0) / habits.length) :
+    0;
 
-  const leaderboard = [
-  {
-    id: "me",
-    name: myDisplayName,
-    avatarColor: "hsl(var(--primary))",
-    bestStreak: myBestStreak,
-    consistency: myConsistency,
-    score: myBestStreak * 2 + myConsistency,
-    isMe: true
-  },
-  ...profiles.
-  filter((p) => p.is_public !== false && p.created_by !== user?.email).
-  map((p) => ({
-    id: p.id,
-    name: p.display_name || p.created_by?.split("@")[0] || "?",
-    avatarColor: p.avatar_color,
-    bestStreak: p.best_streak || 0,
-    consistency: p.consistency_score || 0,
-    score: (p.best_streak || 0) * 2 + (p.consistency_score || 0)
-  }))].
-  sort((a, b) => b.score - a.score);
+    return [
+    {
+      id: "me",
+      name: myDisplayName,
+      avatarColor: "hsl(var(--primary))",
+      bestStreak: myBestStreak,
+      consistency: myConsistency,
+      score: myBestStreak * 2 + myConsistency,
+      isMe: true
+    },
+    ...profiles.
+    filter((p) => p.is_public !== false && p.created_by !== user?.email).
+    map((p) => ({
+      id: p.id,
+      name: p.display_name || p.created_by?.split("@")[0] || "?",
+      avatarColor: p.avatar_color,
+      bestStreak: p.best_streak || 0,
+      consistency: p.consistency_score || 0,
+      score: (p.best_streak || 0) * 2 + (p.consistency_score || 0)
+    }))].
+    sort((a, b) => b.score - a.score);
+  }, [user?.email, user?.full_name, profiles, habits]);
 
   const myGroups = groups.filter(
     (g) => g.created_by === user?.email || (g.member_emails || []).includes(user?.email)

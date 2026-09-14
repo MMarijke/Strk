@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useMemo } from "react";
+import { motion } from "framer-motion";
 import { format, subDays, isSameDay, parseISO } from "date-fns";
 import { Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -42,8 +43,16 @@ function calculateStreak(completions, frozenDate = null) {
   return streak;
 }
 
-export default function StreakWidget({ completions = [], color = "hsl(var(--primary))", frozenDate = null }) {
-  const streak = calculateStreak(completions, frozenDate);
+export default function StreakWidget({ completions = [], color = "hsl(var(--primary))", frozenDate = null, streak: precomputedStreak }) {
+  // HabitCard already computes this exact value (same completions +
+  // frozenDate) for its own freeze-eligibility logic and passes it down --
+  // accepting it as a prop avoids running the O(n log n) sort/walk twice
+  // for the same habit on every render. Falls back to computing it locally
+  // (memoized) for any other caller that doesn't have it precomputed.
+  const ownStreak = useMemo(() => (
+    precomputedStreak !== undefined ? null : calculateStreak(completions, frozenDate)
+  ), [completions, frozenDate, precomputedStreak]);
+  const streak = precomputedStreak ?? ownStreak;
   const today = new Date();
 
   // Last 7 days
@@ -60,10 +69,26 @@ export default function StreakWidget({ completions = [], color = "hsl(var(--prim
     <div className="flex items-center gap-4">
       {/* Streak counter */}
       <div className="flex items-center gap-1.5">
-        <Flame
-          className={cn("w-5 h-5 transition-all", streak === 0 && "opacity-30")}
-          style={{ color: color, fill: color, stroke: "none" }}
-        />
+        {/* Considered restrained on purpose: this fires on every habit
+            check-off, potentially many times a day across several habits,
+            so it can't afford to be a "celebration" (confetti, a modal) --
+            delight has to survive the hundredth use, not just the first.
+            The flame itself flaring briefly when the count changes is a
+            small, specific-to-this-product acknowledgment instead of a
+            generic checkmark bounce. key={streak} remounts (and replays
+            the entrance) only when the number actually changes, not on
+            every render. */}
+        <motion.div
+          key={streak}
+          initial={{ scale: 1.35, opacity: 0.6 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <Flame
+            className={cn("w-5 h-5 transition-all", streak === 0 && "opacity-30")}
+            style={{ color: color, fill: color, stroke: "none" }}
+          />
+        </motion.div>
         <span className={cn(
           "text-lg font-bold tabular-nums",
           streak > 0 ? "text-foreground" : "text-muted-foreground/50"

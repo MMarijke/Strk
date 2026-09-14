@@ -162,7 +162,11 @@ export default function Dashboard() {
     },
   });
 
-  const handleToggleToday = (habit) => {
+  // Stable references (useCallback) so HabitCard's React.memo below can
+  // actually skip re-rendering siblings -- a fresh function identity on
+  // every Dashboard render would make every card's props look "changed"
+  // regardless of memo, defeating the point of memoizing it at all.
+  const handleToggleToday = useCallback((habit) => {
     const today = format(new Date(), "yyyy-MM-dd");
     const completions = habit.completions || [];
     const wasCompleted = completions.includes(today);
@@ -171,23 +175,27 @@ export default function Dashboard() {
       : [...completions, today];
     if (!wasCompleted) trackEvent("habit_completion_toggled");
     updateMutation.mutate({ id: habit.id, data: { completions: newCompletions } });
-  };
+  }, [updateMutation.mutate]);
 
-  const handleUpdateCompletions = (id, completions) => {
+  const handleUpdateCompletions = useCallback((id, completions) => {
     updateMutation.mutate({ id, data: { completions } });
-  };
+  }, [updateMutation.mutate]);
 
-  const handleUpdateReminder = (id, reminderData) => {
+  const handleUpdateReminder = useCallback((id, reminderData) => {
     updateMutation.mutate({ id, data: reminderData });
-  };
+  }, [updateMutation.mutate]);
 
-  const handleUpdateHabit = (id, data) => {
+  const handleUpdateHabit = useCallback((id, data) => {
     updateMutation.mutate({ id, data });
-  };
+  }, [updateMutation.mutate]);
 
-  const handleArchiveHabit = (id) => {
+  const handleArchiveHabit = useCallback((id) => {
     updateMutation.mutate({ id, data: { archived: true } });
-  };
+  }, [updateMutation.mutate]);
+
+  const handleDeleteHabit = useCallback((id) => {
+    deleteMutation.mutate(id);
+  }, [deleteMutation.mutate]);
 
   // "Complete All" writes every not-yet-done habit in one tap, so a
   // misfire silently corrupts the day's real completion record. Rather
@@ -260,12 +268,12 @@ export default function Dashboard() {
     }
   }, [habits, userProfile]);
 
-  const handleApplyFreeze = async (habitId, missedDate) => {
+  const handleApplyFreeze = useCallback(async (habitId, missedDate) => {
     if (!user?.email) return;
     await applyFreeze(habitId, missedDate);
     queryClient.invalidateQueries({ queryKey: ["habits", user?.email] });
     refreshFreezeState();
-  };
+  }, [user?.email, queryClient, refreshFreezeState]);
 
   const handleRefresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ["habits", user?.email] });
@@ -501,7 +509,7 @@ export default function Dashboard() {
                       habit={habit}
                       isHighlighted={highlightedHabitId === habit.id || completeAllHighlightIds.has(habit.id)}
                       onToggleToday={handleToggleToday}
-                      onDelete={(id) => deleteMutation.mutate(id)}
+                      onDelete={handleDeleteHabit}
                       onUpdateCompletions={handleUpdateCompletions}
                       onUpdateReminder={handleUpdateReminder}
                       onApplyFreeze={handleApplyFreeze}
