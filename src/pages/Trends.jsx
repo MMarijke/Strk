@@ -224,9 +224,11 @@ export default function Trends() {
 
                 return (
                   <Card key={h.id} className="p-4 border-0 shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: color }} />
-                    <div className="pl-2">
-                      <p className="font-semibold text-sm break-words">{h.name}</p>
+                    <div>
+                      <p className="font-semibold text-sm break-words flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} aria-hidden="true" />
+                        {h.name}
+                      </p>
                       <div className="grid grid-cols-3 gap-2 mt-3">
                         <div>
                           <p className="text-lg font-bold text-foreground">{streak}</p>
