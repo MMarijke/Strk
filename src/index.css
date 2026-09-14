@@ -37,6 +37,12 @@
        treatment) with one shared source, so it can't drift across them
        and theme-switching can reach it if ever needed. */
     --success: 142 71% 45%;
+    /* Same value as --sidebar-ring below (Tailwind's blue-500) -- this
+       token replaces two separate raw `#3b82f6` "streak freeze applied"
+       cell-background usages (StreakWidget.jsx, EditWeekDialog.jsx), same
+       reasoning as --success above: one shared source instead of a
+       literal that can drift and can't react to theme changes. */
+    --frozen: 217.2 91.2% 59.8%;
     --border: 220 10% 90%;
     --input: 220 10% 90%;
     --ring: 34 80% 55%;
@@ -79,6 +85,9 @@
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     --success: 142 71% 45%;
+    /* Same value as :root's --frozen above -- the original hardcoded
+       #3b82f6 it replaces never varied by theme either. */
+    --frozen: 217.2 91.2% 59.8%;
     --border: 60 5% 20%;
     --input: 60 5% 20%;
     --ring: 34 80% 55%;

@@ -42,9 +42,13 @@ function ThemePreviewCard({ theme, isDark, selected, onClick }) {
             className="flex items-center gap-2 rounded-lg px-2 py-1.5"
             style={{
               backgroundColor: isDark ? `hsl(${primary} / 0.12)` : `hsl(${primary} / 0.07)`,
-              borderLeft: `3px solid hsl(${i === 0 ? primary : accent})`,
             }}
           >
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: `hsl(${i === 0 ? primary : accent})` }}
+              aria-hidden="true"
+            />
             <div className="flex-1">
               <div
                 className="h-1.5 rounded-full w-14 mb-1"

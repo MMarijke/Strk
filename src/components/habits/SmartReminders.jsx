@@ -88,10 +88,12 @@ function buildReminders(habits) {
   return reminders.sort((a, b) => order[a.priority] - order[b.priority]);
 }
 
+// Priority is already carried by the icon circle's own color (below) --
+// background tint alone differentiates rows without a side-tab border.
 const PRIORITY_STYLES = {
-  high:   "border-l-4 border-destructive bg-destructive/5",
-  medium: "border-l-4 bg-accent/10",
-  low:    "border-l-4 border-muted-foreground/30 bg-muted/50",
+  high:   "bg-destructive/5",
+  medium: "bg-accent/10",
+  low:    "bg-muted/50",
 };
 
 export default function SmartReminders({ habits, onActiveChange, onReminderClick }) {
@@ -148,7 +150,6 @@ export default function SmartReminders({ habits, onActiveChange, onReminderClick
                     "flex items-start gap-3 rounded-xl p-3 pr-2 cursor-pointer",
                     PRIORITY_STYLES[r.priority]
                   )}
-                  style={{ borderColor: r.priority === "medium" ? r.color : undefined }}
                 >
                   <div
                     className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"

@@ -22,7 +22,7 @@ const PRO_BENEFITS = [
 const STATUS_STYLES = {
   active: "bg-primary/20 text-primary",
   trialing: "bg-primary/20 text-primary",
-  past_due: "bg-amber-500/20 text-amber-600",
+  past_due: "bg-accent/20 text-accent-foreground",
   paused: "bg-muted text-muted-foreground",
   canceled: "bg-destructive/20 text-destructive",
 };

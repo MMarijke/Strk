@@ -49,20 +49,22 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
           isHighlighted && "ring-2 ring-primary ring-offset-2 ring-offset-background"
         )}
       >
-        <div className="absolute top-0 left-0 w-1 h-full rounded-l-lg" style={{ backgroundColor: color }} />
-
-        <div className="p-5 pl-6">
+        <div className="p-5">
           {/* Top row */}
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} aria-hidden="true" />
                 <p className="font-semibold text-[15px] text-foreground text-left break-words">
                   {habit.name}
                 </p>
                 {habit.reminder_time && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowEditReminder(true); }}
-                    className="hover:scale-110 transition-transform shrink-0"
+                    // p-2.5 -m-2.5: grows the actual hit area to a
+                    // touch-friendly size without growing the visible icon
+                    // or disturbing the inline layout next to the habit name.
+                    className="hover:scale-110 transition-transform shrink-0 p-2.5 -m-2.5"
                     style={{ color }}
                     title="Edit reminder"
                     aria-label={`Edit reminder for ${habit.name}`}
@@ -128,7 +130,7 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground/60 hover:text-foreground"
+                className="h-11 w-11 text-muted-foreground/60 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); setActionsVisible((v) => !v); }}
                 aria-label={actionsVisible ? `Hide actions for ${habit.name}` : `Show more actions for ${habit.name}`}
                 aria-expanded={actionsVisible}
@@ -138,7 +140,7 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn("h-8 w-8 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
+                className={cn("h-11 w-11 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
                 onClick={(e) => { e.stopPropagation(); setShowEdit(true); setActionsVisible(false); }}
                 title="Edit habit"
                 aria-label={`Edit ${habit.name}`}
@@ -149,7 +151,7 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn("h-8 w-8 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
+                className={cn("h-11 w-11 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
                 onClick={(e) => { e.stopPropagation(); setShowEditWeek(true); setActionsVisible(false); }}
                 title="Edit completions"
                 aria-label={`Edit completions for ${habit.name}`}
@@ -160,7 +162,7 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn("h-8 w-8 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
+                className={cn("h-11 w-11 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
                 onClick={(e) => { e.stopPropagation(); setShowReport(true); setActionsVisible(false); }}
                 title="Monthly report"
                 aria-label={`Monthly report for ${habit.name}`}

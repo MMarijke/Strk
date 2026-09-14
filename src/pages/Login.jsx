@@ -71,7 +71,9 @@ export default function Login() {
             <span className="text-2xl">🔥</span>
           </div>
           <div className="mb-2">
-            <span className="text-2xl font-black text-foreground tracking-tight">Strk</span>
+            <Link to="/" className="text-2xl font-black text-foreground tracking-tight hover:opacity-80 transition-opacity">
+              Strk
+            </Link>
           </div>
           <h1 className="text-3xl font-extrabold text-foreground tracking-tight mb-2">Sign in</h1>
           <p className="text-muted-foreground text-sm leading-relaxed">
