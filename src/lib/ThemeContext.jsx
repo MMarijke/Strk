@@ -1,7 +1,14 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 
 export const COLOR_THEMES = [
-  { id: "strk",    label: "Strk",     primary: "34 80% 55%",  accent: "42 90% 68%",  bg: "60 20% 98%",  darkBg: "60 8% 11%",  isDefault: true },
+  // primary at 36% lightness, not 55% -- 55% paired with white button text
+  // (--primary-foreground) measured at 2.34:1 contrast, under half the
+  // WCAG AA floor. 36% clears it at ~4.67:1 with the same hue/saturation.
+  // This is the value that actually reaches the page: the effect below
+  // applies it via root.style.setProperty on every mount (including the
+  // logged-out Landing page, which has no stored theme choice yet and
+  // falls back to this entry), overriding src/index.css's own --primary.
+  { id: "strk",    label: "Strk",     primary: "34 80% 36%",  accent: "42 90% 68%",  bg: "60 20% 98%",  darkBg: "60 8% 11%",  isDefault: true },
   { id: "green",   label: "Forest",   primary: "100 19% 55%", accent: "28 48% 53%",  bg: "80 17% 96%",  darkBg: "60 8% 11%" },
   { id: "blue",    label: "Ocean",    primary: "207 26% 55%", accent: "189 30% 61%", bg: "207 20% 96%", darkBg: "60 8% 11%" },
   { id: "purple",  label: "Lavender", primary: "271 19% 62%", accent: "303 21% 69%", bg: "271 20% 97%", darkBg: "60 8% 11%" },

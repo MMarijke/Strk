@@ -204,7 +204,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
           <p className="font-bold text-sm">Focus Session</p>
           <p className="text-xs text-muted-foreground">{session.duration_minutes} min · {inLobby ? "starting soon" : session.status}</p>
         </div>
-        <Button variant="ghost" size="icon" className="rounded-full" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="rounded-full" onClick={onClose} aria-label="Close focus session">
           <X className="w-4 h-4" />
         </Button>
       </div>

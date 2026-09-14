@@ -162,6 +162,7 @@ export default function SmartReminders({ habits, onActiveChange, onReminderClick
                     size="icon"
                     className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
                     onClick={(e) => { e.stopPropagation(); setDismissed((prev) => new Set([...prev, r.id])); }}
+                    aria-label={`Dismiss reminder: ${r.message}`}
                   >
                     <X className="w-3 h-3" />
                   </Button>

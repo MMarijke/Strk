@@ -71,7 +71,7 @@ export default function InviteMembersSheet({ open, onOpenChange, group }) {
                 {truncateMiddle(inviteLink)}
               </span>
             </div>
-            <Button variant="outline" size="icon" className="shrink-0" onClick={handleCopy}>
+            <Button variant="outline" size="icon" className="shrink-0" onClick={handleCopy} aria-label={copied ? "Copied!" : "Copy invite link"}>
               {copied ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
             </Button>
           </div>

@@ -88,7 +88,7 @@ export default function Subscription() {
       <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
         <div className="flex items-center gap-3 mb-6">
           <Link to="/Settings">
-            <Button variant="ghost" size="icon" className="rounded-full">
+            <Button variant="ghost" size="icon" className="rounded-full" aria-label="Back to Settings">
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>

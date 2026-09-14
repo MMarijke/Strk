@@ -59,6 +59,7 @@ export default function ChallengeStartBanner({ userEmail, onActiveChange }) {
             e.stopPropagation();
             dismissMutation.mutate(notif.id);
           }}
+          aria-label="Dismiss"
         >
           <X className="w-3.5 h-3.5 text-muted-foreground" />
         </Button>

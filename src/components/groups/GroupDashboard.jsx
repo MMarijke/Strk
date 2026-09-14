@@ -303,7 +303,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setViewingChallenge(false)}>
+          <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setViewingChallenge(false)} aria-label="Back to group">
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
@@ -334,14 +334,14 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="rounded-full shrink-0" onClick={onBack}>
+        <Button variant="ghost" size="icon" className="rounded-full shrink-0" onClick={onBack} aria-label="Back to groups">
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div className="flex-1 min-w-0">
           <h2 className="font-bold text-lg truncate">{group.name}</h2>
           <p className="text-xs text-muted-foreground">{memberEmails.length} member{memberEmails.length !== 1 ? "s" : ""}</p>
         </div>
-        <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setShowSettings(true)}>
+        <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setShowSettings(true)} aria-label="Group settings">
           <Settings className="w-4 h-4" />
         </Button>
       </div>
@@ -360,7 +360,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       {!isAdmin && group.invite_code && (
         <div className="flex items-center gap-2 bg-muted/60 rounded-xl px-3 py-2">
           <span className="text-xs text-muted-foreground flex-1 font-mono truncate">{group.invite_code}</span>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCopy(group.invite_code, "code")}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCopy(group.invite_code, "code")} aria-label={copied === "code" ? "Copied!" : "Copy invite code"}>
             {copied === "code" ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
           </Button>
         </div>
@@ -448,7 +448,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                 </div>
               ) : (
                 <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
-                  onClick={() => setConfirmRemove(row.email)}>
+                  onClick={() => setConfirmRemove(row.email)} aria-label={`Remove ${row.email} from group`}>
                   <UserMinus className="w-3.5 h-3.5" />
                 </Button>
               )

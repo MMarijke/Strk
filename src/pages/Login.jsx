@@ -1,10 +1,11 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Mail, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/api/supabaseClient";
+import { setPendingPlan } from "@/lib/pendingPlan";
 
 // signInWithOtp is magic-link/OTP, not password auth -- there's no
 // "wrong password" case here. Matched by keyword rather than exact
@@ -26,9 +27,20 @@ function translateAuthError(message) {
 }
 
 export default function Login() {
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("idle"); // idle | sending | sent | error
   const [error, setError] = useState(null);
+
+  // Remembers a plan chosen on Landing's pricing section (?plan=pro) across
+  // the magic-link round-trip, which a query param alone can't survive --
+  // see pendingPlan.js. Dashboard checks this once auth completes and
+  // redirects to Subscription for "pro", so the choice isn't silently
+  // dropped the way it used to be.
+  useEffect(() => {
+    const plan = searchParams.get("plan");
+    if (plan === "pro") setPendingPlan(plan);
+  }, [searchParams]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

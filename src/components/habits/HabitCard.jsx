@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { format } from "date-fns";
-import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2 } from "lucide-react";
+import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn, HABIT_COLORS } from "@/lib/utils";
@@ -45,10 +45,9 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
     <>
       <Card
         className={cn(
-          "group relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 bg-card cursor-pointer",
+          "group relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 bg-card",
           isHighlighted && "ring-2 ring-primary ring-offset-2 ring-offset-background"
         )}
-        onClick={() => setActionsVisible((v) => !v)}
       >
         <div className="absolute top-0 left-0 w-1 h-full rounded-l-lg" style={{ backgroundColor: color }} />
 
@@ -66,6 +65,7 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
                     className="hover:scale-110 transition-transform shrink-0"
                     style={{ color }}
                     title="Edit reminder"
+                    aria-label={`Edit reminder for ${habit.name}`}
                   >
                     <Bell className="w-3.5 h-3.5" />
                   </button>
@@ -118,13 +118,31 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Secondary action buttons — visible when card is tapped */}
+              {/* Real, always-visible, keyboard-native toggle for the
+                  secondary actions below -- replaces a previous
+                  whole-card onClick with no visual affordance and no
+                  keyboard path at all. A <button> gets focus/Enter/Space
+                  handling for free, so there's no need to duplicate
+                  SmartReminders.jsx's manual role/tabIndex/onKeyDown
+                  pattern here. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground/60 hover:text-foreground"
+                onClick={(e) => { e.stopPropagation(); setActionsVisible((v) => !v); }}
+                aria-label={actionsVisible ? `Hide actions for ${habit.name}` : `Show more actions for ${habit.name}`}
+                aria-expanded={actionsVisible}
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 className={cn("h-8 w-8 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
                 onClick={(e) => { e.stopPropagation(); setShowEdit(true); setActionsVisible(false); }}
                 title="Edit habit"
+                aria-label={`Edit ${habit.name}`}
+                tabIndex={actionsVisible ? 0 : -1}
               >
                 <Settings2 className="w-4 h-4" />
               </Button>
@@ -134,6 +152,8 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
                 className={cn("h-8 w-8 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
                 onClick={(e) => { e.stopPropagation(); setShowEditWeek(true); setActionsVisible(false); }}
                 title="Edit completions"
+                aria-label={`Edit completions for ${habit.name}`}
+                tabIndex={actionsVisible ? 0 : -1}
               >
                 <CalendarDays className="w-4 h-4" />
               </Button>
@@ -143,6 +163,8 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
                 className={cn("h-8 w-8 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
                 onClick={(e) => { e.stopPropagation(); setShowReport(true); setActionsVisible(false); }}
                 title="Monthly report"
+                aria-label={`Monthly report for ${habit.name}`}
+                tabIndex={actionsVisible ? 0 : -1}
               >
                 <BarChart2 className="w-4 h-4" />
               </Button>
@@ -154,6 +176,8 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
               <button
                 onClick={(e) => { e.stopPropagation(); if (!isToggling) onToggleToday(habit); }}
                 disabled={isToggling}
+                aria-label={`Mark ${habit.name} ${isDoneToday ? "not done" : "done"} for today`}
+                aria-pressed={isDoneToday}
                 className={cn(
                   "w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 shrink-0",
                   isToggling && "opacity-60 cursor-not-allowed",

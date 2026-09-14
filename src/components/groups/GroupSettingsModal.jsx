@@ -227,6 +227,7 @@ export default function GroupSettingsModal({
                             variant="ghost"
                             className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
                             onClick={() => setConfirmRemove(email)}
+                            aria-label={`Remove ${name} from group`}
                           >
                             <UserMinus className="w-3.5 h-3.5" />
                           </Button>

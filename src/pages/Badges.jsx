@@ -234,7 +234,7 @@ export default function Badges() {
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <Link to="/Dashboard">
-            <Button variant="ghost" size="icon" className="rounded-full">
+            <Button variant="ghost" size="icon" className="rounded-full" aria-label="Back to Dashboard">
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>

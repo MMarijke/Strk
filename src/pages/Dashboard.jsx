@@ -26,6 +26,7 @@ import StartFocusModal from "@/components/focus/StartFocusModal";
 import SessionRoom from "@/components/focus/SessionRoom";
 import { trackEvent } from "@/lib/analytics";
 import { useSubscription } from "@/hooks/useSubscription";
+import { consumePendingPlan } from "@/lib/pendingPlan";
 import { toast } from "sonner";
 
 export default function Dashboard() {
@@ -61,6 +62,18 @@ export default function Dashboard() {
   useEffect(() => {
     refreshFreezeState();
   }, [refreshFreezeState]);
+
+  // Picks up a "go Pro" choice made on Landing's pricing section before the
+  // visitor ever signed in -- see pendingPlan.js for why a query param
+  // alone can't survive the magic-link round-trip. Runs once auth resolves;
+  // consumePendingPlan() clears the flag so this never fires again for the
+  // same choice (e.g. after they cancel out of Subscription).
+  useEffect(() => {
+    if (!user?.email) return;
+    if (consumePendingPlan() === "pro") {
+      navigate("/Subscription");
+    }
+  }, [user?.email, navigate]);
 
   // Load user's profile (display name, highest rank) — plan/isPro comes from useSubscription
   useEffect(() => {
