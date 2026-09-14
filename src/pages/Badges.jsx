@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Medal } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ function ProgressBar({ current, total }) {
   );
 }
 
-function BadgeCard({ badge, isNew }) {
+const BadgeCard = React.memo(function BadgeCard({ badge, isNew }) {
   return (
     <motion.div
       initial={isNew ? { scale: 0.9, opacity: 0 } : false}
@@ -97,7 +97,7 @@ function BadgeCard({ badge, isNew }) {
       </Card>
     </motion.div>
   );
-}
+});
 
 export default function Badges() {
   const { user } = useAuth();
@@ -137,37 +137,56 @@ export default function Badges() {
     enabled: !!user?.email,
   });
 
-  const freezeEverUsed = user?.email ? hasFreezeEverBeenUsed(user.email) : false;
-
-  // Build a map of badge_id -> earned_date from persisted records
-  const persistedMap = {};
-  persistedBadges.forEach((pb) => { persistedMap[pb.badge_id] = pb.earned_date; });
-
-  // Evaluate current state from habit data
-  const evaluated = evaluateBadges(habits, allMyGroups, user?.email, freezeEverUsed);
-
-  // Merge: a badge is earned if EITHER current evaluation says so OR it's persisted
-  // Earned state never reverts — only locked → earned transitions allowed
-  const today = format(new Date(), "yyyy-MM-dd");
-  const merged = evaluated.map((b) => {
-    const persistedDate = persistedMap[b.badge_id] || persistedMap[b.id];
-    if (b.earned || persistedDate) {
-      let earnedDate = persistedDate; // always prefer what's already stored
-      if (!earnedDate) {
-        // First time earning — calculate retroactive date for streak badges
-        if (STREAK_BADGE_IDS.has(b.id) && b.streakDays) {
-          earnedDate = getStreakBadgeEarnedDate(habits, b.streakDays) || "recently";
-        } else {
-          earnedDate = "recently";
-        }
-      }
-      return { ...b, earned: true, earned_date: earnedDate };
-    }
-    return b;
+  // hasFreezeEverBeenUsed is async -- calling it directly here (as this
+  // used to) never awaits the promise, so freezeEverUsed was always a
+  // truthy Promise object regardless of the real answer, which fed
+  // evaluateBadges() an always-true "comeback_kid" freeze signal for any
+  // logged-in user. Not a security issue (award_badge's RPC recomputes
+  // this itself from streak_freezes server-side before persisting
+  // anything), but it did mean this page could show/attempt to award
+  // Comeback Kid based on a value that was never actually checked.
+  const { data: freezeEverUsed = false } = useQuery({
+    queryKey: ["freeze-ever-used", user?.email],
+    queryFn: () => hasFreezeEverBeenUsed(user.email),
+    enabled: !!user?.email,
   });
 
-  const earned = merged.filter((b) => b.earned);
-  const locked = merged.filter((b) => !b.earned);
+  // Build a map of badge_id -> earned_date from persisted records
+  const persistedMap = useMemo(() => {
+    const map = {};
+    persistedBadges.forEach((pb) => { map[pb.badge_id] = pb.earned_date; });
+    return map;
+  }, [persistedBadges]);
+
+  const today = format(new Date(), "yyyy-MM-dd");
+
+  // Merge: a badge is earned if EITHER current evaluation says so OR it's
+  // persisted. Earned state never reverts — only locked → earned
+  // transitions allowed. Memoized so BadgeCard (React.memo below) actually
+  // skips re-rendering when unrelated state (the celebration modal,
+  // newlyEarnedIds) changes but the badge data itself hasn't.
+  const merged = useMemo(() => {
+    const evaluated = evaluateBadges(habits, allMyGroups, user?.email, freezeEverUsed);
+    return evaluated.map((b) => {
+      const persistedDate = persistedMap[b.badge_id] || persistedMap[b.id];
+      if (b.earned || persistedDate) {
+        let earnedDate = persistedDate; // always prefer what's already stored
+        if (!earnedDate) {
+          // First time earning — calculate retroactive date for streak badges
+          if (STREAK_BADGE_IDS.has(b.id) && b.streakDays) {
+            earnedDate = getStreakBadgeEarnedDate(habits, b.streakDays) || "recently";
+          } else {
+            earnedDate = "recently";
+          }
+        }
+        return { ...b, earned: true, earned_date: earnedDate };
+      }
+      return b;
+    });
+  }, [habits, allMyGroups, user?.email, freezeEverUsed, persistedMap]);
+
+  const earned = useMemo(() => merged.filter((b) => b.earned), [merged]);
+  const locked = useMemo(() => merged.filter((b) => !b.earned), [merged]);
 
   // Detect newly earned badges, persist them, trigger celebration
   useEffect(() => {

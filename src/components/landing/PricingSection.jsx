@@ -128,7 +128,17 @@ export default function PricingSection() {
         </div>
       </div>
 
+      {/* Reassurance right after the decision itself -- the pricing card is
+          the highest-stakes moment on the page, and previously offered
+          nothing here beyond a technical footnote about where prices come
+          from. Both claims are real: Free has never required payment
+          details, and Subscription.jsx's cancel flow is a genuine
+          self-service cancellation (effective at the next billing period),
+          not a "contact support" runaround. */}
       <p className="text-center text-xs text-muted-foreground mt-6">
+        No card required for Free · Cancel Pro anytime
+      </p>
+      <p className="text-center text-xs text-muted-foreground mt-1">
         Prices shown are live from Paddle.
       </p>
     </section>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ const CATEGORY_LABELS = {
 // getFreezeMonthState() call, not fetched per-card -- every HabitCard
 // used to independently re-fetch the same one streak_freezes row via its
 // own useEffect, 2 requests per card, on every dashboard load.
-export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpdateReminder, onApplyFreeze, onUpdate, onArchive, userEmail, isPro, isToggling = false, frozenDate = null, freezesRemaining = 0, isHighlighted = false }) {
+function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpdateReminder, onApplyFreeze, onUpdate, onArchive, userEmail, isPro, isToggling = false, frozenDate = null, freezesRemaining = 0, isHighlighted = false }) {
   const [showReport, setShowReport] = useState(false);
   const [showEditWeek, setShowEditWeek] = useState(false);
   const [showEditReminder, setShowEditReminder] = useState(false);
@@ -35,7 +35,10 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
   const completions = habit.completions || [];
   const isDoneToday = completions.includes(today);
   const color = habit.color || HABIT_COLORS[0];
-  const streak = calculateStreak(completions, frozenDate);
+  // Computed once here and passed down to StreakWidget (which would
+  // otherwise independently re-run the same calculation for the same
+  // completions/frozenDate on every render).
+  const streak = useMemo(() => calculateStreak(completions, frozenDate), [completions, frozenDate]);
   const freezeEligibleDate = userEmail ? getFreezeEligibleDate(habit) : null;
   const canShowFreezePrompt = freezeEligibleDate && !frozenDate;
 
@@ -84,7 +87,7 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
               )}
 
               <div className="mt-3">
-                <StreakWidget completions={completions} color={color} frozenDate={frozenDate} />
+                <StreakWidget completions={completions} color={color} frozenDate={frozenDate} streak={streak} />
               </div>
               <div className="mt-2">
                 <MilestoneBadges completions={completions} currentStreak={streak} />
@@ -257,3 +260,7 @@ export default function HabitCard({ habit, onToggleToday, onDelete, onUpdateComp
     </>
   );
 }
+
+// Dashboard renders one of these per habit -- toggling one shouldn't
+// re-render every sibling card whose own props haven't changed.
+export default React.memo(HabitCard);
