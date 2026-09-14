@@ -18,13 +18,22 @@ const PRO_INCLUDES = [
   "Full 12-week trends",
 ];
 
-function PriceLine({ price, isLoading }) {
+function PriceLine({ price, isLoading, isError }) {
   if (isLoading) {
     return <span className="inline-block h-8 w-20 rounded-lg bg-muted animate-pulse" />;
   }
   const label = formatPrice(price);
   if (!label) {
-    return <span className="text-sm text-muted-foreground">Sign in to see pricing</span>;
+    // get_prices (the edge function backing this) is a public, anonymous
+    // endpoint -- pricing was never actually gated behind sign-in, so the
+    // old copy here ("Sign in to see pricing") misattributed a Paddle
+    // fetch timeout/error as an intentional auth wall at exactly the
+    // moment a visitor is deciding whether to trust the product.
+    return (
+      <span className="text-sm text-muted-foreground">
+        {isError ? "Couldn't load pricing — please refresh" : "Pricing unavailable right now"}
+      </span>
+    );
   }
   return (
     <span className="text-3xl font-black text-foreground tracking-tight">
@@ -46,7 +55,7 @@ function annualSavingsPct(monthly, annual) {
 }
 
 export default function PricingSection() {
-  const { monthly, annual, isLoading } = usePaddlePrices();
+  const { monthly, annual, isLoading, isError } = usePaddlePrices();
   const annualLabel = formatPrice(annual);
   const savingsPct = annualSavingsPct(monthly, annual);
 
@@ -98,7 +107,7 @@ export default function PricingSection() {
           </span>
           <h3 className="font-bold text-sm text-foreground mb-1">Pro</h3>
           <div className="mb-5">
-            <PriceLine price={monthly} isLoading={isLoading} />
+            <PriceLine price={monthly} isLoading={isLoading} isError={isError} />
             {!isLoading && annualLabel && (
               <p className="text-xs text-muted-foreground mt-1.5">
                 or {annualLabel}/year{savingsPct ? ` — save ${savingsPct}%` : ""}

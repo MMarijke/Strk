@@ -48,6 +48,10 @@ export default function Dashboard() {
   const [freezesRemaining, setFreezesRemaining] = useState(null);
   const [frozenHabits, setFrozenHabits] = useState({});
   const [highlightedHabitId, setHighlightedHabitId] = useState(null);
+  // Which cards Complete All just toggled -- separate from
+  // highlightedHabitId (a single id, for the reminder-click scroll-to
+  // case) since Complete All can highlight several cards at once.
+  const [completeAllHighlightIds, setCompleteAllHighlightIds] = useState(() => new Set());
   const rankCheckTimeout = useRef(null);
   const queryClient = useQueryClient();
 
@@ -200,6 +204,13 @@ export default function Dashboard() {
       updateMutation.mutate({ id: h.id, data: { completions: [...(h.completions || []), today] } });
     });
 
+    // Per-card visual cue for what changed, not just the aggregate toast --
+    // reuses HabitCard's existing isHighlighted ring. Cleared after the
+    // same 5s window as the toast/Undo, or immediately on Undo itself.
+    const toggledIds = new Set(toComplete.map((h) => h.id));
+    setCompleteAllHighlightIds(toggledIds);
+    const clearHighlight = setTimeout(() => setCompleteAllHighlightIds(new Set()), 5000);
+
     const toastId = toast(
       <div className="flex items-center justify-between gap-3 w-full">
         <p className="text-sm text-foreground">
@@ -211,6 +222,8 @@ export default function Dashboard() {
             toComplete.forEach((h) => {
               updateMutation.mutate({ id: h.id, data: { completions: h.completions || [] } });
             });
+            clearTimeout(clearHighlight);
+            setCompleteAllHighlightIds(new Set());
             toast.dismiss(toastId);
           }}
         >
@@ -486,7 +499,7 @@ export default function Dashboard() {
                   >
                     <HabitCard
                       habit={habit}
-                      isHighlighted={highlightedHabitId === habit.id}
+                      isHighlighted={highlightedHabitId === habit.id || completeAllHighlightIds.has(habit.id)}
                       onToggleToday={handleToggleToday}
                       onDelete={(id) => deleteMutation.mutate(id)}
                       onUpdateCompletions={handleUpdateCompletions}
