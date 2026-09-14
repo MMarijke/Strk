@@ -1,5 +1,6 @@
 import { initializePaddle } from '@paddle/paddle-js';
 import { trackEvent } from '@/lib/analytics';
+import { supabase } from '@/api/supabaseClient';
 
 let paddleInstance = null;
 
@@ -33,13 +34,25 @@ export async function getPaddle() {
 
 export async function openCheckout(priceId, userEmail) {
   const paddle = await getPaddle();
+
+  // custom_data on a Paddle Checkout is fully client-controlled — anyone
+  // can call the Paddle.js SDK directly (bypassing this function) with
+  // arbitrary custom_data. So paddle-webhook no longer trusts a raw email
+  // here as the join key back to a Strk user; instead we ask a
+  // JWT-authenticated edge function to mint a short-lived, signed token
+  // proving who's actually signed in, and stamp that instead. See
+  // supabase/functions/_shared/checkout-token.ts for the verification side.
+  const { data, error } = await supabase.functions.invoke('create-checkout-token');
+  if (error || !data?.token) {
+    throw new Error('Could not start checkout — please try again.');
+  }
+
   paddle.Checkout.open({
     items: [{ priceId, quantity: 1 }],
+    // customer.email only prefills Paddle's own checkout UI — it plays no
+    // role in resolving the Strk account, so it doesn't need to be trusted.
     customer: { email: userEmail },
-    // Subscription/transaction webhook payloads carry customer_id but not
-    // reliably the customer's email — custom_data set here does propagate
-    // to those events, so the webhook uses it to resolve the Strk user.
-    customData: { email: userEmail },
+    customData: { checkoutToken: data.token },
   });
 }
 

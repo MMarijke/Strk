@@ -16,7 +16,12 @@
 // except the viewer (the viewer's own row is always computed live,
 // client-side, from their own fresher habits query).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { timingSafeEqual } from "node:crypto";
+import { Buffer } from "node:buffer";
 import { emailShell } from "../_shared/email-template.ts";
+import { initSentry, captureException } from "../_shared/sentry.ts";
+
+initSentry("send-weekly-digest");
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const FROM_ADDRESS = Deno.env.get("RESEND_FROM_ADDRESS") ?? "Strk <hello@strk.app>";
@@ -25,6 +30,17 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
+
+// Constant-time comparison, same as paddle-webhook's signature check --
+// `!==` on a secret header is a (largely theoretical, but free to close)
+// timing side channel that a fixed-time compare doesn't have.
+function isValidCronSecret(provided: string | null): boolean {
+  if (!provided) return false;
+  const expected = Buffer.from(CRON_SECRET);
+  const actual = Buffer.from(provided);
+  if (expected.length !== actual.length) return false;
+  return timingSafeEqual(expected, actual);
+}
 
 function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -116,7 +132,7 @@ function motivationalMessage(rate: number): string {
 }
 
 Deno.serve(async (req) => {
-  if (req.headers.get("x-cron-secret") !== CRON_SECRET) {
+  if (!isValidCronSecret(req.headers.get("x-cron-secret"))) {
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -135,6 +151,7 @@ Deno.serve(async (req) => {
 
   if (profilesError) {
     console.error("send-weekly-digest: failed to load profiles", profilesError);
+    await captureException(profilesError, { where: "load profiles" });
     return new Response(JSON.stringify({ error: "Failed to load profiles" }), { status: 500 });
   }
 
@@ -150,7 +167,12 @@ Deno.serve(async (req) => {
       .eq("archived", false);
 
     if (habitsError) {
-      console.error("send-weekly-digest: failed to load habits for", profile.created_by, habitsError);
+      // created_by_id (uuid), not created_by (email) -- this function
+      // iterates and processes every user's row, so it's the one place in
+      // the codebase most exposed to accidentally logging raw addresses at
+      // volume; captureException still gets the real error, Sentry-scoped.
+      console.error("send-weekly-digest: failed to load habits for", profile.created_by_id, habitsError);
+      await captureException(habitsError, { where: "load habits", profileId: profile.created_by_id });
       continue;
     }
     if (!habits?.length) continue; // nothing to report yet
@@ -170,7 +192,8 @@ Deno.serve(async (req) => {
       .eq("created_by_id", profile.created_by_id);
 
     if (updateError) {
-      console.error("send-weekly-digest: failed to update weekly stats for", profile.created_by, updateError);
+      console.error("send-weekly-digest: failed to update weekly stats for", profile.created_by_id, updateError);
+      await captureException(updateError, { where: "update weekly stats", profileId: profile.created_by_id });
     } else {
       statsUpdated++;
     }
@@ -205,8 +228,16 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ from: FROM_ADDRESS, to: profile.created_by, subject: "Your week in review 📊", html }),
     });
 
-    if (res.ok) sent++;
-    else console.error("send-weekly-digest: Resend error for", profile.created_by, res.status, await res.text());
+    if (res.ok) {
+      sent++;
+    } else {
+      const resendBody = await res.text();
+      console.error("send-weekly-digest: Resend error for", profile.created_by_id, res.status, resendBody);
+      await captureException(new Error(`Resend error ${res.status}: ${resendBody}`), {
+        where: "resend send",
+        profileId: profile.created_by_id,
+      });
+    }
   }
 
   return new Response(JSON.stringify({ sent, statsUpdated, total: profiles?.length ?? 0 }), { status: 200 });

@@ -1,4 +1,5 @@
 import React from "react";
+import { toast } from "sonner";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/AuthContext";
@@ -27,8 +28,11 @@ export default function UpgradeModal({ onClose }) {
   const { user } = useAuth();
   const { monthly, annual, isLoading } = usePaddlePrices();
 
-  const handleMonthly = () => openCheckout(PADDLE_MONTHLY_PRICE_ID, user?.email);
-  const handleAnnual = () => openCheckout(PADDLE_ANNUAL_PRICE_ID, user?.email);
+  const handleCheckoutError = (err) => {
+    toast.error(err?.message || "Could not start checkout. Please try again.", { duration: 4000 });
+  };
+  const handleMonthly = () => openCheckout(PADDLE_MONTHLY_PRICE_ID, user?.email).catch(handleCheckoutError);
+  const handleAnnual = () => openCheckout(PADDLE_ANNUAL_PRICE_ID, user?.email).catch(handleCheckoutError);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">

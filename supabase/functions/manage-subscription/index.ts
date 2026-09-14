@@ -77,7 +77,12 @@ async function paddleFetch(path: string, options: RequestInit = {}) {
     },
   });
   const body = await res.json();
-  console.log(`paddleFetch ${options.method ?? "GET"} ${path} -> ${res.status}`, JSON.stringify(body));
+  // Deliberately not logging the response body -- it can carry billing PII
+  // (name/address/card brand/last4/customer email) and this bypasses the
+  // redaction _shared/sentry.ts otherwise enforces. Status + path is enough
+  // to spot a failing call; captureException below still gets the real
+  // error detail for failures specifically, scoped to Sentry.
+  console.log(`paddleFetch ${options.method ?? "GET"} ${path} -> ${res.status}`);
   if (!res.ok) {
     throw new Error(`Paddle API error ${res.status}: ${JSON.stringify(body.error ?? body)}`);
   }
@@ -154,10 +159,12 @@ Deno.serve(async (req) => {
       const prices = await paddleFetch(`/prices?id=${validIds.join(",")}`);
       return jsonResponse({ prices });
     } catch (err) {
+      // Detail (raw Paddle error body -- may include internal catalog/
+      // account info) stays server-side/Sentry-only; the client gets a
+      // generic message.
       console.error("manage-subscription get_prices error:", err);
-      const message = err instanceof Error ? err.message : "Unknown error";
       await captureException(err, { action: "get_prices" });
-      return jsonResponse({ error: message }, 502);
+      return jsonResponse({ error: "Failed to fetch prices. Please try again." }, 502);
     }
   }
 
@@ -228,6 +235,15 @@ Deno.serve(async (req) => {
               `Check VITE_PADDLE_MONTHLY_PRICE_ID / VITE_PADDLE_ANNUAL_PRICE_ID in the deployed client build.`,
           }, 400);
         }
+        // Same reasoning as get_prices: a well-formatted price id isn't
+        // necessarily one of OUR two plans -- without this, an
+        // authenticated subscriber could PATCH their own subscription onto
+        // any price that exists anywhere in the same Paddle seller account
+        // (an archived tier, a test price, anything else in the catalog).
+        if (!PUBLIC_PRICE_IDS.has(requestBody.priceId)) {
+          console.error(`manage-subscription: priceId not in the public catalog: ${JSON.stringify(requestBody.priceId)}`);
+          return jsonResponse({ error: "priceId is not a valid Strk plan." }, 400);
+        }
         const subscription = await paddleFetch(`/subscriptions/${subscriptionId}`, {
           method: "PATCH",
           body: JSON.stringify({
@@ -260,9 +276,11 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "Unknown action" }, 400);
     }
   } catch (err) {
+    // Same reasoning as get_prices above: err.message here is built from
+    // paddleFetch's raw Paddle response body, which shouldn't reach the
+    // client. Full detail still goes to console/Sentry, scoped to this user.
     console.error("manage-subscription error:", err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    await captureException(err, { userId: user.id, subscriptionId, customerId });
-    return jsonResponse({ error: message }, 502);
+    await captureException(err, { userId: user.id, subscriptionId, customerId, action: requestBody.action });
+    return jsonResponse({ error: "Failed to manage your subscription. Please try again." }, 502);
   }
 });

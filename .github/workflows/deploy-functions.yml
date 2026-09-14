@@ -1,0 +1,51 @@
+name: Deploy Supabase Edge Functions
+
+# Closes the gap called out in Strk/CLAUDE.md: pushing to main only ever
+# applied database migrations (via Supabase's own GitHub integration) --
+# there was no CI/CD wiring for anything under supabase/functions/ at all,
+# so a merged fix to a function stayed unreleased until someone remembered
+# to run `supabase functions deploy <name>` by hand. That gap is what kept
+# send-welcome-email's vulnerable code live in production for two days
+# after the fix landed on main, undetected until someone explicitly
+# checked `supabase functions list` timestamps.
+#
+# Deploys every function on any change under supabase/functions/, rather
+# than diffing which specific function directory changed -- simpler and
+# more robust than bash path-diffing logic that could silently miss a
+# renamed or newly added function, and redeploying an unchanged function
+# is a safe no-op (new version bump, identical code).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-supabase-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy edge functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # Project ref isn't sensitive -- it's already public in this
+          # repo's .env.example (VITE_SUPABASE_URL) and every client
+          # request -- only SUPABASE_ACCESS_TOKEN needs to be a secret.
+          supabase link --project-ref bbcfnislakqitekblgro
+          supabase functions deploy
+
+      - name: Verify deploy landed
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions list
