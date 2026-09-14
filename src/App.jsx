@@ -193,9 +193,16 @@ function App() {
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/*" element={<AuthenticatedApp />} />
             </Routes>
+            {/* Must stay inside Router -- it renders a <Link to="/privacy">
+                internally, which needs router context (NavigationContext)
+                to resolve. Previously a sibling of Router instead of a
+                descendant, which crashed the entire app on mount on every
+                route ("Cannot destructure property 'basename' of
+                useContext(...) as it is null") since this banner renders
+                unconditionally at the app root. */}
+            <AnalyticsConsentBanner />
           </Router>
           <Toaster />
-          <AnalyticsConsentBanner />
         </QueryClientProvider>
       </ThemeProviderWithUser>
     </AuthProvider>
