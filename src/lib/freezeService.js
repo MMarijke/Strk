@@ -117,6 +117,52 @@ export function isOldEnoughForFreeze(habit, yesterday) {
   return createdDate < yesterday;
 }
 
+/**
+ * Freeze Assist (Pro-exclusive): spend one of your own freezes to save a
+ * GROUPMATE's about-to-break streak instead of only your own. Routed
+ * through assist_streak_freeze() -- there is no client-side eligibility
+ * shortcut here at all (unlike applyFreeze, which at least pre-computes
+ * the eligible date via getFreezeEligibleDate before calling the RPC):
+ * every check (caller is Pro, habit belongs to the named target, both
+ * share a group, the date is recent) happens server-side, since this is a
+ * genuine cross-user write and none of those facts are safe to trust from
+ * the caller.
+ */
+export async function assistFreeze(targetEmail, habitId, missedDate) {
+  const { data, error } = await supabase.rpc("assist_streak_freeze", {
+    p_target_email: targetEmail,
+    p_habit_id: habitId,
+    p_missed_date: missedDate,
+  });
+
+  if (error) {
+    return { success: false, reason: error.message || "Failed to save that streak." };
+  }
+  if (!data.success) {
+    return { success: false, reason: data.reason };
+  }
+  return { success: true, record: data.record };
+}
+
+/**
+ * Which of my groupmates currently have a habit eligible for a freeze --
+ * powers the "Save streak" action on GroupDashboard's leaderboard.
+ * Computed live server-side (get_group_freeze_candidates), not derived
+ * from anything fetched client-side -- habits RLS is owner-only, so this
+ * app has no way to read another member's completions directly anyway.
+ */
+export async function getGroupFreezeCandidates(groupId, todayStr) {
+  const { data, error } = await supabase.rpc("get_group_freeze_candidates", {
+    p_group_id: groupId,
+    p_today: todayStr,
+  });
+  if (error) {
+    console.error("getGroupFreezeCandidates failed:", error);
+    return [];
+  }
+  return data || [];
+}
+
 export function getFreezeEligibleDate(habit) {
   const completions = habit.completions || [];
   const today = new Date();

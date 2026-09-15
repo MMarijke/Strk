@@ -4,7 +4,7 @@ import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotificat
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { format, subDays } from "date-fns";
-import { Users, Trophy, Plus, LogIn, Crown, Medal } from "lucide-react";
+import { Users, Trophy, Plus, LogIn, Crown, Medal, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -55,8 +55,15 @@ const LeaderboardRow = React.memo(function LeaderboardRow({ rank, entry }) {
         {(entry.name || "?")[0].toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm truncate">
-          <span className="mr-1">{getRank(entry.score).emoji}</span>{entry.name}
+        <p className="font-semibold text-sm truncate flex items-center gap-1">
+          <span className="mr-1">{getRank(entry.score).emoji}</span>
+          <span className="truncate">{entry.name}</span>
+          {entry.isPro && (
+            <Sparkles
+              className="w-3 h-3 shrink-0 text-primary"
+              aria-label="Pro member"
+            />
+          )}
         </p>
         <p className="text-xs text-muted-foreground">{entry.consistency}% consistency</p>
       </div>
@@ -208,7 +215,8 @@ export default function Social() {
       bestStreak: myBestStreak,
       consistency: myConsistency,
       score: myBestStreak * 2 + myConsistency,
-      isMe: true
+      isMe: true,
+      isPro
     },
     ...profiles.
     filter((p) => p.is_public !== false && p.created_by !== user?.email).
@@ -218,10 +226,11 @@ export default function Social() {
       avatarColor: p.avatar_color,
       bestStreak: p.best_streak || 0,
       consistency: p.consistency_score || 0,
-      score: (p.best_streak || 0) * 2 + (p.consistency_score || 0)
+      score: (p.best_streak || 0) * 2 + (p.consistency_score || 0),
+      isPro: p.plan === "pro"
     }))].
     sort((a, b) => b.score - a.score);
-  }, [user?.email, user?.full_name, profiles, habits]);
+  }, [user?.email, user?.full_name, profiles, habits, isPro]);
 
   const myGroups = groups.filter(
     (g) => g.created_by === user?.email || (g.member_emails || []).includes(user?.email)

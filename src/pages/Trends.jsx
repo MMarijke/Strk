@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { Habit } from "@/api/entities";
@@ -14,7 +14,7 @@ import { calculateStreak } from "@/components/habits/StreakWidget";
 import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
 import { useSubscription } from "@/hooks/useSubscription";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
-import { HABIT_COLORS as STROKE_COLORS } from "@/lib/utils";
+import { HABIT_COLORS as STROKE_COLORS, cn } from "@/lib/utils";
 
 // STROKE_COLORS has 8 entries; the 9th+ uncustomized habit reuses one of
 // them via i % STROKE_COLORS.length, which makes two lines identical and
@@ -22,6 +22,39 @@ import { HABIT_COLORS as STROKE_COLORS } from "@/lib/utils";
 // dash pattern layered on top of the repeated color so they stay visually
 // distinct instead of overlapping.
 const DASH_PATTERNS = [undefined, "6 3", "2 3", "1 4"];
+
+const CORRELATION_WINDOW_DAYS = 60;
+const MIN_SAMPLE_DAYS = 5;
+const MIN_LIFT = 0.15;
+
+// Finds the single most informative habit pairing: "on days you do A, how
+// much more (or less) likely are you to also do B, vs B's normal rate?"
+// Relative lift (not raw correlation coefficient) because it reads directly
+// as the sentence users see -- "40% more likely" -- with no translation step.
+function computeTopCorrelation(habits, numDays = CORRELATION_WINDOW_DAYS) {
+  if (habits.length < 2) return null;
+  const today = new Date();
+  const windowDays = new Set(Array.from({ length: numDays }, (_, i) => format(subDays(today, i), "yyyy-MM-dd")));
+  const sets = habits.map((h) => new Set((h.completions || []).filter((d) => windowDays.has(d))));
+
+  let best = null;
+  for (let i = 0; i < habits.length; i++) {
+    if (sets[i].size < MIN_SAMPLE_DAYS) continue;
+    for (let j = 0; j < habits.length; j++) {
+      if (i === j) continue;
+      const baseRate = sets[j].size / numDays;
+      if (baseRate === 0) continue;
+      const daysWithA = [...sets[i]];
+      const conditionalRate = daysWithA.filter((d) => sets[j].has(d)).length / daysWithA.length;
+      const lift = (conditionalRate - baseRate) / baseRate;
+      if (!best || Math.abs(lift) > Math.abs(best.lift)) {
+        best = { aName: habits[i].name, bName: habits[j].name, lift, sampleSize: sets[i].size };
+      }
+    }
+  }
+  if (!best || Math.abs(best.lift) < MIN_LIFT) return null;
+  return best;
+}
 
 function buildWeeklyData(habits, numWeeks = 12) {
   const today = new Date();
@@ -56,6 +89,7 @@ export default function Trends() {
   });
 
   const weeklyData = buildWeeklyData(habits);
+  const correlation = useMemo(() => computeTopCorrelation(habits), [habits]);
 
   const today = format(new Date(), "yyyy-MM-dd");
   const last30 = Array.from({ length: 30 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
@@ -203,6 +237,59 @@ export default function Trends() {
                 )}
               </div>
             </Card>
+
+            {/* Deeper Trends (Pro) -- cross-habit correlation insight. Only
+                worth showing (gated or not) once there are 2+ habits to
+                relate; with fewer, there is nothing a Pro upgrade would
+                unlock here, so the section doesn't render at all. */}
+            {habits.length >= 2 && (
+              !subLoading && !isPro ? (
+                <Card className="p-5 border-0 shadow-sm relative overflow-hidden">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" /> Deeper Trends · Pro
+                  </p>
+                  <div className="rounded-lg bg-muted/40 py-6 flex items-center justify-center">
+                    <div className="text-center px-4">
+                      <p className="text-xs font-semibold text-foreground mb-2">
+                        See how your habits affect each other
+                      </p>
+                      <Button size="sm" onClick={() => setShowUpgrade(true)} className="gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Upgrade to Pro
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ) : correlation ? (
+                <Card className={cn(
+                  "p-5 border relative overflow-hidden",
+                  correlation.lift > 0
+                    ? "bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20"
+                    : "bg-gradient-to-r from-accent/10 to-accent/5 border-accent/20"
+                )}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" /> Deeper Trends · Pro
+                  </p>
+                  <p className="text-sm font-medium text-foreground leading-snug">
+                    {correlation.lift > 0
+                      ? `You're ${Math.round(correlation.lift * 100)}% more likely to complete "${correlation.bName}" on days you complete "${correlation.aName}".`
+                      : `You're ${Math.round(Math.abs(correlation.lift) * 100)}% less likely to complete "${correlation.bName}" on days you complete "${correlation.aName}".`}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Based on your last {Math.min(correlation.sampleSize, CORRELATION_WINDOW_DAYS)} tracked days
+                  </p>
+                </Card>
+              ) : (
+                <Card className="p-5 border-0 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" /> Deeper Trends · Pro
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Keep logging — habit correlations need a few more weeks of data across your habits.
+                  </p>
+                </Card>
+              )
+            )}
 
             {/* Per-habit stat cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

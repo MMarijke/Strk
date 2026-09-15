@@ -3,6 +3,7 @@ import FreezePromptBanner from "@/components/habits/FreezePromptBanner";
 import FocusSessionBanner from "@/components/focus/FocusSessionBanner";
 import FocusSessionInviteBanner from "@/components/focus/FocusSessionInviteBanner";
 import ChallengeStartBanner from "@/components/groups/ChallengeStartBanner";
+import FreezeAssistBanner from "@/components/groups/FreezeAssistBanner";
 import SmartReminders from "@/components/habits/SmartReminders";
 import WeeklySummaryCard from "@/components/habits/WeeklySummaryCard";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,7 @@ import { cn } from "@/lib/utils";
 // a real (if soft) yesterday-specific deadline; a new challenge invite and
 // today's reminders can both wait a day without cost; the weekly summary is
 // pure retrospective, nothing lost by seeing it late.
-const PRIORITY = ["focus", "focusInvite", "freeze", "challengeStart", "reminders", "weeklySummary"];
+const PRIORITY = ["focus", "focusInvite", "freeze", "challengeStart", "freezeAssist", "reminders", "weeklySummary"];
 
 /**
  * Consolidates the transient/notification-style Dashboard banners into one
@@ -61,6 +62,7 @@ export default function TodayTray({
   const onFreezeActiveChange = useCallback((v) => setActive("freeze", v), [setActive]);
   const onFocusActiveChange = useCallback((v) => setActive("focus", v), [setActive]);
   const onChallengeStartActiveChange = useCallback((v) => setActive("challengeStart", v), [setActive]);
+  const onFreezeAssistActiveChange = useCallback((v) => setActive("freezeAssist", v), [setActive]);
   const onFocusInviteActiveChange = useCallback((v) => setActive("focusInvite", v), [setActive]);
   const onRemindersActiveChange = useCallback((v) => setActive("reminders", v), [setActive]);
 
@@ -112,6 +114,12 @@ export default function TodayTray({
       {userEmail && (
         <div className={cn(!isVisible("challengeStart") && "hidden")}>
           <ChallengeStartBanner userEmail={userEmail} onActiveChange={onChallengeStartActiveChange} />
+        </div>
+      )}
+
+      {userEmail && (
+        <div className={cn(!isVisible("freezeAssist") && "hidden")}>
+          <FreezeAssistBanner userEmail={userEmail} onActiveChange={onFreezeAssistActiveChange} />
         </div>
       )}
 

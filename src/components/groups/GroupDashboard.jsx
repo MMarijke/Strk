@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Reaction, Habit, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, subDays, parseISO, isAfter } from "date-fns";
-import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, UserMinus, Settings, Trophy, Plus } from "lucide-react";
+import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, UserMinus, Settings, Trophy, Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
@@ -13,6 +13,8 @@ import ChallengeLeaderboard from "./ChallengeLeaderboard";
 import ReactionButton from "./ReactionButton";
 import GroupWeeklyReport from "./GroupWeeklyReport";
 import GroupSettingsModal from "./GroupSettingsModal";
+import FreezeAssistConfirmModal from "./FreezeAssistConfirmModal";
+import UpgradeModal from "@/components/upgrade/UpgradeModal";
 import { getDisplayName } from "@/lib/displayName";
 import { getRank } from "@/lib/utils";
 import { toast } from "sonner";
@@ -20,6 +22,7 @@ import { format as fmtDate } from "date-fns";
 import { trackEvent } from "@/lib/analytics";
 import { useSubscription } from "@/hooks/useSubscription";
 import { supabase } from "@/api/supabaseClient";
+import { getGroupFreezeCandidates, assistFreeze } from "@/lib/freezeService";
 
 const CATEGORY_LABELS = {
   health: "Health", fitness: "Fitness", mindfulness: "Mindfulness",
@@ -78,6 +81,8 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
   const [showWeeklyReport, setShowWeeklyReport] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [newName, setNewName] = useState(group.name);
+  const [assistCandidate, setAssistCandidate] = useState(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   const queryClient = useQueryClient();
   const { isPro } = useSubscription();
@@ -132,6 +137,34 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       "-created_date"
     ),
     enabled: !!group.id,
+  });
+
+  // Freeze Assist (Pro-exclusive): who in this group currently has a habit
+  // eligible for a freeze. Only fetched for Pro users -- Free can't act on
+  // this, and get_group_freeze_candidates does real cross-member work
+  // server-side, not worth running for someone who could never use it.
+  const { data: freezeCandidates = [] } = useQuery({
+    queryKey: ["group-freeze-candidates", group.id, todayStr],
+    queryFn: () => getGroupFreezeCandidates(group.id, todayStr),
+    enabled: !!group.id && isPro,
+    staleTime: 5 * 60 * 1000,
+  });
+  const freezeCandidateByEmail = new Map(freezeCandidates.map((c) => [c.member_email, c]));
+
+  const assistFreezeMutation = useMutation({
+    mutationFn: ({ targetEmail, habitId, missedDate }) => assistFreeze(targetEmail, habitId, missedDate),
+    onSuccess: (result, vars) => {
+      if (!result.success) {
+        toast.error(result.reason || "Couldn't save that streak. Please try again.", { duration: 3500 });
+        return;
+      }
+      trackEvent("freeze_assist_used");
+      queryClient.invalidateQueries({ queryKey: ["group-freeze-candidates", group.id] });
+      toast.success(`Streak saved! ${vars.targetName} will see it was you. 🔥`, { duration: 3000 });
+    },
+    onError: () => {
+      toast.error("Couldn't save that streak. Please try again.", { duration: 3500 });
+    },
   });
 
   const createChallengeMutation = useMutation({
@@ -237,7 +270,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       ? (getDisplayName(email, profiles) !== email.split("@")[0] ? getDisplayName(email, profiles) : (userFullName || getDisplayName(email, profiles)))
       : getDisplayName(email, profiles);
     if (email === userEmail) {
-      return { email, name, isMe: true, ...myStats, topHabit: myTopHabit, hasData: true };
+      return { email, name, isMe: true, isPro, ...myStats, topHabit: myTopHabit, hasData: true };
     }
     const memberProfile = profiles.find((p) => p.created_by === email);
     if (!memberProfile) {
@@ -245,12 +278,13 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       // synced stats yet -- an honest "no data" state, not a real 0.
       // Showing a bare 0 here was the bug: indistinguishable from a
       // genuine score of zero.
-      return { email, name, isMe: false, score: null, bestStreak: 0, consistency: 0, topHabit: null, hasData: false };
+      return { email, name, isMe: false, isPro: false, score: null, bestStreak: 0, consistency: 0, topHabit: null, hasData: false };
     }
     return {
       email,
       name,
       isMe: false,
+      isPro: memberProfile.plan === "pro",
       score: (memberProfile.best_streak || 0) * 2 + (memberProfile.consistency_score || 0),
       bestStreak: memberProfile.best_streak || 0,
       consistency: memberProfile.consistency_score || 0,
@@ -325,6 +359,8 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
           group={group}
           userHabits={habits}
           onCreate={(data) => createChallengeMutation.mutateAsync(data)}
+          isPro={isPro}
+          onUpgradeClick={() => setShowUpgrade(true)}
         />
       </div>
     );
@@ -388,9 +424,11 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
               {row.name[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate">
+              <p className="text-sm font-semibold truncate flex items-center gap-1">
                 {row.hasData && <span className="mr-1">{getRank(row.score).emoji}</span>}
-                {row.name} {row.isMe && <span className="text-xs text-primary font-normal">(you)</span>}
+                <span className="truncate">{row.name}</span>
+                {row.isPro && <Sparkles className="w-3 h-3 shrink-0 text-primary" aria-label="Pro member" />}
+                {row.isMe && <span className="text-xs text-primary font-normal shrink-0">(you)</span>}
               </p>
               {row.topHabit ? (
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -434,6 +472,22 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                 isPro={isPro}
                 onSend={(data) => createReactionMutation.mutateAsync(data)}
               />
+            )}
+            {/* Freeze Assist: only ever visible to a Pro viewer, and only
+                for a groupmate get_group_freeze_candidates actually found
+                eligible right now -- most rows never show this. */}
+            {!row.isMe && isPro && freezeCandidateByEmail.has(row.email) && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-11 w-11 shrink-0"
+                style={{ color: "hsl(var(--frozen))" }}
+                onClick={() => setAssistCandidate({ ...freezeCandidateByEmail.get(row.email), targetName: row.name })}
+                aria-label={`Save ${row.name}'s streak`}
+                title={`Save ${row.name}'s streak`}
+              >
+                ❄️
+              </Button>
             )}
             {isAdmin && !row.isMe && (
               confirmRemove === row.email ? (
@@ -513,12 +567,32 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         group={group}
         userHabits={habits}
         onCreate={(data) => createChallengeMutation.mutateAsync(data)}
+        isPro={isPro}
+        onUpgradeClick={() => setShowUpgrade(true)}
       />
+
+      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
 
       <InviteMembersSheet
         open={showInvite}
         onOpenChange={setShowInvite}
         group={group}
+      />
+
+      <FreezeAssistConfirmModal
+        open={!!assistCandidate}
+        onOpenChange={(open) => { if (!open) setAssistCandidate(null); }}
+        targetName={assistCandidate?.targetName}
+        habitName={assistCandidate?.habit_name}
+        onConfirm={() => {
+          if (!assistCandidate) return;
+          assistFreezeMutation.mutate({
+            targetEmail: assistCandidate.member_email,
+            habitId: assistCandidate.habit_id,
+            missedDate: assistCandidate.missed_date,
+            targetName: assistCandidate.targetName,
+          });
+        }}
       />
 
       <GroupSettingsModal
