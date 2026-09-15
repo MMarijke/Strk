@@ -108,6 +108,7 @@ export const FocusSession = createEntity('focus_sessions');
 export const Reaction = createEntity('reactions');
 export const StreakFreeze = createEntity('streak_freezes');
 export const UserBadge = createEntity('user_badges');
+export const AccountabilityPartnership = createEntity('accountability_partnerships');
 
 export const ChallengeNotification = {
   ...createEntity('challenge_notifications'),
@@ -138,6 +139,26 @@ export const FreezeAssistNotification = {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'freeze_assist_notifications' },
+        (payload) => callback({ type: 'create', data: mapRow(payload.new), id: payload.new.id })
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  },
+};
+
+// Nudges are a fire-and-forget toast, not a persistent dismissable banner
+// like the notification tables above -- only .subscribe() is needed here,
+// no queryable list surface.
+export const AccountabilityNudge = {
+  ...createEntity('accountability_nudges'),
+
+  subscribe(callback) {
+    const channel = supabase
+      .channel('accountability_nudges_inserts')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'accountability_nudges' },
         (payload) => callback({ type: 'create', data: mapRow(payload.new), id: payload.new.id })
       )
       .subscribe();

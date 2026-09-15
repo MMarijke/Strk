@@ -36,6 +36,18 @@ alter table public.freeze_assists enable row level security;
 create policy "freeze_assists_select" on public.freeze_assists for select
   using (assister_id = auth.uid() or target_id = auth.uid());
 
+-- freeze_rpc_trusted is NOT this table's owner (just granted select/insert
+-- below), and RLS default-denies a command with zero policies for it
+-- regardless of role-level GRANTs -- so without this, assist_streak_freeze's
+-- own insert into this table would fail with "new row violates row-level
+-- security policy", rolling back the whole assist (including the freeze
+-- that already succeeded). habits/streak_freezes avoid this same trap
+-- further down only because their pre-existing policies were explicitly
+-- widened with an `or current_user = 'freeze_rpc_trusted'` clause; these
+-- two new tables need the equivalent from the start.
+create policy "freeze_assists_insert_trusted" on public.freeze_assists for insert
+  with check (current_user = 'freeze_rpc_trusted');
+
 -- ============================================================
 -- freeze_assist_notifications: same shape/lockdown pattern as
 -- challenge_notifications (20260702120002 / 20260730090002) -- one
@@ -65,11 +77,13 @@ create policy "freeze_assist_notifications_update_as_recipient" on public.freeze
   using (recipient_email = current_email())
   with check (recipient_email = current_email());
 
--- No insert policy -- only assist_streak_freeze() (SECURITY DEFINER,
--- bypasses RLS via ownership) writes rows here, mirroring how
--- challenge_notifications' insert is a plain policy but this one has
--- nothing analogous to "the admin who started it" to safely self-attest;
--- the assister's own identity must come from auth.jwt(), not the client.
+-- Same RLS-default-deny trap as freeze_assists above: freeze_rpc_trusted
+-- needs its own explicit insert policy, not just the table grant, or
+-- assist_streak_freeze's insert here fails and rolls back the whole assist.
+-- Client inserts stay impossible either way -- current_user for a normal
+-- authenticated session is never this role name.
+create policy "freeze_assist_notifications_insert_trusted" on public.freeze_assist_notifications for insert
+  with check (current_user = 'freeze_rpc_trusted');
 
 create or replace function public.protect_freeze_assist_notifications_fields()
 returns trigger
