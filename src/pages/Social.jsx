@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotification } from "@/api/entities";
+import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotification, AccountabilityPartnership, AccountabilityNudge } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { format, subDays } from "date-fns";
-import { Users, Trophy, Plus, LogIn, Crown, Medal, Sparkles } from "lucide-react";
+import { Users, Trophy, Plus, LogIn, Crown, Medal, Sparkles, Handshake } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,6 +19,7 @@ import SessionRoom from "@/components/focus/SessionRoom";
 import GroupDashboard from "@/components/groups/GroupDashboard";
 import GroupsEmptyState from "@/components/groups/GroupsEmptyState";
 import GroupMilestoneNotifier from "@/components/groups/GroupMilestoneNotifier";
+import AccountabilityPartnerPanel from "@/components/accountability/AccountabilityPartnerPanel";
 import ScoreHistoryChart from "@/components/social/ScoreHistoryChart";
 import ReactionsInbox from "@/components/social/ReactionsInbox";
 import { toast } from "sonner";
@@ -236,6 +237,29 @@ export default function Social() {
     (g) => g.created_by === user?.email || (g.member_emails || []).includes(user?.email)
   );
 
+  // Dedup'd across every group -- source list for InvitePartnerModal's
+  // "pick from a group" shortcut.
+  const groupmateEmails = useMemo(() => {
+    const set = new Set();
+    myGroups.forEach((g) => (g.member_emails || []).forEach((e) => {
+      if (e !== user?.email) set.add(e);
+    }));
+    return [...set];
+  }, [myGroups, user?.email]);
+
+  // Same queryKey AccountabilityPartnerPanel uses internally -- React Query
+  // shares the one cache entry, so this doesn't add a second network call,
+  // it just lets the tab itself show a dot for an actionable incoming
+  // invite without duplicating the panel's own fetch/derivation logic.
+  const { data: partnerships = [] } = useQuery({
+    queryKey: ["accountability-partnerships", user?.email],
+    queryFn: () => user?.email
+      ? AccountabilityPartnership.filter({ $or: [{ requester_email: user.email }, { partner_email: user.email }] })
+      : [],
+    enabled: !!user?.email,
+  });
+  const hasPendingPartnerInvite = partnerships.some((p) => p.status === "pending" && p.partner_email === user?.email);
+
   // Checked here, before CreateGroupModal ever opens, rather than letting
   // it open and then swap to UpgradeModal via its own internal effect --
   // that open-then-immediately-correct pattern is exactly what produced
@@ -311,6 +335,25 @@ export default function Social() {
     return unsubscribe;
   }, [user?.email, groups]);
 
+  // Real-time: a nudge is a one-tap poke, not a persistent dismissable
+  // banner -- a toast is enough, mirrors the challenge-notification toast
+  // above but with no "view" action since there's nowhere else to go.
+  const shownNudgeIds = useRef(new Set());
+  useEffect(() => {
+    if (!user?.email) return;
+    const unsubscribe = AccountabilityNudge.subscribe((event) => {
+      if (event.type !== "create") return;
+      const nudge = event.data;
+      if (nudge.recipient_email !== user.email) return;
+      if (shownNudgeIds.current.has(event.id)) return;
+      shownNudgeIds.current.add(event.id);
+
+      const senderName = getDisplayName(nudge.sender_email, profiles);
+      toast(`👋 ${senderName} nudged you to keep your streak going!`, { duration: 4000 });
+    });
+    return unsubscribe;
+  }, [user?.email, profiles]);
+
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-2xl mx-auto px-4 pb-8" style={{ paddingTop: `calc(env(safe-area-inset-top) + 2rem)` }}>
@@ -323,15 +366,21 @@ export default function Social() {
 
         <Tabs value={activeTab} onValueChange={(v) => {setActiveTab(v);if (v === "reactions") markReactionsRead();}}>
           <TabsList className="w-full mb-6">
-            <TabsTrigger value="leaderboard" className="flex-1 gap-2 text-xs">
-              <Trophy className="w-4 h-4" /> Leaderboard
+            <TabsTrigger value="leaderboard" className="flex-1 min-w-0 gap-1.5 text-xs">
+              <Trophy className="w-4 h-4 shrink-0" /> <span className="truncate min-w-0">Leaderboard</span>
             </TabsTrigger>
-            <TabsTrigger value="groups" className="flex-1 gap-2 text-xs">
-              <Users className="w-4 h-4" /> Groups
+            <TabsTrigger value="groups" className="flex-1 min-w-0 gap-1.5 text-xs">
+              <Users className="w-4 h-4 shrink-0" /> <span className="truncate min-w-0">Groups</span>
             </TabsTrigger>
-            <TabsTrigger value="reactions" className="flex-1 gap-2 relative text-xs">
-              <span>🫶</span> Reactions
+            <TabsTrigger value="reactions" className="flex-1 min-w-0 gap-1.5 relative text-xs">
+              <span className="shrink-0">🫶</span> <span className="truncate min-w-0">Reactions</span>
               {unreadCount > 0 &&
+              <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-destructive" />
+              }
+            </TabsTrigger>
+            <TabsTrigger value="partner" className="flex-1 min-w-0 gap-1.5 relative text-xs">
+              <Handshake className="w-4 h-4 shrink-0" /> <span className="truncate min-w-0">Partner</span>
+              {hasPendingPartnerInvite &&
               <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-destructive" />
               }
             </TabsTrigger>
@@ -437,6 +486,16 @@ export default function Social() {
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-4">Reactions Received</p>
               <ReactionsInbox reactions={myReactions} />
             </Card>
+          </TabsContent>
+          {/* ACCOUNTABILITY PARTNER TAB */}
+          <TabsContent value="partner">
+            <AccountabilityPartnerPanel
+              userEmail={user?.email}
+              profiles={profiles}
+              groupmateEmails={groupmateEmails}
+              isPro={isPro}
+              onUpgradeClick={() => setShowUpgrade(true)}
+            />
           </TabsContent>
         </Tabs>
       </div>
