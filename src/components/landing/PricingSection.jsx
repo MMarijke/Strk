@@ -15,6 +15,7 @@ const PRO_INCLUDES = [
   "Everything in Free",
   "Unlimited groups",
   "Unlimited streak freezes",
+  "Save a friend's streak",
   "Full 12-week trends",
 ];
 

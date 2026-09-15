@@ -10,6 +10,7 @@ import { formatPrice } from "@/lib/utils";
 const BENEFITS = [
   { emoji: "🔥", label: "Unlimited groups" },
   { emoji: "❄️", label: "Unlimited streak freezes" },
+  { emoji: "🧊", label: "Save a friend's streak" },
   { emoji: "📊", label: "Full 12-week analytics" },
 ];
 

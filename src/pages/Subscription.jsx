@@ -16,6 +16,7 @@ import { PADDLE_MONTHLY_PRICE_ID, PADDLE_ANNUAL_PRICE_ID } from "@/lib/paddle";
 const PRO_BENEFITS = [
   { emoji: "🔥", label: "Unlimited groups" },
   { emoji: "❄️", label: "Unlimited streak freezes" },
+  { emoji: "🧊", label: "Save a friend's streak" },
   { emoji: "📊", label: "Full 12-week analytics" },
 ];
 
