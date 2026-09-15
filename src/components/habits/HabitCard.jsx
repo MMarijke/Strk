@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { format } from "date-fns";
-import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2, MoreHorizontal } from "lucide-react";
+import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn, HABIT_COLORS } from "@/lib/utils";
@@ -47,10 +47,16 @@ function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpda
   return (
     <>
       <Card
+        role="button"
+        tabIndex={0}
+        aria-expanded={actionsVisible}
+        aria-label={`${habit.name} habit card, ${actionsVisible ? "actions shown" : "tap for more actions"}`}
         className={cn(
-          "group relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 bg-card",
+          "group relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 bg-card cursor-pointer",
           isHighlighted && "ring-2 ring-primary ring-offset-2 ring-offset-background"
         )}
+        onClick={() => setActionsVisible((v) => !v)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActionsVisible((v) => !v); } }}
       >
         <div className="p-5">
           {/* Top row */}
@@ -123,23 +129,6 @@ function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpda
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Real, always-visible, keyboard-native toggle for the
-                  secondary actions below -- replaces a previous
-                  whole-card onClick with no visual affordance and no
-                  keyboard path at all. A <button> gets focus/Enter/Space
-                  handling for free, so there's no need to duplicate
-                  SmartReminders.jsx's manual role/tabIndex/onKeyDown
-                  pattern here. */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 text-muted-foreground/60 hover:text-foreground"
-                onClick={(e) => { e.stopPropagation(); setActionsVisible((v) => !v); }}
-                aria-label={actionsVisible ? `Hide actions for ${habit.name}` : `Show more actions for ${habit.name}`}
-                aria-expanded={actionsVisible}
-              >
-                <MoreHorizontal className="w-4 h-4" />
-              </Button>
               <Button
                 variant="ghost"
                 size="icon"
