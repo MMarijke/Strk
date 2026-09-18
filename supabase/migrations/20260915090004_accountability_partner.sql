@@ -103,28 +103,17 @@ create policy "accountability_nudges_select" on public.accountability_nudges for
 
 alter publication supabase_realtime add table public.accountability_nudges;
 
--- ============================================================
--- Widen user_profiles_select so an active partner can see your display
--- name / avatar / stats even if your profile is otherwise private
--- (is_public = false) -- a mutual, consented 1:1 pairing is a stronger
--- trust signal than the public leaderboard opt-in, and the partner
--- dashboard below already shows this person far more (per-habit streaks)
--- than a profile row would.
--- ============================================================
-drop policy if exists "user_profiles_select" on public.user_profiles;
-create policy "user_profiles_select" on public.user_profiles for select
-  using (
-    created_by_id = auth.uid()
-    or is_public = true
-    or exists (
-      select 1 from public.accountability_partnerships ap
-      where ap.status = 'active'
-        and (
-          (ap.requester_id = auth.uid() and ap.partner_id = user_profiles.created_by_id)
-          or (ap.partner_id = auth.uid() and ap.requester_id = user_profiles.created_by_id)
-        )
-    )
-  );
+-- Deliberately NOT widening user_profiles_select for accountability
+-- partners (an earlier draft of this migration did, and was caught in
+-- review before ever shipping): RLS is row-level, not column-level, and
+-- user_profiles also carries paddle_customer_id / paddle_subscription_id /
+-- subscription_status / paddle_update_payment_method_url / paddle_cancel_url
+-- / created_by (email) -- a private profile's FULL row, billing columns and
+-- all, would have become readable by anyone who could get an invite
+-- accepted, including live Paddle self-service links. get_partner_dashboard
+-- below is the actual, deliberately narrow channel for a partner's display
+-- name/avatar -- exactly the same shape of column-isolation this repo's own
+-- CLAUDE.md already calls for around billing state.
 
 -- ============================================================
 -- compute_current_streak: ports StreakWidget.jsx's calculateStreak() to
@@ -341,11 +330,22 @@ grant execute on function public.end_accountability_partnership(uuid) to authent
 -- today's check-in. No raw completions array crosses this boundary.
 -- Works for either side of the pairing, Pro or not: once a partnership is
 -- active, the view is mutual (only creating one required Pro).
+--
+-- partner_name/partner_avatar_color are the ONLY user_profiles columns
+-- exposed here -- this is the deliberately narrow replacement for the
+-- row-level user_profiles_select widening this migration originally
+-- shipped with and then removed (see comment above), so a private
+-- profile's billing columns/email never cross this boundary either. A
+-- left join on habits (not a plain join) so a partner with zero habits
+-- still returns exactly one row carrying the identity columns -- without
+-- it, the client would have no way to learn even the partner's name.
 -- ============================================================
 create or replace function public.get_partner_dashboard()
 returns table(
   partnership_id uuid,
   partner_email text,
+  partner_name text,
+  partner_avatar_color text,
   habit_id uuid,
   habit_name text,
   current_streak integer,
@@ -387,14 +387,17 @@ begin
   select
     v_partnership.id,
     v_other_email,
+    coalesce(up.display_name, split_part(v_other_email, '@', 1)),
+    up.avatar_color,
     h.id,
     h.name,
     public.compute_current_streak(h.completions),
-    (current_date::text = any(h.completions))
-  from public.habits h
-  where h.created_by_id = v_other_id
-    and coalesce(h.archived, false) = false
-  order by h.created_at asc;
+    coalesce(current_date::text = any(h.completions), false)
+  from public.user_profiles up
+  left join public.habits h
+    on h.created_by_id = v_other_id and coalesce(h.archived, false) = false
+  where up.created_by_id = v_other_id
+  order by h.created_at asc nulls last;
 end;
 $$;
 

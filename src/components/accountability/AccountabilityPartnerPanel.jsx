@@ -12,6 +12,14 @@ import { getDisplayName } from "@/lib/displayName";
 import { trackEvent } from "@/lib/analytics";
 import InvitePartnerModal from "./InvitePartnerModal";
 
+// Real per-habit rows always carry a habit_id; a partner with zero habits
+// still returns exactly one row (get_partner_dashboard left-joins habits)
+// so partner_name/avatar are available, with habit_id null as the only
+// signal to skip it when rendering the habit list itself.
+function habitRows(partnerHabits) {
+  return partnerHabits.filter((h) => h.habit_id);
+}
+
 export default function AccountabilityPartnerPanel({ userEmail, profiles = [], groupmateEmails = [], isPro, onUpgradeClick }) {
   const queryClient = useQueryClient();
   const [showInvite, setShowInvite] = useState(false);
@@ -102,7 +110,11 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
     const partnerEmail = activePartnership.requester_email === userEmail
       ? activePartnership.partner_email
       : activePartnership.requester_email;
-    const partnerName = getDisplayName(partnerEmail, profiles);
+    // Sourced from get_partner_dashboard's own narrow projection, not the
+    // wider `profiles` list -- a private partner's profile row is never
+    // fetched by the generic profiles query, only this specific RPC.
+    const partnerName = partnerHabits[0]?.partner_name || partnerEmail.split("@")[0];
+    const rows = habitRows(partnerHabits);
 
     return (
       <div className="space-y-4">
@@ -137,11 +149,11 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
             <div className="space-y-2">
               {[1, 2].map((i) => <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />)}
             </div>
-          ) : partnerHabits.length === 0 ? (
+          ) : rows.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">No active habits yet.</p>
           ) : (
             <div className="space-y-2">
-              {partnerHabits.map((h) => (
+              {rows.map((h) => (
                 <div key={h.habit_id} className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 px-3 py-2.5">
                   <span className="text-sm font-medium text-foreground truncate">{h.habit_name}</span>
                   <div className="flex items-center gap-3 shrink-0">
