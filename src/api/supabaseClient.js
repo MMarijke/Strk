@@ -21,9 +21,25 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 // _recoverAndRefresh()'s own existing error handling (which already
 // tolerates a failed proactive token refresh without tearing down a still-
 // valid session) gets a chance to run instead of never returning at all.
-// 8s leaves a safe margin under AuthContext's 9s failure-screen timeout,
-// including room for the profile lookup that still has to run afterward.
-const FETCH_TIMEOUT_MS = 8000;
+//
+// 5s, not the original 8s: our AbortError is classified by auth-js as an
+// AuthRetryableFetchError (lib/fetch.js#handleError -- anything that
+// "doesn't look like a fetch Response" is retryable), which feeds
+// GoTrueClient's own exponential-backoff retry loop
+// (#_refreshAccessToken, wrapped in helpers.js#retryable) rather than
+// ending the attempt. That loop keeps retrying for a *cumulative* ~30s
+// (AUTO_REFRESH_TICK_DURATION_MS in lib/constants.js) before giving up --
+// verified against the installed @supabase/auth-js@2.110.0; neither
+// constant is exported from its public API, so re-check both after any
+// supabase-js/auth-js upgrade. A shorter per-attempt ceiling here means
+// more retries fit inside that same 30s window -- more chances for a
+// brief reconnect blip (the common case) to succeed on attempt 2 or 3
+// instead of needing the connection to survive one long stall uninterrupted
+// -- and keeps the worst case (every attempt maxing out) closer to 30s
+// instead of well past it. AuthContext's own outer ceiling is sized
+// against this exact constant -- see FETCH_TIMEOUT_MS export below and
+// SESSION_CHECK_TIMEOUT_MS's comment.
+export const FETCH_TIMEOUT_MS = 5000;
 
 function fetchWithTimeout(input, init = {}) {
   const timeoutController = new AbortController();
