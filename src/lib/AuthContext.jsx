@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
-import { supabase } from '@/api/supabaseClient';
+import { supabase, FETCH_TIMEOUT_MS } from '@/api/supabaseClient';
 import { clearQueryCache } from '@/lib/query-client';
 import { identifyUser, resetAnalytics } from '@/lib/analytics';
 
@@ -9,9 +9,22 @@ const AuthContext = createContext();
 // storage/IndexedDB access issue, etc.) with nothing to catch -- without
 // this, isLoadingAuth had exactly one way to ever clear, so a hang there
 // left the app stuck on the loading spinner forever, requiring a manual
-// reload. 8-10s is generous for a normal session check but short enough
-// that a real hang doesn't leave someone staring at a spinner.
-const SESSION_CHECK_TIMEOUT_MS = 9000;
+// reload.
+//
+// Sized to NOT fire before auth-js's own internal token-refresh retry loop
+// has a real chance to finish -- an earlier fixed 9000ms value cut that
+// loop off after roughly one retry, showing the "couldn't verify your
+// session" screen while auth-js was still actively, successfully working
+// toward recovery on its own. See supabaseClient.js's FETCH_TIMEOUT_MS
+// comment for the full mechanism (auth-js retries for a cumulative ~30s;
+// our own abort is classified as retryable, so it feeds that loop instead
+// of ending it). This budget covers that ~30s window, plus one more
+// FETCH_TIMEOUT_MS for whichever attempt is in flight when it ends, plus a
+// second FETCH_TIMEOUT_MS for buildUser()'s own separate profile lookup
+// (the timeout stays armed through that too, see below), plus a small
+// margin -- a genuine last-resort ceiling, not a first response to a slow
+// connection.
+const SESSION_CHECK_TIMEOUT_MS = 30_000 + FETCH_TIMEOUT_MS * 2 + 2000;
 // Used instead of the above when navigator.onLine already reports false
 // at the moment the check starts -- the network layer has already told
 // us there's nothing to wait for, so there's no reason to make the user

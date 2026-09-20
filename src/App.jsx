@@ -45,6 +45,14 @@ function ThemeProviderWithUser({ children }) {
 // renders next.
 const RECOVERY_CONFIRM_MS = 900;
 
+// AuthContext's own failsafe ceiling now spans up to ~42s (see its
+// SESSION_CHECK_TIMEOUT_MS comment) so it doesn't cut off auth-js's own
+// legitimate ~30s token-refresh retry loop -- a bare spinner for that long
+// reads as frozen even though it's actively working. A fast reconnect
+// (the common case) never reaches this; it only shows once the wait has
+// already run past what a normal session check takes.
+const RECONNECT_MESSAGE_DELAY_MS = 4000;
+
 // Same icon tile Login.jsx opens with (w-14 h-14 rounded-2xl bg-primary/10
 // + 🔥). Reused as-is, not reinvented, so the loading/recovery/failure
 // states that bracket Login on every app open read as one continuous,
@@ -74,6 +82,7 @@ const AuthenticatedApp = () => {
   // confirmation here first closes that gap.
   const wasFailedRef = useRef(false);
   const [justRecovered, setJustRecovered] = useState(false);
+  const [showReconnecting, setShowReconnecting] = useState(false);
 
   useEffect(() => {
     if (sessionCheckFailed) {
@@ -87,12 +96,26 @@ const AuthenticatedApp = () => {
     return () => clearTimeout(timer);
   }, [sessionCheckFailed]);
 
+  useEffect(() => {
+    if (!isLoadingAuth) {
+      setShowReconnecting(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowReconnecting(true), RECONNECT_MESSAGE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [isLoadingAuth]);
+
   if (isLoadingAuth) {
     return (
-      <div className="fixed inset-0 flex flex-col items-center justify-center gap-4" role="status">
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center" role="status">
         <BrandMark />
         <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" aria-hidden="true"></div>
         <span className="sr-only">Checking your session…</span>
+        {showReconnecting && (
+          <p className="text-sm text-muted-foreground max-w-xs">
+            Reconnecting…
+          </p>
+        )}
       </div>
     );
   }

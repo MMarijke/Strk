@@ -63,6 +63,20 @@ export function formatPrice(price) {
   }
 }
 
+// Computed from live fetched Paddle prices rather than a hardcoded "25%" --
+// exactly the "remembered number" PRODUCT.md says the pricing surface must
+// never display, so if the catalog's actual prices ever change (a plan
+// price update, a currency-specific override) this recalculates instead of
+// silently going stale. Shared by PricingSection, UpgradeModal, and
+// Subscription -- was previously duplicated (correctly) in PricingSection
+// and hardcoded (incorrectly, three places) elsewhere.
+export function annualSavingsPct(monthly, annual) {
+  const monthlyCents = Number(monthly?.unit_price?.amount);
+  const annualCents = Number(annual?.unit_price?.amount);
+  if (!monthlyCents || !annualCents) return null;
+  return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
+}
+
 export const isIframe = window.self !== window.top;
 
 // Shared across HabitCard, AddHabitDialog, EditHabitModal (color picker)

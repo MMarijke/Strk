@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePaddlePrices } from "@/hooks/usePaddlePrices";
-import { formatPrice, cn } from "@/lib/utils";
+import { formatPrice, annualSavingsPct, cn } from "@/lib/utils";
 
 const FREE_INCLUDES = [
   "Daily & weekly habit tracking",
@@ -42,17 +42,6 @@ function PriceLine({ price, isLoading, isError }) {
       <span className="text-sm font-medium text-muted-foreground"> /mo</span>
     </span>
   );
-}
-
-// Computed from the live fetched prices rather than a hardcoded "25%" --
-// this is exactly the "remembered number" PRODUCT.md says the pricing
-// surface must never display, so if Paddle's catalog prices ever drift
-// apart this recalculates instead of silently going stale.
-function annualSavingsPct(monthly, annual) {
-  const monthlyCents = Number(monthly?.unit_price?.amount);
-  const annualCents = Number(annual?.unit_price?.amount);
-  if (!monthlyCents || !annualCents) return null;
-  return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
 }
 
 export default function PricingSection() {
