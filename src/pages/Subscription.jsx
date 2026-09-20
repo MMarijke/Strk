@@ -7,11 +7,12 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { cn, formatPrice } from "@/lib/utils";
+import { cn, formatPrice, annualSavingsPct } from "@/lib/utils";
 import {
   getSubscriptionDetails, switchSubscriptionPlan, cancelSubscription, resumeSubscription,
 } from "@/lib/manageSubscription";
 import { PADDLE_MONTHLY_PRICE_ID, PADDLE_ANNUAL_PRICE_ID } from "@/lib/paddle";
+import { usePaddlePrices } from "@/hooks/usePaddlePrices";
 
 const PRO_BENEFITS = [
   { emoji: "🔥", label: "Unlimited groups" },
@@ -75,11 +76,17 @@ export default function Subscription() {
     }
   };
 
+  // Live catalog prices (not the subscription's own single price object)
+  // needed to compute the real savings % -- same "never a hardcoded
+  // percentage" rule as PricingSection/UpgradeModal.
+  const { monthly, annual } = usePaddlePrices();
+  const savingsPct = annualSavingsPct(monthly, annual);
+
   const currentPriceId = subscription?.items?.[0]?.price?.id;
   const isAnnual = currentPriceId === PADDLE_ANNUAL_PRICE_ID;
   const targetPlan = isAnnual
     ? { priceId: PADDLE_MONTHLY_PRICE_ID, label: "Switch to Monthly" }
-    : { priceId: PADDLE_ANNUAL_PRICE_ID, label: "Switch to Annual: save 25%" };
+    : { priceId: PADDLE_ANNUAL_PRICE_ID, label: savingsPct > 0 ? `Switch to Annual: save ${savingsPct}%` : "Switch to Annual" };
 
   const pendingCancellation = subscription?.scheduled_change?.action === "cancel";
   const status = subscription?.status;

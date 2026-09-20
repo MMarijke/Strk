@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { useAuth } from "@/lib/AuthContext";
 import { openCheckout, PADDLE_MONTHLY_PRICE_ID, PADDLE_ANNUAL_PRICE_ID } from "@/lib/paddle";
 import { usePaddlePrices } from "@/hooks/usePaddlePrices";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, annualSavingsPct } from "@/lib/utils";
 
 const BENEFITS = [
   { emoji: "🔥", label: "Unlimited groups" },
@@ -28,6 +28,7 @@ function PriceLabel({ price, isLoading, suffix, fallback }) {
 export default function UpgradeModal({ onClose }) {
   const { user } = useAuth();
   const { monthly, annual, isLoading } = usePaddlePrices();
+  const savingsPct = annualSavingsPct(monthly, annual);
 
   const handleCheckoutError = (err) => {
     toast.error(err?.message || "Could not start checkout. Please try again.", { duration: 4000 });
@@ -70,15 +71,21 @@ export default function UpgradeModal({ onClose }) {
           </Button>
 
           <div className="relative">
-            <span className="absolute -top-2.5 right-4 z-10 text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full shadow-sm">
-              Save 25%
-            </span>
+            {/* Only rendered once both live prices are in -- unlike the
+                (deliberately hardcoded) "Most popular" badge elsewhere,
+                a wrong percentage here is a factual claim, not a taste
+                call, so this waits rather than shows a stale guess. */}
+            {!isLoading && savingsPct > 0 && (
+              <span className="absolute -top-2.5 right-4 z-10 text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full shadow-sm">
+                Save {savingsPct}%
+              </span>
+            )}
             <Button
               onClick={handleAnnual}
               size="lg"
               className="w-full h-14 rounded-2xl font-bold text-base"
             >
-              <PriceLabel price={annual} isLoading={isLoading} suffix="/ year" fallback="Annual — save 25%" />
+              <PriceLabel price={annual} isLoading={isLoading} suffix="/ year" fallback="Annual" />
             </Button>
           </div>
         </div>
