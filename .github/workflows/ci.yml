@@ -1,0 +1,33 @@
+name: CI
+
+# Runs lint + the (still small, but real) test suite on every PR -- until
+# now this repo had zero CI gate for JS code at all: lint and tests only
+# ever ran when someone remembered to run them locally. Modeled on
+# deploy-functions.yml's shape (this repo's only other workflow) but for
+# Node instead of Deno/Supabase.
+#
+# Deliberately excludes `npm run typecheck`: it currently fails on ~10
+# pre-existing errors unrelated to any of this (JSX `children` prop typing
+# gaps in Trends.jsx, a `.md?raw` import in Terms.jsx) -- wiring it in now
+# would make every future PR red for reasons this workflow didn't cause.
+# Follow-up, not silently dropped.
+on:
+  pull_request: {}
+  workflow_dispatch: {}
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm test
