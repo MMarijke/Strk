@@ -12,4 +12,11 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  test: {
+    // jsdom, not the vitest default (node) -- src/lib/utils.js reads
+    // `window.self`/`window.top` at module scope (isIframe), so importing
+    // it from a test under the default node environment throws
+    // "window is not defined" before any test even runs.
+    environment: 'jsdom',
+  },
 })
