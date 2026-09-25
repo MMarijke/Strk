@@ -1,7 +1,7 @@
 # Privacy Policy — Strk
 
 **Effective date:** 2026-08-16
-**Last updated:** 2026-08-12
+**Last updated:** 2026-09-25
 
 Strk ("Strk," "we," "us," or "our") is a social habit-tracking app operated by
 **Seedstack Studio (Pty) Ltd**, a company registered in South Africa
@@ -43,6 +43,7 @@ We collect the following categories of data, all tied to your account:
 | **Badge & rank progress** | Earned badges and dates earned, highest rank achieved | Badges/gamification |
 | **Payment & subscription status** | Plan (free/Pro), subscription status, and identifiers Paddle assigns to you (customer ID, subscription ID, price ID) so we know what you're subscribed to | Pro subscription gating |
 | **Product usage data** | In-app actions such as completing a habit, creating/joining a group, starting a focus session, starting a challenge, and completing sign-up or checkout | Analytics (see §4) |
+| **Crash & error diagnostics** | Exception messages and stack traces when something breaks, tagged with internal IDs (your user ID, and a subscription/customer ID if relevant) so we can investigate — never your email address or auth token, which are actively stripped before this leaves the app | Reliability/debugging (Sentry, see §4) |
 
 **What we do *not* collect:** we do not collect or store your payment card
 number, bank details, or other raw payment instrument data — that's held
@@ -111,6 +112,18 @@ Vercel hosts the Strk web app itself. Standard hosting-level data (like IP
 address, at the network/CDN level) passes through Vercel's infrastructure
 as part of serving the app; Vercel does not otherwise receive your
 account or habit data.
+
+### Sentry (error monitoring)
+We use Sentry to catch and diagnose crashes and errors, on both the app
+itself and our backend functions. This is deliberately configured to
+collect as little as possible: we don't enable session replay, we don't
+let Sentry infer your IP address or location, and every error report has
+your email address and any authorization/API-key headers stripped out
+before it's sent — both on the app and on our backend. Where we do attach
+identifying context to an error (for example, to investigate a billing
+issue), it's limited to internal IDs (your user ID, and a Paddle
+subscription/customer ID if relevant), never your email, name, or habit
+content.
 
 ## 5. Cookies & local storage
 
