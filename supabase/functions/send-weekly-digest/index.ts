@@ -42,23 +42,6 @@ function isValidCronSecret(provided: string | null): boolean {
   return timingSafeEqual(expected, actual);
 }
 
-// TEMPORARY diagnostic for the Sentry-reported "API key is invalid" 401 from
-// Resend -- same approach used earlier to debug PADDLE_API_KEY: logs only
-// the secret's *shape* (length, leading/trailing whitespace, an embedded
-// newline, first/last 4 characters) so a bad value in the stored secret
-// itself is distinguishable from a code-level construction bug, without
-// ever logging enough to reconstruct the real key. Remove once this is
-// root-caused.
-function logSecretShape(name: string, value: string) {
-  const hasLeadingSpace = value !== value.trimStart();
-  const hasTrailingSpace = value !== value.trimEnd();
-  const hasNewline = /[\r\n]/.test(value);
-  const preview = value.length > 8 ? `${value.slice(0, 4)}...${value.slice(-4)}` : "(too short to preview safely)";
-  console.log(
-    `[diagnostic] ${name} shape: length=${value.length} leadingSpace=${hasLeadingSpace} trailingSpace=${hasTrailingSpace} newline=${hasNewline} preview=${preview}`
-  );
-}
-
 function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
@@ -152,8 +135,6 @@ Deno.serve(async (req) => {
   if (!isValidCronSecret(req.headers.get("x-cron-secret"))) {
     return new Response("Unauthorized", { status: 401 });
   }
-
-  logSecretShape("RESEND_API_KEY", RESEND_API_KEY);
 
   const lastWeek = weekBounds(1);
   const prevWeek = weekBounds(2);
