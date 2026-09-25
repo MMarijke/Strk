@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { z } from "zod";
 import { format, addDays } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,16 @@ const DURATIONS = [
 const CUSTOM_DURATION_MIN = 1;
 const CUSTOM_DURATION_MAX = 365;
 
+// Previously the custom-days field silently clamped any out-of-range or
+// non-numeric input to a valid value and submitted that instead -- a user
+// typing "500" got a 365-day challenge with no indication why. Zod here
+// replaces the silent clamp with a real validation error the user can see.
+const customDurationSchema = z.coerce
+  .number({ invalid_type_error: "Enter a number." })
+  .int("Enter a whole number of days.")
+  .min(CUSTOM_DURATION_MIN, `Must be at least ${CUSTOM_DURATION_MIN} day.`)
+  .max(CUSTOM_DURATION_MAX, `Must be ${CUSTOM_DURATION_MAX} days or fewer.`);
+
 export default function CreateChallengeModal({ open, onOpenChange, group, onCreate, userHabits = [], isPro = false, onUpgradeClick }) {
   const activeHabits = userHabits.filter((h) => !h.archived);
   const [habitId, setHabitId] = useState("");
@@ -30,12 +41,16 @@ export default function CreateChallengeModal({ open, onOpenChange, group, onCrea
   const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [loading, setLoading] = useState(false);
 
+  const customDurationResult = customDuration ? customDurationSchema.safeParse(customDays) : null;
+  const customDurationError = customDurationResult && !customDurationResult.success
+    ? customDurationResult.error.issues[0].message
+    : null;
   const effectiveDuration = customDuration
-    ? Math.min(CUSTOM_DURATION_MAX, Math.max(CUSTOM_DURATION_MIN, Number(customDays) || CUSTOM_DURATION_MIN))
+    ? (customDurationResult?.success ? customDurationResult.data : null)
     : duration;
 
   const handleSubmit = async () => {
-    if (!habitId) return;
+    if (!habitId || effectiveDuration === null) return;
     setLoading(true);
     const end = format(addDays(new Date(startDate + "T00:00:00"), effectiveDuration - 1), "yyyy-MM-dd");
     // habit_name is intentionally not sent here -- the group_challenges_
@@ -125,16 +140,21 @@ export default function CreateChallengeModal({ open, onOpenChange, group, onCrea
               </button>
             </div>
             {customDuration && isPro && (
-              <div className="flex items-center gap-2 pt-1">
-                <Input
-                  type="number"
-                  min={CUSTOM_DURATION_MIN}
-                  max={CUSTOM_DURATION_MAX}
-                  value={customDays}
-                  onChange={(e) => setCustomDays(e.target.value)}
-                  className="h-9 w-24"
-                />
-                <span className="text-xs text-muted-foreground">days (1–365)</span>
+              <div className="pt-1 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={CUSTOM_DURATION_MIN}
+                    max={CUSTOM_DURATION_MAX}
+                    value={customDays}
+                    onChange={(e) => setCustomDays(e.target.value)}
+                    className="h-9 w-24"
+                  />
+                  <span className="text-xs text-muted-foreground">days (1–365)</span>
+                </div>
+                {customDurationError && (
+                  <p className="text-xs text-destructive">{customDurationError}</p>
+                )}
               </div>
             )}
           </div>
@@ -161,7 +181,7 @@ export default function CreateChallengeModal({ open, onOpenChange, group, onCrea
           <Button
             className="w-full gap-2"
             onClick={handleSubmit}
-            disabled={!habitId || loading}
+            disabled={!habitId || loading || effectiveDuration === null}
           >
             <Trophy className="w-4 h-4" />
             {loading ? "Creating..." : "Launch Challenge"}

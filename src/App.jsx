@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -8,21 +8,28 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
-import Login from './pages/Login';
-import Landing from './pages/Landing';
-import Dashboard from './pages/Dashboard';
-import Trends from './pages/Trends';
-import Social from './pages/Social';
-import Settings from './pages/Settings';
-import Badges from './pages/Badges';
-import Subscription from './pages/Subscription';
-import Terms from './pages/Terms';
-import Privacy from './pages/Privacy';
 import AppLayout from './components/layout/AppLayout';
 import { ThemeProvider, useTheme } from './lib/ThemeContext';
-import OnboardingThemePicker from './components/onboarding/OnboardingThemePicker';
-import OnboardingDisplayName from './components/onboarding/OnboardingDisplayName';
 import AnalyticsConsentBanner from './components/legal/AnalyticsConsentBanner';
+
+// Route-level code splitting -- previously every one of these was bundled
+// into a single ~1.87MB JS file loaded upfront regardless of which page a
+// visitor actually landed on. Each of these is now its own chunk, fetched
+// only the first time that route is actually reached; the single
+// <Suspense> around the routes below (both the outer Terms/Privacy pair
+// and everything inside AuthenticatedApp) covers all of them.
+const Login = lazy(() => import('./pages/Login'));
+const Landing = lazy(() => import('./pages/Landing'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Trends = lazy(() => import('./pages/Trends'));
+const Social = lazy(() => import('./pages/Social'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Badges = lazy(() => import('./pages/Badges'));
+const Subscription = lazy(() => import('./pages/Subscription'));
+const Terms = lazy(() => import('./pages/Terms'));
+const Privacy = lazy(() => import('./pages/Privacy'));
+const OnboardingThemePicker = lazy(() => import('./components/onboarding/OnboardingThemePicker'));
+const OnboardingDisplayName = lazy(() => import('./components/onboarding/OnboardingDisplayName'));
 
 // Sits inside AuthProvider so it can read the authenticated user id
 // and pass it to ThemeProvider for per-user localStorage key scoping.
@@ -64,6 +71,19 @@ function BrandMark() {
   return (
     <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center" aria-hidden="true">
       <span className="text-2xl">🔥</span>
+    </div>
+  );
+}
+
+// Suspense fallback for a lazy route chunk still loading -- same visual
+// language as AuthenticatedApp's isLoadingAuth screen (BrandMark + spinner)
+// so this doesn't read as a different, unbranded loading state.
+function RouteLoadingFallback() {
+  return (
+    <div className="fixed inset-0 flex flex-col items-center justify-center gap-4" role="status">
+      <BrandMark />
+      <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" aria-hidden="true"></div>
+      <span className="sr-only">Loading…</span>
     </div>
   );
 }
@@ -211,11 +231,13 @@ function App() {
                 store requirements), so they're matched at this top level
                 instead, ahead of the catch-all that hands everything else
                 to AuthenticatedApp. */}
-            <Routes>
-              <Route path="/terms" element={<Terms />} />
-              <Route path="/privacy" element={<Privacy />} />
-              <Route path="/*" element={<AuthenticatedApp />} />
-            </Routes>
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <Routes>
+                <Route path="/terms" element={<Terms />} />
+                <Route path="/privacy" element={<Privacy />} />
+                <Route path="/*" element={<AuthenticatedApp />} />
+              </Routes>
+            </Suspense>
             {/* Must stay inside Router -- it renders a <Link to="/privacy">
                 internally, which needs router context (NavigationContext)
                 to resolve. Previously a sibling of Router instead of a

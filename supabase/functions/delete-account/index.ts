@@ -20,18 +20,16 @@
 //      auth.jwt() inside it correctly resolve to them, not service_role.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { initSentry, captureException } from "../_shared/sentry.ts";
+import { requireEnv } from "../_shared/env.ts";
 
 initSentry("delete-account");
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_URL = requireEnv("SUPABASE_URL");
+const SUPABASE_ANON_KEY = requireEnv("SUPABASE_ANON_KEY");
+const SUPABASE_SERVICE_ROLE_KEY = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
-const PADDLE_API_KEY = Deno.env.get("PADDLE_API_KEY")!;
-const PADDLE_API_ENVIRONMENT = Deno.env.get("PADDLE_API_ENVIRONMENT");
-if (!PADDLE_API_ENVIRONMENT) {
-  throw new Error('PADDLE_API_ENVIRONMENT is not set. Set it to "sandbox" or "production".');
-}
+const PADDLE_API_KEY = requireEnv("PADDLE_API_KEY");
+const PADDLE_API_ENVIRONMENT = requireEnv("PADDLE_API_ENVIRONMENT");
 const PADDLE_API_BASE = PADDLE_API_ENVIRONMENT === "production"
   ? "https://api.paddle.com"
   : "https://sandbox-api.paddle.com";

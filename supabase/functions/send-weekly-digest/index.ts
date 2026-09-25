@@ -20,15 +20,16 @@ import { timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { emailShell } from "../_shared/email-template.ts";
 import { initSentry, captureException } from "../_shared/sentry.ts";
+import { requireEnv } from "../_shared/env.ts";
 
 initSentry("send-weekly-digest");
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+const RESEND_API_KEY = requireEnv("RESEND_API_KEY");
 const FROM_ADDRESS = Deno.env.get("RESEND_FROM_ADDRESS") ?? "Strk <hello@strk.app>";
-const CRON_SECRET = Deno.env.get("CRON_SECRET")!;
+const CRON_SECRET = requireEnv("CRON_SECRET");
 const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  requireEnv("SUPABASE_URL"),
+  requireEnv("SUPABASE_SERVICE_ROLE_KEY")
 );
 
 // Constant-time comparison, same as paddle-webhook's signature check --
