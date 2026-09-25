@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { z } from "zod";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Handshake } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getDisplayName } from "@/lib/displayName";
+
+// Not react-hook-form + zodResolver -- this is a single plain controlled
+// input, and wiring up a form library for one field would be more
+// restructuring than the validation itself warrants. z.string().email()
+// still replaces the old `!trimmed.includes("@")` check with something
+// that actually validates email shape instead of just checking for an "@".
+const emailSchema = z.string().trim().min(1, "Enter their email.").email("Enter a valid email address.");
 
 export default function InvitePartnerModal({ open, onOpenChange, groupmateEmails = [], profiles = [], onInvite }) {
   const [email, setEmail] = useState("");
@@ -19,11 +27,12 @@ export default function InvitePartnerModal({ open, onOpenChange, groupmateEmails
   };
 
   const handleSend = async () => {
-    const trimmed = email.trim();
-    if (!trimmed || !trimmed.includes("@")) {
-      setError("Enter a valid email address.");
+    const result = emailSchema.safeParse(email);
+    if (!result.success) {
+      setError(result.error.issues[0].message);
       return;
     }
+    const trimmed = result.data;
     setSending(true);
     setError("");
     try {

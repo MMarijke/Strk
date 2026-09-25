@@ -6,6 +6,7 @@
 // from webhook data; everything else (status, price, dates, payment method,
 // management_urls) comes fresh from Paddle on every call.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.24.2";
 import { checkRateLimit, createRateLimiter } from "../_shared/rate-limit.ts";
 import { initSentry, captureException } from "../_shared/sentry.ts";
 import { requireEnv } from "../_shared/env.ts";
@@ -92,6 +93,20 @@ async function paddleFetch(path: string, options: RequestInit = {}) {
 // into an immediately readable error instead of a cryptic Paddle 400.
 const PRICE_ID_PATTERN = /^pri_[a-z\d]{26}$/;
 
+// Shape-only validation -- catches a malformed/missing field with a clear
+// 422 before any business logic runs. The business-rule checks that follow
+// (PRICE_ID_PATTERN, PUBLIC_PRICE_IDS allowlist) stay exactly where they
+// are below; this schema doesn't replace them, it just means those checks
+// no longer also have to defend against requestBody.priceId being missing,
+// a number, an array, etc.
+const RequestBodySchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("get_prices"), priceIds: z.array(z.unknown()).optional() }),
+  z.object({ action: z.literal("get") }),
+  z.object({ action: z.literal("switch_plan"), priceId: z.string().min(1) }),
+  z.object({ action: z.literal("cancel") }),
+  z.object({ action: z.literal("resume") }),
+]);
+
 // get_prices is reachable by anonymous callers (the public pricing page),
 // unlike switch_plan (authenticated, and only ever affects the caller's own
 // subscription) -- so it needs more than a format check, or it's an open
@@ -130,12 +145,18 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
-  let requestBody: { action?: string; priceId?: string; priceIds?: unknown };
+  let rawBody: unknown;
   try {
-    requestBody = await req.json();
+    rawBody = await req.json();
   } catch {
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
+
+  const parsedBody = RequestBodySchema.safeParse(rawBody);
+  if (!parsedBody.success) {
+    return jsonResponse({ error: "Invalid request body", issues: parsedBody.error.issues }, 422);
+  }
+  const requestBody = parsedBody.data;
 
   // get_prices is a public catalog lookup -- it needs no signed-in user, no
   // user_profiles row, and no stored paddle_subscription_id, so it's handled
@@ -222,9 +243,9 @@ Deno.serve(async (req) => {
       }
 
       case "switch_plan": {
-        if (!requestBody.priceId) {
-          return jsonResponse({ error: "priceId is required" }, 400);
-        }
+        // requestBody.priceId is guaranteed a non-empty string here --
+        // RequestBodySchema's z.string().min(1) already rejected anything
+        // else with a 422 before this switch ever ran.
         if (!PRICE_ID_PATTERN.test(requestBody.priceId)) {
           console.error(`manage-subscription: malformed priceId received: ${JSON.stringify(requestBody.priceId)}`);
           return jsonResponse({
