@@ -1,7 +1,7 @@
 # Terms of Service — Strk
 
 **Effective date:** 2026-08-16
-**Last updated:** 2026-08-12
+**Last updated:** 2026-09-25
 
 These Terms of Service ("Terms") are a legal agreement between you and
 **Seedstack Studio (Pty) Ltd** ("Seedstack Studio," "we," "us," "our"), a
@@ -50,6 +50,10 @@ You agree not to:
 - Attempt to gain unauthorized access to other users' accounts, data, or
   to Strk's systems (including probing, scanning, or bypassing rate
   limits, RLS policies, or subscription/usage-limit checks).
+- Falsify or manipulate habit completions or streak data — including
+  logging habits you didn't actually complete, using automated or
+  scripted completions, or otherwise attempting to distort your own or
+  another user's streak, rank, or challenge progress.
 - Use automated means (bots, scrapers) to access the Service outside of
   any API we may officially publish.
 - Upload or share content through Strk (habit names, group names/
@@ -82,9 +86,29 @@ annually.
   access — you keep Pro features until the end of your current, already-
   paid-for billing period, and your plan then moves to Free. There is no
   partial-period refund for cancelling mid-cycle.
-- **Refunds:** Except where required by applicable law, payments are
-  non-refundable. Refund requests are handled by Paddle as Merchant of
-  Record.
+- **Refunds:** Except as described below, payments are non-refundable.
+  Refund requests are handled by Paddle as Merchant of Record.
+- **Statutory withdrawal rights:** if you're in a jurisdiction with a
+  legal right to withdraw from an online purchase, that right still
+  applies to your first payment on a new subscription (not to renewals),
+  for the period below, and does not apply once you've started using
+  Pro features if you consented to immediate access at checkout:
+
+  | Region | Statutory withdrawal period |
+  |---|---|
+  | EU / EEA / UK / Switzerland | 14 days |
+  | Turkey / Israel | 14 days |
+  | South Korea / Brazil / Canada / China | 7 days |
+  | Singapore | 5 days |
+
+  Outside these statutory rights, requests are handled at Paddle's
+  discretion. To request a refund, contact Paddle directly via your
+  receipt email or [paddle.net](https://paddle.net).
+- **Chargebacks:** if you have a billing concern, please contact us
+  before filing a chargeback with your bank or card issuer. A chargeback
+  typically results in immediate suspension of your Pro access while
+  it's investigated, and may result in your account being restricted
+  from future Strk Pro purchases.
 - **Price changes:** We may change subscription pricing. We'll give you
   at least 30 days' advance notice before a price change affects your
   next renewal.
@@ -122,6 +146,11 @@ Strk's name, logo, branding, and the app's underlying software are owned
 by Seedstack Studio (or our licensors) and are not covered by the content
 license in §5. These Terms don't grant you any right to use our
 trademarks or branding beyond what's needed to use the Service normally.
+
+Aggregated leaderboard and streak-ranking data — the computed rankings we
+derive from many users' activity — is likewise owned by Seedstack
+Studio. This is separate from your own individual habit log, which
+remains yours per §5.
 
 ## 7. Termination
 
