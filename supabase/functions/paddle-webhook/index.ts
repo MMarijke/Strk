@@ -25,14 +25,15 @@ import { Buffer } from "node:buffer";
 import { initSentry, captureException } from "../_shared/sentry.ts";
 import { isFromPaddle } from "../_shared/paddle-ip-allowlist.ts";
 import { verifyCheckoutToken } from "../_shared/checkout-token.ts";
+import { requireEnv } from "../_shared/env.ts";
 
 initSentry("paddle-webhook");
 
-const WEBHOOK_SECRET = Deno.env.get("PADDLE_WEBHOOK_SECRET")!;
-const CHECKOUT_TOKEN_SECRET = Deno.env.get("PADDLE_CHECKOUT_TOKEN_SECRET")!;
+const WEBHOOK_SECRET = requireEnv("PADDLE_WEBHOOK_SECRET");
+const CHECKOUT_TOKEN_SECRET = requireEnv("PADDLE_CHECKOUT_TOKEN_SECRET");
 const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  requireEnv("SUPABASE_URL"),
+  requireEnv("SUPABASE_SERVICE_ROLE_KEY")
 );
 
 function verifySignature(rawBody: string, header: string): boolean {

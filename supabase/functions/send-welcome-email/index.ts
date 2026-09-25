@@ -15,6 +15,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { emailShell } from "../_shared/email-template.ts";
 import { checkRateLimit, createRateLimiter } from "../_shared/rate-limit.ts";
 import { initSentry, captureException } from "../_shared/sentry.ts";
+import { requireEnv } from "../_shared/env.ts";
 
 initSentry("send-welcome-email");
 
@@ -26,11 +27,11 @@ initSentry("send-welcome-email");
 // database at all, just one REST round-trip per request.
 const rateLimiter = createRateLimiter("send-welcome-email", 2, "1 d");
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+const RESEND_API_KEY = requireEnv("RESEND_API_KEY");
 const FROM_ADDRESS = Deno.env.get("RESEND_FROM_ADDRESS") ?? "Strk <hello@strk.app>";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+const SUPABASE_URL = requireEnv("SUPABASE_URL");
+const SUPABASE_ANON_KEY = requireEnv("SUPABASE_ANON_KEY");
 
 // Same CORS posture as manage-subscription — this is invoked directly
 // from browser JS, so it needs real CORS handling or the browser blocks

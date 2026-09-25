@@ -8,12 +8,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, createRateLimiter } from "../_shared/rate-limit.ts";
 import { initSentry, captureException } from "../_shared/sentry.ts";
 import { signCheckoutToken } from "../_shared/checkout-token.ts";
+import { requireEnv } from "../_shared/env.ts";
 
 initSentry("create-checkout-token");
 
-const CHECKOUT_TOKEN_SECRET = Deno.env.get("PADDLE_CHECKOUT_TOKEN_SECRET")!;
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+const CHECKOUT_TOKEN_SECRET = requireEnv("PADDLE_CHECKOUT_TOKEN_SECRET");
+const SUPABASE_URL = requireEnv("SUPABASE_URL");
+const SUPABASE_ANON_KEY = requireEnv("SUPABASE_ANON_KEY");
 
 // Same reasoning as manage-subscription: called directly from browser JS,
 // cross-origin, and JWT-gated regardless of origin, so `*` is fine here.

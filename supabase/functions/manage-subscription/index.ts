@@ -8,6 +8,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, createRateLimiter } from "../_shared/rate-limit.ts";
 import { initSentry, captureException } from "../_shared/sentry.ts";
+import { requireEnv } from "../_shared/env.ts";
 
 initSentry("manage-subscription");
 
@@ -25,21 +26,18 @@ const rateLimiter = createRateLimiter("manage-subscription", 30, "1 h");
 // while still bounding how hard an anonymous caller can hit our PADDLE_API_KEY.
 const pricesRateLimiter = createRateLimiter("manage-subscription-prices", 60, "1 h");
 
-const PADDLE_API_KEY = Deno.env.get("PADDLE_API_KEY")!;
+const PADDLE_API_KEY = requireEnv("PADDLE_API_KEY");
 
-const PADDLE_API_ENVIRONMENT = Deno.env.get("PADDLE_API_ENVIRONMENT");
-if (!PADDLE_API_ENVIRONMENT) {
-  // Fail loudly rather than silently guessing sandbox/live — same lesson as
-  // the VITE_PADDLE_ENVIRONMENT bug: a wrong guess here doesn't error
-  // obviously, it just quietly hits the wrong Paddle account.
-  throw new Error('PADDLE_API_ENVIRONMENT is not set. Set it to "sandbox" or "production".');
-}
+// Fail loudly rather than silently guessing sandbox/live — same lesson as
+// the VITE_PADDLE_ENVIRONMENT bug: a wrong guess here doesn't error
+// obviously, it just quietly hits the wrong Paddle account.
+const PADDLE_API_ENVIRONMENT = requireEnv("PADDLE_API_ENVIRONMENT");
 const PADDLE_API_BASE = PADDLE_API_ENVIRONMENT === "production"
   ? "https://api.paddle.com"
   : "https://sandbox-api.paddle.com";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+const SUPABASE_URL = requireEnv("SUPABASE_URL");
+const SUPABASE_ANON_KEY = requireEnv("SUPABASE_ANON_KEY");
 
 // This is the first function in the project actually invoked cross-origin
 // from browser JS (paddle-webhook is called by Paddle's servers, not a
