@@ -197,15 +197,35 @@ export const AuthProvider = ({ children }) => {
     // subscribe. That redundancy is the point: if getSession()'s own
     // network round-trip is what's hanging, this can still resolve auth
     // from already-cached state and clear the spinner regardless.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    //
+    // The callback body is deferred via setTimeout(0) rather than run
+    // directly -- auth-js's own _notifyAllSubscribers call (which invokes
+    // this callback) is itself awaited from inside _recoverAndRefresh()
+    // before that function resolves GoTrueClient's internal
+    // initializePromise. applySession() below makes a reentrant Supabase
+    // call (buildUser()'s profiles lookup), which calls getSession(),
+    // which awaits that same initializePromise -- a direct promise cycle
+    // that deadlocks every time _recoverAndRefresh() hasn't already
+    // settled by the time this fires (e.g. right after a slow/real
+    // token-refresh round-trip). Deferring to a fresh macrotask lets
+    // _recoverAndRefresh() finish and resolve initializePromise first, so
+    // the reentrant getSession() call inside buildUser() can proceed
+    // instead of waiting on a promise that can never resolve while this
+    // callback is still on the stack. This mirrors auth-js's own pattern
+    // for its magic-link-redirect notification path, which defers for the
+    // same reason.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
-      // See the matching comment in the getSession() branch above -- the
-      // timeout stays armed until applySession() itself has finished.
-      await applySession(session);
-      if (!active) return;
-      settled = true;
-      clearTimeout(timeoutId);
-      setIsLoadingAuth(false);
+      setTimeout(async () => {
+        if (!active) return;
+        // See the matching comment in the getSession() branch above -- the
+        // timeout stays armed until applySession() itself has finished.
+        await applySession(session);
+        if (!active) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        setIsLoadingAuth(false);
+      }, 0);
     });
 
     return () => {
