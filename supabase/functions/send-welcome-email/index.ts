@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
         </ul>
       `,
       ctaLabel: "Open Strk",
-      ctaUrl: "https://strk.app/Dashboard",
+      ctaUrl: "https://strk-seven.vercel.app/Dashboard",
     });
 
     const res = await fetch("https://api.resend.com/emails", {

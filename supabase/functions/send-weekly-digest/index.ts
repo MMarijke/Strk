@@ -228,7 +228,7 @@ async function processProfile(
       }
     `,
     ctaLabel: "Open Strk",
-    ctaUrl: "https://strk.app/Trends",
+    ctaUrl: "https://strk-seven.vercel.app/Trends",
   });
 
   const res = await fetch("https://api.resend.com/emails", {
