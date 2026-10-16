@@ -132,6 +132,127 @@ function motivationalMessage(rate: number): string {
   return "Life happens. What matters is you're back. This week is yours 💙";
 }
 
+type Profile = {
+  created_by_id: string;
+  created_by: string | null;
+  display_name: string | null;
+  email_weekly_digest: boolean;
+};
+
+// Runs `fn` over `items` with at most `limit` in flight at once, rather
+// than fully sequentially (the previous shape) or fully unbounded
+// (Promise.all over everyone). Sequential processing of every user, one
+// DB round-trip plus a conditional Resend call each, is what pushed this
+// function past pg_net's http_post timeout for the last two Monday runs
+// (see the matching migration) -- unbounded concurrency would fix that
+// but risks tripping Resend's own rate limit as the user base grows.
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+async function processProfile(
+  profile: Profile,
+  lastWeekDates: string[],
+  prevWeekDates: string[]
+): Promise<{ sent: boolean; statsUpdated: boolean }> {
+  if (!profile.created_by) return { sent: false, statsUpdated: false };
+
+  const { data: habits, error: habitsError } = await supabase
+    .from("habits")
+    .select("name, completions")
+    .eq("created_by_id", profile.created_by_id)
+    .eq("archived", false);
+
+  if (habitsError) {
+    // created_by_id (uuid), not created_by (email) -- this function
+    // iterates and processes every user's row, so it's the one place in
+    // the codebase most exposed to accidentally logging raw addresses at
+    // volume; captureException still gets the real error, Sentry-scoped.
+    console.error("send-weekly-digest: failed to load habits for", profile.created_by_id, habitsError);
+    await captureException(habitsError, { where: "load habits", profileId: profile.created_by_id });
+    return { sent: false, statsUpdated: false };
+  }
+  if (!habits?.length) return { sent: false, statsUpdated: false }; // nothing to report yet
+
+  const lastWeekRate = completionRate(habits, lastWeekDates);
+  const prevWeekRate = completionRate(habits, prevWeekDates);
+  const lastWeekTop = topHabitInRange(habits, lastWeekDates);
+
+  const { error: updateError } = await supabase
+    .from("user_profiles")
+    .update({
+      last_week_completion_rate: lastWeekRate,
+      prev_week_completion_rate: prevWeekRate,
+      last_week_top_habit_name: lastWeekTop?.name ?? null,
+      last_week_top_habit_count: lastWeekTop?.count ?? null,
+    })
+    .eq("created_by_id", profile.created_by_id);
+
+  let statsUpdated = false;
+  if (updateError) {
+    console.error("send-weekly-digest: failed to update weekly stats for", profile.created_by_id, updateError);
+    await captureException(updateError, { where: "update weekly stats", profileId: profile.created_by_id });
+  } else {
+    statsUpdated = true;
+  }
+
+  if (!profile.email_weekly_digest) return { sent: false, statsUpdated };
+
+  const top = topStreakHabit(habits);
+  const name = profile.display_name || profile.created_by.split("@")[0];
+
+  const html = emailShell({
+    preheader: `Your week in review: ${lastWeekRate}% completion rate`,
+    heading: `Your week in review, ${name} 📊`,
+    body: `
+      <p>${motivationalMessage(lastWeekRate)}</p>
+      <p><strong>${lastWeekRate}%</strong> average completion rate across your habits last week.</p>
+      ${
+        top
+          ? `<p>Top habit: <strong>${top.name}</strong> with ${(top.completions || []).length} total completions.</p>`
+          : ""
+      }
+    `,
+    ctaLabel: "Open Strk",
+    ctaUrl: "https://strk.app/Trends",
+  });
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from: FROM_ADDRESS, to: profile.created_by, subject: "Your week in review 📊", html }),
+  });
+
+  if (res.ok) {
+    return { sent: true, statsUpdated };
+  }
+
+  const resendBody = await res.text();
+  console.error("send-weekly-digest: Resend error for", profile.created_by_id, res.status, resendBody);
+  await captureException(new Error(`Resend error ${res.status}: ${resendBody}`), {
+    where: "resend send",
+    profileId: profile.created_by_id,
+  });
+  return { sent: false, statsUpdated };
+}
+
 Deno.serve(async (req) => {
   if (!isValidCronSecret(req.headers.get("x-cron-secret"))) {
     return new Response("Unauthorized", { status: 401 });
@@ -156,90 +277,12 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "Failed to load profiles" }), { status: 500 });
   }
 
-  let sent = 0;
-  let statsUpdated = 0;
-  for (const profile of profiles ?? []) {
-    if (!profile.created_by) continue;
+  const results = await mapWithConcurrency(profiles ?? [], 5, (profile) =>
+    processProfile(profile, lastWeekDates, prevWeekDates)
+  );
 
-    const { data: habits, error: habitsError } = await supabase
-      .from("habits")
-      .select("name, completions")
-      .eq("created_by_id", profile.created_by_id)
-      .eq("archived", false);
-
-    if (habitsError) {
-      // created_by_id (uuid), not created_by (email) -- this function
-      // iterates and processes every user's row, so it's the one place in
-      // the codebase most exposed to accidentally logging raw addresses at
-      // volume; captureException still gets the real error, Sentry-scoped.
-      console.error("send-weekly-digest: failed to load habits for", profile.created_by_id, habitsError);
-      await captureException(habitsError, { where: "load habits", profileId: profile.created_by_id });
-      continue;
-    }
-    if (!habits?.length) continue; // nothing to report yet
-
-    const lastWeekRate = completionRate(habits, lastWeekDates);
-    const prevWeekRate = completionRate(habits, prevWeekDates);
-    const lastWeekTop = topHabitInRange(habits, lastWeekDates);
-
-    const { error: updateError } = await supabase
-      .from("user_profiles")
-      .update({
-        last_week_completion_rate: lastWeekRate,
-        prev_week_completion_rate: prevWeekRate,
-        last_week_top_habit_name: lastWeekTop?.name ?? null,
-        last_week_top_habit_count: lastWeekTop?.count ?? null,
-      })
-      .eq("created_by_id", profile.created_by_id);
-
-    if (updateError) {
-      console.error("send-weekly-digest: failed to update weekly stats for", profile.created_by_id, updateError);
-      await captureException(updateError, { where: "update weekly stats", profileId: profile.created_by_id });
-    } else {
-      statsUpdated++;
-    }
-
-    if (!profile.email_weekly_digest) continue;
-
-    const top = topStreakHabit(habits);
-    const name = profile.display_name || profile.created_by.split("@")[0];
-
-    const html = emailShell({
-      preheader: `Your week in review: ${lastWeekRate}% completion rate`,
-      heading: `Your week in review, ${name} 📊`,
-      body: `
-        <p>${motivationalMessage(lastWeekRate)}</p>
-        <p><strong>${lastWeekRate}%</strong> average completion rate across your habits last week.</p>
-        ${
-          top
-            ? `<p>Top habit: <strong>${top.name}</strong> with ${(top.completions || []).length} total completions.</p>`
-            : ""
-        }
-      `,
-      ctaLabel: "Open Strk",
-      ctaUrl: "https://strk.app/Trends",
-    });
-
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ from: FROM_ADDRESS, to: profile.created_by, subject: "Your week in review 📊", html }),
-    });
-
-    if (res.ok) {
-      sent++;
-    } else {
-      const resendBody = await res.text();
-      console.error("send-weekly-digest: Resend error for", profile.created_by_id, res.status, resendBody);
-      await captureException(new Error(`Resend error ${res.status}: ${resendBody}`), {
-        where: "resend send",
-        profileId: profile.created_by_id,
-      });
-    }
-  }
+  const sent = results.filter((r) => r.sent).length;
+  const statsUpdated = results.filter((r) => r.statsUpdated).length;
 
   return new Response(JSON.stringify({ sent, statsUpdated, total: profiles?.length ?? 0 }), { status: 200 });
 });
