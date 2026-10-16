@@ -24,14 +24,21 @@ export default function MilestoneBadges({ completions = [], currentStreak = 0 })
         {earned.map((m) => (
           <Tooltip key={m.days}>
             <TooltipTrigger asChild>
+              {/* tabIndex makes this focusable -- Radix's Tooltip opens on
+                  focus as well as hover, so a keyboard user tabbing
+                  through can now reach each badge's name/description,
+                  previously only available via mouse hover. */}
               <div
+                tabIndex={0}
+                role="img"
+                aria-label={`${m.label}: ${m.desc}`}
                 className={cn(
                   "w-6 h-6 rounded-full flex items-center justify-center text-sm cursor-default",
                   "bg-muted hover:scale-125 transition-transform duration-200"
                 )}
                 title={m.label}
               >
-                {m.emoji}
+                <span aria-hidden="true">{m.emoji}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Mail, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/api/supabaseClient";
 import { setPendingPlan } from "@/lib/pendingPlan";
@@ -98,8 +99,14 @@ export default function Login() {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="relative">
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              {/* sr-only rather than a visible label -- the icon+placeholder
+                  pairing is the deliberate visual design here, but screen
+                  readers still need a real accessible name for the app's
+                  one required form. */}
+              <Label htmlFor="email" className="sr-only">Email address</Label>
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
               <Input
+                id="email"
                 type="email"
                 autoFocus
                 required

@@ -66,6 +66,15 @@ export default function WeeklySummaryCard({ habits, userEmail, onDismiss, groups
   return (
     <div
       onClick={handleCardClick}
+      role="button"
+      tabIndex={0}
+      aria-label="View full trends"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleCardClick();
+        }
+      }}
       className={cn(
         "relative rounded-2xl border p-4 cursor-pointer transition-all hover:shadow-md",
         bgClass
