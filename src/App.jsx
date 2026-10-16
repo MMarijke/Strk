@@ -11,7 +11,6 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import AppLayout from './components/layout/AppLayout';
 import { ThemeProvider, useTheme } from './lib/ThemeContext';
 import AnalyticsConsentBanner from './components/legal/AnalyticsConsentBanner';
-import { authDiagnosticLog, collectEnvironmentSnapshot } from '@/lib/tempAuthDiagnostics'; // TEMP-DIAGNOSTIC
 
 // Route-level code splitting -- previously every one of these was bundled
 // into a single ~1.87MB JS file loaded upfront regardless of which page a
@@ -89,31 +88,8 @@ function RouteLoadingFallback() {
   );
 }
 
-// TEMP-DIAGNOSTIC: renders authDiagnosticLog (a plain mutable array, not
-// React state -- see tempAuthDiagnostics.js) plus a one-shot environment
-// snapshot. Remove this component, and every place it's rendered below,
-// once the auth-deadlock investigation is done.
-function TempDiagBlock({ diagSnapshot }) {
-  return (
-    <div
-      className="mt-6 w-full max-w-xs rounded-xl bg-muted/50 p-3 text-left font-mono text-[10px] leading-snug overflow-auto"
-      style={{ maxHeight: '40vh', userSelect: 'text', WebkitUserSelect: 'text' }}
-    >
-      <p className="font-bold mb-1">TEMP DIAGNOSTIC — commit {import.meta.env.VITE_COMMIT_SHA?.slice(0, 7) || 'unknown'}</p>
-      <p>SW: {diagSnapshot ? (diagSnapshot.serviceWorkers.length === 0 ? 'none registered' : diagSnapshot.serviceWorkers.map((s) => `${s.scope} [${s.state}]`).join(', ')) : 'loading…'}</p>
-      <p>Caches: {diagSnapshot ? (diagSnapshot.cacheNames.length === 0 ? 'none' : diagSnapshot.cacheNames.join(', ')) : 'loading…'}</p>
-      <p>Locks held: {diagSnapshot?.locks ? (diagSnapshot.locks.held.join(', ') || 'none') : diagSnapshot ? 'unsupported' : 'loading…'}</p>
-      <p>Locks pending: {diagSnapshot?.locks ? (diagSnapshot.locks.pending.join(', ') || 'none') : diagSnapshot ? 'unsupported' : 'loading…'}</p>
-      <p className="font-bold mt-2 mb-1">Timeline (ms since load):</p>
-      {authDiagnosticLog.map((entry, i) => (
-        <p key={i}>[{entry.t}] {entry.stage}{entry.detail ? ` ${JSON.stringify(entry.detail)}` : ''}</p>
-      ))}
-    </div>
-  );
-}
-
 const AuthenticatedApp = () => {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   const { isAuthenticated, isLoadingAuth, sessionCheckFailed, sessionCheckOffline, sessionCheckAttempts } = useAuth();
   const { onboarded, onboardStep, completeTheme, completeDisplayName } = useTheme();
 
@@ -127,34 +103,6 @@ const AuthenticatedApp = () => {
   const wasFailedRef = useRef(false);
   const [justRecovered, setJustRecovered] = useState(false);
   const [showReconnecting, setShowReconnecting] = useState(false);
-  // TEMP-DIAGNOSTIC: remove this state/these effects (and the two render
-  // sites below) once the auth-deadlock investigation is done.
-  const [diagSnapshot, setDiagSnapshot] = useState(null);
-  const [, setDiagTick] = useState(0);
-  const diagEnabled = new URLSearchParams(search).get('diag') === '1';
-  // Shown on the failure screen unconditionally (as before), and on the
-  // loading/"Reconnecting…" screen only behind ?diag=1 -- that screen is
-  // the normal, every-load state, so the block stays opt-in there.
-  const diagVisible = sessionCheckFailed || (diagEnabled && isLoadingAuth);
-
-  useEffect(() => { // TEMP-DIAGNOSTIC
-    if (!diagVisible) return;
-    let cancelled = false;
-    collectEnvironmentSnapshot().then((snap) => {
-      if (!cancelled) setDiagSnapshot(snap);
-    });
-    return () => { cancelled = true; };
-  }, [diagVisible]);
-
-  useEffect(() => { // TEMP-DIAGNOSTIC
-    // authDiagnosticLog is a plain mutable array (see tempAuthDiagnostics.js),
-    // so nothing re-renders this component when a new entry is pushed to it
-    // while the loading screen is still up -- this tick forces a re-render
-    // every second so TempDiagBlock's map over that array stays current.
-    if (!diagVisible) return;
-    const interval = setInterval(() => setDiagTick((t) => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, [diagVisible]);
 
   useEffect(() => {
     if (sessionCheckFailed) {
@@ -188,7 +136,6 @@ const AuthenticatedApp = () => {
             Reconnecting…
           </p>
         )}
-        {diagEnabled && <TempDiagBlock diagSnapshot={diagSnapshot} />}
       </div>
     );
   }
@@ -232,7 +179,6 @@ const AuthenticatedApp = () => {
         >
           Refresh
         </Button>
-        <TempDiagBlock diagSnapshot={diagSnapshot} />
       </div>
     );
   }

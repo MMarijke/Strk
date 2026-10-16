@@ -2,7 +2,6 @@ import React, { createContext, useState, useContext, useEffect, useRef } from 'r
 import { supabase, FETCH_TIMEOUT_MS } from '@/api/supabaseClient';
 import { clearQueryCache } from '@/lib/query-client';
 import { identifyUser, resetAnalytics } from '@/lib/analytics';
-import { logDiag } from '@/lib/tempAuthDiagnostics'; // TEMP-DIAGNOSTIC
 
 const AuthContext = createContext();
 
@@ -43,20 +42,11 @@ const SESSION_CHECK_ATTEMPT_KEY = 'strk-session-check-attempts';
 const buildUser = async (authUser) => {
   if (!authUser) return null;
 
-  logDiag('buildUser:profiles:start'); // TEMP-DIAGNOSTIC
-  let profile;
-  try {
-    const result = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', authUser.id)
-      .single();
-    profile = result.data;
-    logDiag('buildUser:profiles:end', { hasProfile: !!profile }); // TEMP-DIAGNOSTIC
-  } catch (error) {
-    logDiag('buildUser:profiles:error', { message: error?.message }); // TEMP-DIAGNOSTIC
-    throw error; // TEMP-DIAGNOSTIC: rethrow unchanged -- same propagation as before, just observed
-  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', authUser.id)
+    .single();
 
   return {
     id: authUser.id,
@@ -120,7 +110,6 @@ export const AuthProvider = ({ children }) => {
   };
 
   const applySession = async (session) => {
-    logDiag('applySession:start'); // TEMP-DIAGNOSTIC
     try {
       setAuthError(null);
       setSessionCheckFailed(false);
@@ -138,9 +127,7 @@ export const AuthProvider = ({ children }) => {
       setUser(nextUser);
       setIsAuthenticated(!!nextUser);
       if (nextUser) identifyUser(nextUser);
-      logDiag('applySession:end'); // TEMP-DIAGNOSTIC
     } catch (error) {
-      logDiag('applySession:error', { message: error?.message }); // TEMP-DIAGNOSTIC
       console.error('Auth session check failed:', error);
       setAuthError({ type: 'unknown', message: error.message || 'Failed to load session' });
       setUser(null);
@@ -162,7 +149,6 @@ export const AuthProvider = ({ children }) => {
 
     const timeoutId = setTimeout(() => {
       if (!active || settled) return;
-      logDiag('fallbackTimer:fired', { timeoutMs }); // TEMP-DIAGNOSTIC
       console.error(`Auth session check timed out after ${timeoutMs}ms with no response.`);
       setSessionCheckOffline(startedOffline);
       recordSessionCheckFailure();
@@ -175,11 +161,9 @@ export const AuthProvider = ({ children }) => {
       // that requires a manual reload to recover from.
     }, timeoutMs);
 
-    logDiag('getSession:called'); // TEMP-DIAGNOSTIC
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
         if (!active) return;
-        logDiag('getSession:resolved', { hasSession: !!session }); // TEMP-DIAGNOSTIC
         // Deliberately NOT marking settled/clearing the timeout yet -- see
         // below. applySession() below still has its own unguarded network
         // call (the profiles lookup in buildUser), and the timeout needs to
@@ -192,7 +176,6 @@ export const AuthProvider = ({ children }) => {
       })
       .catch((error) => {
         if (!active) return;
-        logDiag('getSession:rejected', { message: error?.message }); // TEMP-DIAGNOSTIC
         settled = true;
         clearTimeout(timeoutId);
         // Treated as logged-out (not stuck) so the app always lands
@@ -235,7 +218,6 @@ export const AuthProvider = ({ children }) => {
       if (!active) return;
       setTimeout(async () => {
         if (!active) return;
-        logDiag('onAuthStateChange:deferred:start', { event: _event, hasSession: !!session }); // TEMP-DIAGNOSTIC
         // See the matching comment in the getSession() branch above -- the
         // timeout stays armed until applySession() itself has finished.
         await applySession(session);
