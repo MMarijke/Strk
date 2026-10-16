@@ -1,7 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
-const QUICK_REACTIONS = ["🔥", "💪", "👀", "⚡", "🫶"];
+const QUICK_REACTIONS = [
+  { emoji: "🔥", label: "fire" },
+  { emoji: "💪", label: "strength" },
+  { emoji: "👀", label: "eyes" },
+  { emoji: "⚡", label: "lightning" },
+  { emoji: "🫶", label: "heart hands" },
+];
 const DAILY_LIMIT = 3;
 
 export default function ReactionButton({ recipientEmail, groupId, onSend, sentTodayCount = 0, isPro = false }) {
@@ -48,7 +54,10 @@ export default function ReactionButton({ recipientEmail, groupId, onSend, sentTo
 
   return (
     <div className="relative shrink-0" ref={ref}>
-      {/* Trigger button */}
+      {/* Trigger button -- p-2 -m-2 grows the real hit area to 44px (28px
+          visual + 2*8px) without changing the button's visible footprint,
+          same padding-trick pattern already used on HabitCard.jsx's
+          reminder-bell button. */}
       <button
         onClick={() => !limited && setOpen((v) => !v)}
         title={
@@ -58,29 +67,40 @@ export default function ReactionButton({ recipientEmail, groupId, onSend, sentTo
               ? "3/3 used today. Upgrade to Pro for unlimited."
               : `Send reaction (${remaining} left today)`
         }
+        aria-label={
+          isPro
+            ? "Send reaction"
+            : limited
+              ? "Send reaction, daily limit reached. Upgrade to Pro for unlimited."
+              : `Send reaction, ${remaining} left today`
+        }
+        aria-expanded={open}
         className={cn(
-          "w-7 h-7 rounded-full flex items-center justify-center text-base transition-all",
+          "w-7 h-7 p-2 -m-2 rounded-full flex items-center justify-center text-base transition-all",
           limited
             ? "opacity-30 cursor-not-allowed"
             : "hover:bg-muted hover:scale-110 active:scale-95"
         )}
       >
-        {sent  
-          ? <span className="text-sm">{sent}</span> 
-          : <span className="text-[14px] leading-none">😊</span>
+        {sent
+          ? <span className="text-sm" aria-hidden="true">{sent}</span>
+          : <span className="text-[14px] leading-none" aria-hidden="true">😊</span>
         }
       </button>
 
       {/* Picker */}
       {open && (
         <div className="absolute right-0 bottom-full mb-1 z-50 flex gap-1 bg-card border border-border rounded-2xl shadow-lg px-2 py-1.5">
-          {QUICK_REACTIONS.map((emoji) => (
+          {QUICK_REACTIONS.map(({ emoji, label }) => (
             <button
               key={emoji}
               onClick={() => handleReact(emoji)}
-              className="w-8 h-8 flex items-center justify-center text-xl hover:scale-125 active:scale-90 transition-transform rounded-xl hover:bg-muted"
+              aria-label={`React with ${label}`}
+              // Same padding-trick as the trigger above: 32px visual
+              // (w-8 h-8) + 2*6px (p-1.5 -m-1.5) = 44px real hit area.
+              className="w-8 h-8 p-1.5 -m-1.5 flex items-center justify-center text-xl hover:scale-125 active:scale-90 transition-transform rounded-xl hover:bg-muted"
             >
-              {emoji}
+              <span aria-hidden="true">{emoji}</span>
             </button>
           ))}
         </div>

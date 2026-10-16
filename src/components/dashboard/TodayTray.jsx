@@ -143,7 +143,14 @@ export default function TodayTray({
       {extraCount > 0 && (
         <button
           onClick={() => setExpanded((e) => !e)}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors mb-4 -mt-1"
+          aria-expanded={expanded}
+          // px-2 py-2 grows the real hit area -- this line had no padding
+          // at all, so its clickable height was just the text line box
+          // (~16-18px). -mx-2 cancels the horizontal growth against
+          // neighboring content, matching the existing mb-4/-mt-1 vertical
+          // spacing rather than replacing it (distinct properties, so no
+          // Tailwind class-order ambiguity).
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors mb-4 -mt-1 px-2 py-2 -mx-2"
         >
           {expanded ? "Show less" : `+${extraCount} more`}
         </button>
