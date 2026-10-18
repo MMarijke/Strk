@@ -1,11 +1,18 @@
 "use client";
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/ThemeContext"
 import { Toaster as Sonner } from "sonner"
 
 const Toaster = ({
   ...props
 }) => {
-  const { theme = "system" } = useTheme()
+  // Was reading next-themes' useTheme(), a package this app never actually
+  // wires up a provider for -- it always returned the hardcoded "system"
+  // default, so toasts followed the OS's color-scheme preference instead
+  // of the app's own explicit dark-mode toggle (ThemeContext.jsx), visibly
+  // mismatching the rest of the UI whenever a user's in-app choice differs
+  // from their OS setting.
+  const { isDark } = useTheme()
+  const theme = isDark ? "dark" : "light"
 
   return (
     (<Sonner

@@ -44,6 +44,7 @@ module.exports = {
   				foreground: 'hsl(var(--destructive-foreground))'
   			},
   			success: 'hsl(var(--success))',
+  			frozen: 'hsl(var(--frozen))',
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
