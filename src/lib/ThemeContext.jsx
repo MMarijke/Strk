@@ -85,6 +85,23 @@ export function ThemeProvider({ children, userId }) {
       root.style.setProperty("--background", theme.bg);
     }
 
+    // Keeps the mobile browser's status bar in sync with the actual
+    // in-app theme/dark-mode choice, not just the initial static value in
+    // index.html -- previously this never updated after first paint, so
+    // every color theme and dark mode itself all showed the same
+    // hardcoded ember-orange status bar regardless of what was actually
+    // selected. Light mode keeps the branded primary-accent strip (the
+    // already-shipped look); dark mode uses the dark background instead
+    // of the light-mode accent color, so the status bar blends with a
+    // dark UI rather than showing a bright, unrelated color above it.
+    // theme.primary/darkBg are already "H S% L%" triplets in the same
+    // space-separated syntax CSS hsl() accepts directly, no conversion
+    // needed.
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute("content", `hsl(${isDark ? theme.darkBg : theme.primary})`);
+    }
+
     localStorage.setItem(storageKey(userId, "theme"), themeId);
     localStorage.setItem(storageKey(userId, "dark"), isDark);
   }, [themeId, isDark, userId]);
