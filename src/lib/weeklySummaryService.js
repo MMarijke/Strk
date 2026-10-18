@@ -1,4 +1,5 @@
 import { format, subDays, startOfWeek, endOfWeek, isMonday } from "date-fns";
+import { showNotification } from "@/lib/showNotification";
 
 const STORAGE_KEY = "weeklySummary";
 
@@ -137,17 +138,19 @@ export function scheduleWeeklySummaryNotif() {
     const delay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), targetHour, 0, 0) - now;
     setTimeout(() => {
       if (Notification.permission === "granted") {
-        new Notification("Your week in review 📊", {
+        showNotification("Your week in review 📊", {
           body: "Tap to see how you did last week!",
           icon: "/favicon.ico",
+          data: { url: `${window.location.origin}/Trends` },
         });
         localStorage.setItem(SENT_KEY, today);
       }
     }, delay);
   } else if (now.getHours() === targetHour && now.getMinutes() < 5) {
-    new Notification("Your week in review 📊", {
+    showNotification("Your week in review 📊", {
       body: "Tap to see how you did last week!",
       icon: "/favicon.ico",
+      data: { url: `${window.location.origin}/Trends` },
     });
     localStorage.setItem(SENT_KEY, today);
   }

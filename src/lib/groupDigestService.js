@@ -1,4 +1,5 @@
 import { format, subDays, startOfWeek, endOfWeek, isWithinInterval, parseISO } from "date-fns";
+import { showNotification } from "@/lib/showNotification";
 
 const DIGEST_STORAGE_KEY = "group_digest_last_sent";
 
@@ -113,13 +114,12 @@ export function getGroupTopHabitLastWeek(memberEmails, userEmail, habits, profil
  */
 export function fireGroupDigestNotification(group, topMemberName, topStreak, completionRate) {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-  const n = new Notification(`${group.name} weekly results 📊`, {
+  showNotification(`${group.name} weekly results 📊`, {
     body: `${topMemberName} led with a ${topStreak}-day streak. Group completion: ${completionRate}%. Tap to see the breakdown.`,
     icon: "/favicon.ico",
     tag: `digest-${group.id}`,
     data: { url: `${window.location.origin}/Social` },
   });
-  n.onclick = () => { window.focus(); n.close(); };
 }
 
 /**
