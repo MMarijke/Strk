@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { FocusSession } from "@/api/entities";
 import { differenceInMinutes, parseISO } from "date-fns";
+import NotificationBanner from "@/components/dashboard/NotificationBanner";
 
 export default function FocusSessionBanner({ userEmail, onOpen, onActiveChange }) {
   const [session, setSession] = useState(null);
@@ -50,22 +51,16 @@ export default function FocusSessionBanner({ userEmail, onOpen, onActiveChange }
   ));
 
   return (
-    <button
+    <NotificationBanner
       onClick={() => onOpen(session)}
-      className="w-full mb-4 rounded-xl bg-primary/10 border border-primary/20 px-4 py-3 flex items-center gap-3 text-left hover:bg-primary/15 transition-colors"
-    >
-      <span className="text-xl">🎯</span>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground">
-          {inLobby ? "Focus session starting soon" : "Focus session active"}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {inLobby
-            ? `starts in ${minsLeft < 1 ? "under a minute" : `${minsLeft} min${minsLeft !== 1 ? "s" : ""}`} · tap to return`
-            : `${minsLeft} min${minsLeft !== 1 ? "s" : ""} left · tap to return`}
-        </p>
-      </div>
-      <span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" />
-    </button>
+      icon={<span className="text-base leading-none">🎯</span>}
+      title={inLobby ? "Focus session starting soon" : "Focus session active"}
+      subtitle={
+        inLobby
+          ? `starts in ${minsLeft < 1 ? "under a minute" : `${minsLeft} min${minsLeft !== 1 ? "s" : ""}`} · tap to return`
+          : `${minsLeft} min${minsLeft !== 1 ? "s" : ""} left · tap to return`
+      }
+      indicator={<span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" aria-hidden="true" />}
+    />
   );
 }

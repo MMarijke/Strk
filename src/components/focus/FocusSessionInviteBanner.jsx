@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { FocusSessionNotification } from "@/api/entities";
-import { Target, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Target } from "lucide-react";
+import NotificationBanner from "@/components/dashboard/NotificationBanner";
 import { joinFocusSession } from "@/lib/focusSessionJoin";
 import JoinInProgressConfirm from "./JoinInProgressConfirm";
 
@@ -86,39 +86,16 @@ export default function FocusSessionInviteBanner({ userEmail, onJoined, onActive
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <NotificationBanner
       onClick={() => !loading && attemptJoin(false)}
-      onKeyDown={(e) => { if (!loading && (e.key === "Enter" || e.key === " ")) attemptJoin(false); }}
-      className="rounded-xl bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20 px-4 py-3 flex items-center gap-3 mb-4 cursor-pointer hover:shadow-md transition-shadow"
-    >
-      <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
-        <Target className="w-4 h-4 text-primary" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-bold text-foreground truncate">
-          {notif.host_name || "Someone"} started a focus session
-        </p>
-        <p className="text-[11px] text-muted-foreground">
-          {loading
-            ? "Joining…"
-            : `${notif.duration_minutes} min · ${notif.group_name} · ${stillInLobby ? "Tap to join" : "Tap to join (in progress)"}`}
-        </p>
-      </div>
-      <Button
-        size="icon"
-        variant="ghost"
-        className="shrink-0 h-7 w-7 rounded-full hover:bg-primary/10"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dismissMutation.mutate(notif.id);
-        }}
-        aria-label="Dismiss"
-      >
-        <X className="w-3.5 h-3.5 text-muted-foreground" />
-      </Button>
-    </div>
+      icon={<Target className="w-4 h-4 text-primary" />}
+      title={`${notif.host_name || "Someone"} started a focus session`}
+      subtitle={
+        loading
+          ? "Joining…"
+          : `${notif.duration_minutes} min · ${notif.group_name} · ${stillInLobby ? "Tap to join" : "Tap to join (in progress)"}`
+      }
+      onDismiss={() => dismissMutation.mutate(notif.id)}
+    />
   );
 }
