@@ -6,6 +6,7 @@ import { Copy, Check, X, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import confetti from "canvas-confetti";
+import { showNotification } from "@/lib/showNotification";
 
 function pad(n) { return String(Math.floor(n)).padStart(2, "0"); }
 
@@ -74,7 +75,10 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       const newEmail = session.participant_emails[session.participant_emails.length - 1];
       const name = newEmail.split("@")[0];
       if ("Notification" in window && Notification.permission === "granted") {
-        new Notification("Strk Focus", { body: `${name} joined your focus session!` });
+        showNotification("Strk Focus", {
+          body: `${name} joined your focus session!`,
+          data: { url: `${window.location.origin}/Dashboard` },
+        });
       }
     }
     prevCountRef.current = current;
@@ -139,7 +143,10 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       if (secs <= 60 && secs > 55 && !warnedRef.current) {
         warnedRef.current = true;
         if ("Notification" in window && Notification.permission === "granted") {
-          new Notification("Strk Focus", { body: "Focus session ending in 1 minute. Finish strong! 💪" });
+          showNotification("Strk Focus", {
+            body: "Focus session ending in 1 minute. Finish strong! 💪",
+            data: { url: `${window.location.origin}/Dashboard` },
+          });
         }
       }
 

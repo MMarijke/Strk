@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { calculateStreak } from "@/components/habits/StreakWidget";
+import { showNotification } from "@/lib/showNotification";
 
 const MILESTONES = [7, 30, 100];
 
@@ -27,18 +28,17 @@ export default function GroupMilestoneNotifier({ groups, habits, userEmail }) {
         const key = `${habit.id}-${milestone}`;
         if (streak === milestone && !sentRef.current.has(key)) {
           sentRef.current.add(key);
-          // Notify for each group the user is in
+          // Notify for each group the user is in. showNotification() never
+          // throws (see src/lib/showNotification.js) -- a failure notifying
+          // one group must not stop the rest of this loop from firing, the
+          // way a direct `new Notification(...)` throwing used to.
           myGroups.forEach((group) => {
             const name = userEmail.split("@")[0];
-            const notification = new Notification(`${name} just hit a ${milestone}-day streak on ${habit.name} 🔥`, {
+            showNotification(`${name} just hit a ${milestone}-day streak on ${habit.name} 🔥`, {
               body: `Amazing work in ${group.name}! Keep it going!`,
               icon: "/favicon.ico",
+              data: { url: `${window.location.origin}/Social` },
             });
-            // Minimal, deliberate scope call: just refocus the tab. Not
-            // deep-linking into the specific group the way the in-app
-            // challenge notifications now do -- worth revisiting with the
-            // same location.state hand-off pattern if this turns out to matter.
-            notification.onclick = () => window.focus();
           });
         }
       });

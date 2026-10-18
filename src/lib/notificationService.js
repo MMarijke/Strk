@@ -2,6 +2,7 @@
  * Notification service for habit reminders.
  * Schedules reminders using setInterval checks every minute.
  */
+import { showNotification } from "@/lib/showNotification";
 
 const STORAGE_KEY = "habit_reminder_timers";
 
@@ -20,16 +21,12 @@ export function canNotify() {
 export function fireHabitNotification(habit, streak) {
   if (!canNotify()) return;
   const streakText = streak > 0 ? ` 🔥 ${streak} day streak` : "";
-  const n = new Notification(habit.name, {
+  showNotification(habit.name, {
     body: `${habit.name}${streakText}. Time to check in!`,
     icon: "/favicon.ico",
     tag: `habit-${habit.id}`,
     data: { url: window.location.origin + "/Dashboard" },
   });
-  n.onclick = () => {
-    window.focus();
-    n.close();
-  };
 }
 
 // Main scheduler — call once on app load with the current habits list
