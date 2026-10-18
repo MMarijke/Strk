@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { UserProfile, Habit, Group } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -97,7 +97,17 @@ export default function Dashboard() {
     enabled: !!user?.email,
     staleTime: 5 * 60 * 1000,
   });
-  const habits = allHabits.filter((h) => !h.archived);
+  // Memoized -- an unmemoized filter() here created a new array reference
+  // on every render, which three separate effects below depend on
+  // ([habits], [groupsForDigest, habits, user], etc.), restarting the
+  // reminder/digest schedulers and the rank-check timer far more often
+  // than the actual habit data ever changed. Beyond the wasted interval
+  // churn, this was a real correctness bug: startReminderScheduler() fires
+  // an immediate check() on every call it gets, so any render landing
+  // inside a habit's reminder minute re-fired that reminder (see
+  // notificationService.js's own dedup guard, added as defense in depth,
+  // but this is the actual fix for how often that path got hit at all).
+  const habits = useMemo(() => allHabits.filter((h) => !h.archived), [allHabits]);
 
   const displayName = userProfile?.display_name
     || user?.full_name
