@@ -123,6 +123,16 @@ export function setWeeklySummaryNotifEnabled(val) {
 
 const SENT_KEY = "weeklySummaryNotifSent";
 
+// Singleton, same pattern as notificationService.js's _intervalId and
+// groupDigestService.js's _digestIntervalId -- scheduleWeeklySummaryNotif()
+// gets called from a Dashboard.jsx effect that can re-run several times
+// before 9am on a Monday (e.g. on every token refresh, since `user`'s
+// object identity changes each time). Without clearing any previously
+// scheduled timeout first, each of those re-runs scheduled its own
+// independent setTimeout, and all of them fired at 9am -- one duplicate
+// notification per re-run that happened that morning.
+let _summaryTimeoutId = null;
+
 export function scheduleWeeklySummaryNotif() {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   if (!getWeeklySummaryNotifEnabled()) return;
@@ -132,12 +142,17 @@ export function scheduleWeeklySummaryNotif() {
   const sent = localStorage.getItem(SENT_KEY);
   if (sent === today) return;
 
+  if (_summaryTimeoutId) { clearTimeout(_summaryTimeoutId); _summaryTimeoutId = null; }
+
   const now = new Date();
   const targetHour = 9;
   if (now.getHours() < targetHour) {
     const delay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), targetHour, 0, 0) - now;
-    setTimeout(() => {
-      if (Notification.permission === "granted") {
+    _summaryTimeoutId = setTimeout(() => {
+      _summaryTimeoutId = null;
+      // Re-check -- a day may have rolled over since this was scheduled,
+      // or another path may have already sent today's notification.
+      if (Notification.permission === "granted" && localStorage.getItem(SENT_KEY) !== today) {
         showNotification("Your week in review 📊", {
           body: "Tap to see how you did last week!",
           icon: "/favicon.ico",
