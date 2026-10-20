@@ -38,6 +38,17 @@
     --accent-foreground: 220 20% 10%;
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 98%;
+    /* Separate from --destructive above on purpose -- same reasoning as
+       --ring/--chart-1 staying apart from --primary below. --destructive
+       is paired with white --destructive-foreground text (delete buttons,
+       badges, toasts) and already clears contrast there; this token is
+       for destructive-colored BODY TEXT on --background/--card instead
+       (form/field error messages), a different pairing with different
+       contrast needs. Was 58% lightness here too -- measured contrast
+       against --background (60 20% 98%) at 3.90:1, under the 4.5:1 WCAG
+       AA floor for normal text. 44% clears it at ~5.81:1 with the same
+       hue/saturation. */
+    --destructive-text: 0 72% 44%;
     /* Same value as Tailwind's green-500 -- this token replaces three
        separate raw `bg-green-500` presence-dot usages (SessionRoom.jsx,
        FocusSessionBanner.jsx, and the landing page's copy of the same
@@ -91,6 +102,16 @@
     --accent-foreground: 220 20% 10%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
+    /* Same split as :root's --destructive-text above -- see that comment.
+       Was 30.6% lightness here too (the same value as --destructive, before
+       this token existed) -- measured contrast against --card (60 5% 14%,
+       the stricter of the two surfaces this renders on) at 1.49:1, far
+       under the 4.5:1 floor. 64% clears both --background (~5.06:1) and
+       --card (~4.60:1) with the same hue/saturation. Deliberately NOT
+       applied to --destructive itself: at 64% lightness it would drop the
+       destructive button's white-text contrast from ~9.79:1 to ~3.18:1,
+       failing AA for that pairing instead. */
+    --destructive-text: 0 62.8% 64%;
     --success: 142 71% 45%;
     /* Same value as :root's --frozen above -- the original hardcoded
        #3b82f6 it replaces never varied by theme either. */
