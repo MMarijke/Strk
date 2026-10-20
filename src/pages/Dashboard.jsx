@@ -509,6 +509,19 @@ export default function Dashboard() {
               <Plus className="w-5 h-5" />
               Add your first habit
             </Button>
+            {/* A brand-new user's first 60 seconds on this screen were
+                purely solo -- flame emoji, a private streak, nothing
+                hinting at the product's actual social-accountability
+                bet. This is deliberately secondary to the primary CTA
+                above (adding a habit still comes first), not a second
+                competing action. */}
+            <button
+              type="button"
+              onClick={() => navigate("/Social", { state: { tab: "groups" } })}
+              className="mt-4 text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            >
+              Habits stick better with friends watching — join or start a group
+            </button>
           </motion.div>
         ) : (
           <PullToRefresh onRefresh={handleRefresh}>
