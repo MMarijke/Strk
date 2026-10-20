@@ -11,15 +11,14 @@ import { Plus, CheckCheck, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import HabitCard from "@/components/habits/HabitCard";
-import StatsBar from "@/components/habits/StatsBar";
+import DashboardSummary from "@/components/habits/DashboardSummary";
 import AddHabitDialog from "@/components/habits/AddHabitDialog";
-import FreezeIndicator from "@/components/habits/FreezeIndicator";
 import { applyFreeze, getFreezeMonthState } from "@/lib/freezeService";
 import { isSummaryVisible, scheduleWeeklySummaryNotif } from "@/lib/weeklySummaryService";
 import ChallengeBanner from "@/components/habits/ChallengeBanner";
 import PullToRefresh from "@/components/dashboard/PullToRefresh";
 import TodayTray from "@/components/dashboard/TodayTray";
-import RankCard from "@/components/rank/RankCard";
+import FriendActivityStrip from "@/components/social/FriendActivityStrip";
 import RankUpModal from "@/components/rank/RankUpModal";
 import { getRank, calculateScore } from "@/lib/utils";
 import StartFocusModal from "@/components/focus/StartFocusModal";
@@ -399,16 +398,26 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Stats + freeze indicator + rank */}
+        {/* Rank + stats + freeze, merged into one compact card (formerly
+            three separate stacked blocks) to cut the chrome-block count
+            that stood between opening the app and the habit list. */}
         {habits.length > 0 && (
-          <div className="mb-8 space-y-3">
-            <StatsBar habits={habits} />
-            <RankCard score={calculateScore(habits)} />
-            {user?.email && (
-              <div className="flex justify-end">
-                <FreezeIndicator isPro={isPro} freezesRemaining={freezesRemaining} />
-              </div>
-            )}
+          <div className="mb-3">
+            <DashboardSummary
+              habits={habits}
+              score={calculateScore(habits)}
+              isPro={isPro}
+              freezesRemaining={freezesRemaining}
+            />
+          </div>
+        )}
+
+        {/* Permanent, unconditional social-visibility slot -- deliberately
+            not gated on habits.length, since whether a friend reacted to
+            you shouldn't depend on whether you've logged a habit yet. */}
+        {user?.email && (
+          <div className="mb-8">
+            <FriendActivityStrip />
           </div>
         )}
 
