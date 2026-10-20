@@ -383,8 +383,8 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
-              size="sm"
-              className="gap-1.5 rounded-full px-3"
+              size="icon"
+              className="h-11 w-11 rounded-full"
               onClick={() => setShowFocusModal(true)}
               aria-label="Start focus session"
               title="Start focus session"

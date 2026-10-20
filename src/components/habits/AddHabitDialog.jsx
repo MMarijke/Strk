@@ -10,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { ChevronDown, ChevronUp, RotateCcw, CalendarRange } from "lucide-react";
-import { cn, HABIT_COLORS } from "@/lib/utils";
+import { cn, HABIT_COLORS, HABIT_COLOR_NAMES } from "@/lib/utils";
 import ReminderSection from "./ReminderSection";
 
 const CATEGORIES = [
@@ -117,18 +117,32 @@ export default function AddHabitDialog({ open, onOpenChange, onAdd }) {
           {/* Color */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">Color</Label>
-            <div className="flex gap-2">
-              {HABIT_COLORS.map((c) => (
+            <div className="flex gap-2 flex-wrap">
+              {HABIT_COLORS.map((c, i) => (
+                // A fixed w-8 h-8 swatch can't grow its hit area via padding
+                // (border-box sizing means padding doesn't enlarge a fixed
+                // width/height) -- so the real 44px hit target is the outer
+                // button, holding a visibly-unchanged 32px colored circle
+                // centered inside it. flex-wrap keeps the now-wider row
+                // (8 x 44px vs. the old 8 x 32px) from overflowing on
+                // narrow phones.
                 <button
                   key={c}
                   type="button"
                   onClick={() => setColor(c)}
-                  className={cn(
-                    "w-8 h-8 rounded-full transition-all duration-200",
-                    color === c ? "ring-2 ring-offset-2 ring-offset-background scale-110" : "hover:scale-105"
-                  )}
-                  style={{ backgroundColor: c }}
-                />
+                  aria-label={HABIT_COLOR_NAMES[i]}
+                  aria-pressed={color === c}
+                  className="w-11 h-11 rounded-full flex items-center justify-center shrink-0"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "w-8 h-8 rounded-full transition-all duration-200",
+                      color === c ? "ring-2 ring-offset-2 ring-offset-background scale-110" : "hover:scale-105"
+                    )}
+                    style={{ backgroundColor: c }}
+                  />
+                </button>
               ))}
             </div>
           </div>
