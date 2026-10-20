@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Reaction, Habit, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format, subDays, parseISO, isAfter } from "date-fns";
+import { format, subDays, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
 import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, UserMinus, Settings, Trophy, Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -54,6 +54,46 @@ function getTopHabit(habits) {
     const s = calculateStreak(h.completions || []);
     return s > (best ? calculateStreak(best.completions || []) : -1) ? h : best;
   }, null);
+}
+
+// What the line under a teammate's name can honestly say. Their habit
+// names and their habit count are unreadable by design -- habits_select_own
+// is strictly owner-only with no group-membership exception -- so this slot
+// can never show "their top habit" the way it does for you. The one thing
+// user_profiles can report about someone else is recency: whether they are
+// still completing habits at all. See migration 20261020090001 for the
+// column, why it's a date rather than a timestamp, and why "completed" is
+// the accurate verb here ("active" would be wrong -- opening the app,
+// joining a focus session or reacting to a friend writes no completion).
+//
+// "Completed" with no object, and never the word "completions": the object
+// is already supplied by the surrounding leaderboard, and `completions` is
+// a database column name, not a word this product says to users. The app's
+// own verb for finishing a habit is Complete (Dashboard's "Complete All",
+// HabitCard's check), so every branch below is built from that one verb
+// rather than alternating between "Completed a habit" and "Last completed".
+//
+// These strings are also kept short deliberately. This line sits in the
+// row's only flexible column, between a fixed rank+avatar cluster and a
+// fixed score+reaction cluster, and it truncates: at 375px it has roughly
+// twenty characters before an ellipsis eats the meaning. A longer, more
+// explicit phrasing here does not read as more informative, it reads as
+// cut off.
+function describeMemberActivity(lastCompletionDate) {
+  if (!lastCompletionDate) return "No habits completed yet";
+  const day = parseISO(lastCompletionDate);
+  // Clamped at 0: the column is written from the database's current_date
+  // (UTC) while this runs in the viewer's own timezone, so "today" can
+  // read as -1 day either side of midnight. Never render a future day.
+  const daysAgo = Math.max(0, differenceInCalendarDays(new Date(), day));
+  if (daysAgo === 0) return "Completed today";
+  if (daysAgo === 1) return "Completed yesterday";
+  // Only ever 2-6 here -- 0 and 1 are handled above, so this never needs
+  // to resolve a singular "1 day ago".
+  if (daysAgo < 7) return `Completed ${daysAgo} days ago`;
+  // Past a week, a date is more useful than a growing day count.
+  const sameYear = day.getFullYear() === new Date().getFullYear();
+  return `Completed ${format(day, sameYear ? "MMM d" : "MMM d, yyyy")}`;
 }
 
 function RankIcon({ rank }) {
@@ -270,15 +310,17 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       ? (getDisplayName(email, profiles) !== email.split("@")[0] ? getDisplayName(email, profiles) : (userFullName || getDisplayName(email, profiles)))
       : getDisplayName(email, profiles);
     if (email === userEmail) {
-      return { email, name, isMe: true, isPro, ...myStats, topHabit: myTopHabit, hasData: true };
+      return { email, name, isMe: true, isPro, ...myStats, topHabit: myTopHabit, lastCompletionDate: null, hasData: true };
     }
     const memberProfile = profiles.find((p) => p.created_by === email);
     if (!memberProfile) {
       // Private profile (is_public = false, invisible under RLS) or no
-      // synced stats yet -- an honest "no data" state, not a real 0.
-      // Showing a bare 0 here was the bug: indistinguishable from a
-      // genuine score of zero.
-      return { email, name, isMe: false, isPro: false, score: null, bestStreak: 0, consistency: 0, topHabit: null, hasData: false };
+      // profile row created yet (it's written lazily, on first display-name
+      // save) -- an honest "no data" state, not a real 0. Showing a bare 0
+      // here was the bug: indistinguishable from a genuine score of zero.
+      // The two causes are indistinguishable from the client too, so the
+      // copy states the fact without asserting which one it is.
+      return { email, name, isMe: false, isPro: false, score: null, bestStreak: 0, consistency: 0, topHabit: null, lastCompletionDate: null, hasData: false };
     }
     return {
       email,
@@ -288,7 +330,11 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       score: (memberProfile.best_streak || 0) * 2 + (memberProfile.consistency_score || 0),
       bestStreak: memberProfile.best_streak || 0,
       consistency: memberProfile.consistency_score || 0,
+      // Stays null for everyone but you, and not as a placeholder: another
+      // member's habits are unreadable under RLS, so there is no top habit
+      // to resolve. describeMemberActivity covers their line instead.
       topHabit: null,
+      lastCompletionDate: memberProfile.last_completion_date || null,
       hasData: true,
     };
   }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
@@ -430,23 +476,60 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                 {row.isPro && <Sparkles className="w-3 h-3 shrink-0 text-primary" aria-label="Pro member" />}
                 {row.isMe && <span className="text-xs text-primary font-normal shrink-0">(you)</span>}
               </p>
+              {/* Your own row is the only one that can name a habit: your
+                  habits are the only ones this session can read. Everyone
+                  else gets the recency line, which is real data, or copy
+                  that says plainly that nothing is visible. */}
               {row.topHabit ? (
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Flame className="w-3 h-3 text-accent" />
-                  {row.topHabit.name} · {calculateStreak(row.topHabit.completions || [])}d streak
+                  <Flame className="w-3 h-3 text-accent shrink-0" />
+                  <span className="truncate">
+                    {row.topHabit.name} · {calculateStreak(row.topHabit.completions || [])}d streak
+                  </span>
+                </p>
+              ) : row.isMe ? (
+                <p className="text-xs text-muted-foreground truncate">No habits yet</p>
+              ) : row.hasData ? (
+                <p className="text-xs text-muted-foreground truncate">
+                  {describeMemberActivity(row.lastCompletionDate)}
                 </p>
               ) : (
-                <p className="text-xs text-muted-foreground">No habit data visible</p>
+                // Cause-neutral on purpose. This branch means no readable
+                // user_profiles row came back for them, which has two
+                // possible causes -- is_public = false, or no profile row
+                // at all -- and the client cannot tell which. It also can't
+                // honestly lead with privacy: nothing in the product sets
+                // is_public to false (it defaults true in 20260702120002
+                // and saveMyDisplayName hardcodes true), so the reachable
+                // cause today is a profile that was never written, because
+                // onboarding fires that save without awaiting it. Naming
+                // privacy as the explanation would be a guess, and a wrong
+                // one most of the time.
+                //
+                // Previously this carried a `title` spelling both causes
+                // out, which is not a real affordance here: this ships as
+                // a mobile-first PWA, and a title tooltip needs a hover a
+                // touch screen never produces. The visible line has to
+                // stand on its own, so it does.
+                <p className="text-xs text-muted-foreground truncate">No progress shared yet</p>
               )}
             </div>
             <div className="text-right shrink-0">
               {row.hasData ? (
                 <>
-                  <p className="text-sm font-bold">{row.score}</p>
+                  <p className="text-sm font-bold tabular-nums">{row.score}</p>
                   <p className="text-[10px] text-muted-foreground">pts</p>
                 </>
               ) : (
-                <p className="text-[10px] text-muted-foreground italic leading-tight max-w-[60px]">No data visible</p>
+                // The name line already explains this state -- repeating it
+                // here read as two separate problems. A dash holds the
+                // column visually; the sr-only text keeps the row from
+                // going silent where every other row announces a score,
+                // without making a screen reader hear the explanation twice.
+                <p className="text-sm text-muted-foreground">
+                  <span aria-hidden="true">—</span>
+                  <span className="sr-only">No score</span>
+                </p>
               )}
             </div>
             {row.isMe ? (
