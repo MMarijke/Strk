@@ -93,7 +93,7 @@ export default function ForgotPassword() {
               />
             </div>
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <p className="text-xs text-destructive-text">{error}</p>}
 
             <Button
               type="submit"

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,18 @@ import { setPendingPlan } from "@/lib/pendingPlan";
 // trying to distinguish them further here either. Confirming "no account
 // with that email" would be a user-enumeration leak the backend itself
 // doesn't make.
+//
+// Accounts created before this app had passwords (the old magic-link/OTP
+// flow) have no password set at all, so they hit this exact same message --
+// with no way to tell them apart from a plain wrong-password attempt, the
+// hint below is appended unconditionally rather than only for migrated
+// accounts. That's deliberate: it costs nothing for a correctly-typed
+// password, and it's the one sentence that unblocks someone whose account
+// predates passwords without adding a second, enumeration-risky lookup.
 function translateAuthError(message) {
   const m = (message || "").toLowerCase();
   if (m.includes("invalid login credentials") || (m.includes("invalid") && m.includes("credentials"))) {
-    return "Invalid email or password.";
+    return 'Invalid email or password. If your account is from before we added passwords, use "Forgot password?" above to set one.';
   }
   if (m.includes("email not confirmed")) {
     return "Please confirm your email before logging in. Check your inbox for a confirmation link.";
@@ -34,6 +42,16 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState("idle"); // idle | submitting | error
   const [error, setError] = useState(null);
+  const errorRef = useRef(null);
+
+  // A failed login previously had no programmatic announcement -- the
+  // error <p> rendered with nothing to tell assistive tech it just
+  // appeared. role="alert" below announces it; focusing it here backs
+  // that up for AT/browser combinations that miss a freshly-mounted
+  // live region, and gives keyboard users a visible anchor too.
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
 
   // Remembers a plan chosen on Landing's pricing section (?plan=pro) across
   // the signup round-trip, which a query param alone can't survive -- see
@@ -81,9 +99,8 @@ export default function Login() {
             </Link>
           </div>
           <h1 className="text-3xl font-extrabold text-foreground tracking-tight mb-2">Log in</h1>
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            Build streaks. Stay accountable. Welcome back.
-          </p>
+          <p className="text-muted-foreground text-sm leading-relaxed">Build streaks. Stay accountable.</p>
+          <p className="text-muted-foreground text-sm leading-relaxed">Your streak — and your friends — are waiting.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -122,7 +139,7 @@ export default function Login() {
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               aria-label={showPassword ? "Hide password" : "Show password"}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -135,7 +152,16 @@ export default function Login() {
             </Link>
           </div>
 
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && (
+            <p
+              ref={errorRef}
+              role="alert"
+              tabIndex={-1}
+              className="text-xs text-destructive-text outline-none focus:ring-2 focus:ring-destructive-text focus:ring-offset-2 focus:ring-offset-background rounded-sm"
+            >
+              {error}
+            </p>
+          )}
 
           <Button
             type="submit"
@@ -154,18 +180,6 @@ export default function Login() {
             <Link to="/signup" className="font-semibold text-foreground underline underline-offset-2">
               Sign up
             </Link>
-          </p>
-
-          <p className="text-center text-xs text-muted-foreground leading-relaxed">
-            By continuing, you agree to our{" "}
-            <Link to="/terms" className="underline underline-offset-2 hover:text-foreground">
-              Terms of Service
-            </Link>{" "}
-            and{" "}
-            <Link to="/privacy" className="underline underline-offset-2 hover:text-foreground">
-              Privacy Policy
-            </Link>
-            .
           </p>
         </form>
       </div>

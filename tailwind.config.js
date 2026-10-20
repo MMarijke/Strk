@@ -41,7 +41,8 @@ module.exports = {
   			},
   			destructive: {
   				DEFAULT: 'hsl(var(--destructive))',
-  				foreground: 'hsl(var(--destructive-foreground))'
+  				foreground: 'hsl(var(--destructive-foreground))',
+  				text: 'hsl(var(--destructive-text))'
   			},
   			success: 'hsl(var(--success))',
   			frozen: 'hsl(var(--frozen))',

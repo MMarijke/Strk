@@ -156,7 +156,7 @@ export default function Signup() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="h-12 pl-10 text-base rounded-xl"
               />
-              {fieldErrors.email && <p className="text-xs text-destructive mt-1">{fieldErrors.email}</p>}
+              {fieldErrors.email && <p className="text-xs text-destructive-text mt-1">{fieldErrors.email}</p>}
             </div>
 
             <div className="relative">
@@ -180,7 +180,7 @@ export default function Signup() {
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
-              {fieldErrors.password && <p className="text-xs text-destructive mt-1">{fieldErrors.password}</p>}
+              {fieldErrors.password && <p className="text-xs text-destructive-text mt-1">{fieldErrors.password}</p>}
             </div>
 
             <div className="relative">
@@ -196,10 +196,10 @@ export default function Signup() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="h-12 pl-10 text-base rounded-xl"
               />
-              {fieldErrors.confirmPassword && <p className="text-xs text-destructive mt-1">{fieldErrors.confirmPassword}</p>}
+              {fieldErrors.confirmPassword && <p className="text-xs text-destructive-text mt-1">{fieldErrors.confirmPassword}</p>}
             </div>
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <p className="text-xs text-destructive-text">{error}</p>}
 
             <Button
               type="submit"
