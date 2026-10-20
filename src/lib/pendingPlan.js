@@ -1,9 +1,9 @@
 // Carries a visitor's plan choice (Landing's Pricing section) across the
-// passwordless auth round-trip. A query param alone doesn't survive this:
-// clicking "Sign in to go Pro" lands on /login?plan=pro, but completing the
-// magic-link flow redirects to emailRedirectTo (the app's origin, no query
-// string) — often in a different tab/window than the one that requested the
-// link. localStorage is what actually survives that gap.
+// signup round-trip. A query param alone doesn't survive this: clicking "Go
+// Pro" lands on /signup?plan=pro, but once signUp()/signInWithPassword()
+// resolves there's no guarantee the query string is still attached to
+// whatever the app continues on (a full page navigation after password
+// reset, for one). localStorage is what actually survives that gap.
 const PENDING_PLAN_KEY = "strk-pending-plan";
 
 export function setPendingPlan(plan) {
