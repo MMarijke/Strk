@@ -481,7 +481,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                 size="icon"
                 variant="ghost"
                 className="h-11 w-11 shrink-0"
-                style={{ color: "hsl(var(--frozen))" }}
+                style={{ color: "hsl(var(--frozen-text))" }}
                 onClick={() => setAssistCandidate({ ...freezeCandidateByEmail.get(row.email), targetName: row.name })}
                 aria-label={`Save ${row.name}'s streak`}
                 title={`Save ${row.name}'s streak`}

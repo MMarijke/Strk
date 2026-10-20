@@ -22,7 +22,7 @@ export default function FreezeAssistConfirmModal({ open, onOpenChange, targetNam
           <span className="font-semibold text-foreground">{habitName}</span>. They'll be notified
           it was you -- this doesn't touch their own monthly freeze allowance.
         </p>
-        <p className="text-sm font-medium" style={{ color: "hsl(var(--frozen))" }}>
+        <p className="text-sm font-medium" style={{ color: "hsl(var(--frozen-text))" }}>
           ✨ Pro: free to give, unlimited to use
         </p>
         <DialogFooter className="mt-2">

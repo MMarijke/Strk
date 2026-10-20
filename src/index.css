@@ -59,8 +59,23 @@
        token replaces two separate raw `#3b82f6` "streak freeze applied"
        cell-background usages (StreakWidget.jsx, EditWeekDialog.jsx), same
        reasoning as --success above: one shared source instead of a
-       literal that can drift and can't react to theme changes. */
-    --frozen: 217.2 91.2% 59.8%;
+       literal that can drift and can't react to theme changes. Was 59.8%
+       lightness -- measured contrast against white --destructive-foreground-
+       style text (FreezeConfirmModal's "Use Freeze" button) at 3.52:1,
+       under the 4.5:1 WCAG AA floor. 46% clears it at ~5.57:1 with the
+       same hue/saturation; the StreakWidget/EditWeekDialog cell usages and
+       NotificationBanner's low-opacity tints are unaffected (no text is
+       colored with this token in either place -- an emoji glyph and
+       standard-token text sit on top of it instead). */
+    --frozen: 217.2 91.2% 46%;
+    /* Separate from --frozen above on purpose -- same split as
+       --destructive/--destructive-text. --frozen is paired with white
+       text (the freeze button) or used as a tint behind other text, and
+       already clears contrast there; this token is for frozen-colored
+       BODY TEXT directly on --background (FreezeConfirmModal's "Pro:
+       unlimited freezes" line), a different pairing. 42% clears
+       --background at ~6.43:1 in light mode. */
+    --frozen-text: 217.2 91.2% 42%;
     --border: 220 10% 90%;
     --input: 220 10% 90%;
     --ring: 34 80% 55%;
@@ -114,8 +129,16 @@
     --destructive-text: 0 62.8% 64%;
     --success: 142 71% 45%;
     /* Same value as :root's --frozen above -- the original hardcoded
-       #3b82f6 it replaces never varied by theme either. */
-    --frozen: 217.2 91.2% 59.8%;
+       #3b82f6 it replaces never varied by theme either, and the same
+       white-text contrast fix applies identically in both themes since
+       it's always compared against the same white button text. */
+    --frozen: 217.2 91.2% 46%;
+    /* Same split as :root's --frozen-text above -- see that comment. 66%
+       clears --background (60 5% 11%) at ~5.68:1 in dark mode; the light
+       and dark values differ here (unlike --frozen itself) because this
+       one is compared against the theme's own --background each time,
+       not a constant white. */
+    --frozen-text: 217.2 91.2% 66%;
     --border: 60 5% 20%;
     --input: 60 5% 20%;
     --ring: 34 80% 55%;
