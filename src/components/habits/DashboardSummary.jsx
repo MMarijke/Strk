@@ -1,6 +1,6 @@
 import React from "react";
 import { format } from "date-fns";
-import { Flame, Target, CalendarCheck } from "lucide-react";
+import { Flame, Target, CalendarCheck, CheckCheck } from "lucide-react";
 import { calculateStreak } from "./StreakWidget";
 import { getRank } from "@/lib/utils";
 import { getNextRefreshDateStr } from "@/lib/freezeService";
@@ -22,7 +22,7 @@ const RANK_STYLES = {
   gold: { border: "border-yellow-400/60", tint: "from-yellow-400/20", bar: "bg-gradient-to-r from-yellow-400 to-amber-500" },
 };
 
-export default function DashboardSummary({ habits, score, isPro, freezesRemaining }) {
+export default function DashboardSummary({ habits, score, isPro, freezesRemaining, onCompleteAll }) {
   const rank = getRank(score);
   const { nextRank } = rank;
   const style = RANK_STYLES[rank.color] ?? RANK_STYLES.green;
@@ -39,6 +39,7 @@ export default function DashboardSummary({ habits, score, isPro, freezesRemainin
     const streak = calculateStreak(h.completions || []);
     return streak > max ? streak : max;
   }, 0);
+  const allDone = totalHabits > 0 && completedToday === totalHabits;
 
   return (
     <div
@@ -84,6 +85,22 @@ export default function DashboardSummary({ habits, score, isPro, freezesRemainin
               ? `${freezesRemaining} freeze${freezesRemaining !== 1 ? "s" : ""}`
               : `resets ${getNextRefreshDateStr()}`}
           </span>
+        )}
+        {/* Formerly its own full-width bordered-button block between this
+            card and the habit list -- demoted to a plain text action
+            folded into the existing stats row instead of a dedicated
+            chrome block, per the critique's chrome-density finding.
+            flex-wrap on the row means it drops to its own line rather
+            than overflowing if the other stats don't leave room. */}
+        {!allDone && onCompleteAll && (
+          <button
+            type="button"
+            onClick={onCompleteAll}
+            className="flex items-center gap-1.5 text-primary font-medium hover:underline ml-auto"
+          >
+            <CheckCheck className="w-3.5 h-3.5" aria-hidden="true" />
+            Complete all
+          </button>
         )}
       </div>
     </div>
