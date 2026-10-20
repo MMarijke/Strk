@@ -94,6 +94,20 @@ export const HABIT_COLORS = [
   "#D4956A",
 ];
 
+// Same order as HABIT_COLORS -- lets the color-picker swatches (AddHabitDialog,
+// EditHabitModal) give each one a real accessible name instead of a screen
+// reader hearing an unlabeled "button" per swatch.
+export const HABIT_COLOR_NAMES = [
+  "Amber",
+  "Gold",
+  "Sage",
+  "Slate Blue",
+  "Lavender",
+  "Rose",
+  "Teal",
+  "Terracotta",
+];
+
 // ── RPG Rank System ──────────────────────────────────────────────────────────
 export const RANKS = [
   { key: "ember",   title: "Ember",   emoji: "🌱", minScore: 0,   maxScore: 49,  color: "green" },

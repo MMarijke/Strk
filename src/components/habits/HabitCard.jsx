@@ -70,10 +70,12 @@ function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpda
                 {habit.reminder_time && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowEditReminder(true); }}
-                    // p-2.5 -m-2.5: grows the actual hit area to a
-                    // touch-friendly size without growing the visible icon
-                    // or disturbing the inline layout next to the habit name.
-                    className="hover:scale-110 transition-transform shrink-0 p-2.5 -m-2.5"
+                    // p-4 -m-4: grows the actual hit area to a true 44px+
+                    // touch target without growing the visible icon or
+                    // disturbing the inline layout next to the habit name.
+                    // (Was p-2.5 -m-2.5, a 34px hit area -- under the 44px
+                    // guideline despite clearing WCAG's 24px AA floor.)
+                    className="hover:scale-110 transition-transform shrink-0 p-4 -m-4"
                     style={{ color }}
                     title="Edit reminder"
                     aria-label={`Edit reminder for ${habit.name}`}
