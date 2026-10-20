@@ -39,8 +39,9 @@ Mobile-first installable PWA (manifest declares `standalone` display; real
 app icons already exist at `/icons/icon-192.png` and `/icons/icon-512.png`).
 Used in short, frequent sessions: check off today's habits, glance at
 friends'/group progress, react, join a scheduled focus session. Auth is
-passwordless (Supabase magic-link/OTP by email) — there is no signup form to
-fill out, only an email field.
+traditional email+password (Supabase `signUp`/`signInWithPassword`). Signup
+requires no email confirmation step before entry, so new users get instant
+access after creating an account.
 
 ## Capabilities and Constraints
 
@@ -92,9 +93,10 @@ fill out, only an email field.
    mechanic (groups, reactions, focus sessions) exists to make a habit
    visible to real friends, not to add a social veneer on a private
    tracker.
-2. Entry has to stay low-friction — passwordless auth, no long signup —
-   and the public page should not contradict that by feeling like a
-   heavier sales funnel than the product itself.
+2. Entry has to stay low-friction — a short email+password form with
+   instant access (no email confirmation gate), not a long signup — and
+   the public page should not contradict that by feeling like a heavier
+   sales funnel than the product itself.
 3. Free is a genuinely usable product, not a stripped demo: Pro removes
    caps and limits (unlimited groups/freezes, full analytics window)
    rather than unlocking core mechanics that Free users can't access at

@@ -73,14 +73,15 @@ export default function PricingSection() {
               </li>
             ))}
           </ul>
-          <Link to="/login?plan=free">
-            {/* Parallel to Pro's "Sign in to go Pro" below -- both buttons
-                and the hero's "Sign in" now share one verb family so three
-                buttons routing to the same passwordless /login don't read
-                as three different flows. The ?plan param lets Login.jsx
-                remember which one was chosen -- see pendingPlan.js. */}
+          <Link to="/signup?plan=free">
+            {/* Parallel to Pro's "Go Pro" below -- both buttons and the
+                hero's "Start free" route to /signup now that sign-up and
+                log-in are genuinely separate flows (password auth, not
+                the old magic-link where one page did both). The ?plan
+                param lets Signup.jsx remember which one was chosen --
+                see pendingPlan.js. */}
             <Button variant="outline" className="w-full rounded-2xl h-11 font-semibold">
-              Sign in to start free
+              Start free
             </Button>
           </Link>
         </div>
@@ -112,8 +113,8 @@ export default function PricingSection() {
               </li>
             ))}
           </ul>
-          <Link to="/login?plan=pro">
-            <Button className="w-full rounded-2xl h-11 font-bold">Sign in to go Pro</Button>
+          <Link to="/signup?plan=pro">
+            <Button className="w-full rounded-2xl h-11 font-bold">Go Pro</Button>
           </Link>
         </div>
       </div>

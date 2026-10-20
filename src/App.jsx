@@ -19,6 +19,9 @@ import AnalyticsConsentBanner from './components/legal/AnalyticsConsentBanner';
 // <Suspense> around the routes below (both the outer Terms/Privacy pair
 // and everything inside AuthenticatedApp) covers all of them.
 const Login = lazy(() => import('./pages/Login'));
+const Signup = lazy(() => import('./pages/Signup'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Landing = lazy(() => import('./pages/Landing'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Trends = lazy(() => import('./pages/Trends'));
@@ -184,12 +187,16 @@ const AuthenticatedApp = () => {
   }
 
   // "/" is the public landing page (product description + live pricing --
-  // see PRODUCT.md/Landing.jsx), "/login" is the bare sign-in form it links
-  // to. Any other path while logged out (a bookmarked /Dashboard link,
-  // say) sends the visitor to the landing page rather than straight into a
-  // context-free sign-in form.
+  // see PRODUCT.md/Landing.jsx); "/login", "/signup", "/forgot-password"
+  // are the bare auth forms it links to. Any other path while logged out
+  // (a bookmarked /Dashboard link, say) sends the visitor to the landing
+  // page rather than straight into a context-free form. "/reset-password"
+  // is NOT handled here -- see the top-level <Routes> in App() below for
+  // why it has to sit outside this isAuthenticated branch entirely.
   if (!isAuthenticated) {
     if (pathname === "/login") return <Login />;
+    if (pathname === "/signup") return <Signup />;
+    if (pathname === "/forgot-password") return <ForgotPassword />;
     if (pathname !== "/") return <Navigate to="/" replace />;
     return <Landing />;
   }
@@ -203,6 +210,8 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route path="/" element={<Navigate to="/Dashboard" replace />} />
       <Route path="/login" element={<Navigate to="/Dashboard" replace />} />
+      <Route path="/signup" element={<Navigate to="/Dashboard" replace />} />
+      <Route path="/forgot-password" element={<Navigate to="/Dashboard" replace />} />
       <Route element={<AppLayout />}>
         <Route path="/Dashboard" element={<Dashboard />} />
         <Route path="/Trends" element={<Trends />} />
@@ -230,11 +239,23 @@ function App() {
                 reachable regardless of auth state (Paddle verification, app
                 store requirements), so they're matched at this top level
                 instead, ahead of the catch-all that hands everything else
-                to AuthenticatedApp. */}
+                to AuthenticatedApp.
+
+                /reset-password is matched here for a different reason:
+                clicking a password-reset email link establishes a real,
+                valid Supabase session (a PASSWORD_RECOVERY auth event) for
+                the account being recovered, which makes isAuthenticated
+                true. If this route only existed inside AuthenticatedApp's
+                !isAuthenticated branch, that user would skip it entirely
+                and get swept into the main app before ever setting a new
+                password. Matching it here, ahead of AuthenticatedApp's own
+                auth-state branching, means it renders regardless of
+                whether a session exists yet. */}
             <Suspense fallback={<RouteLoadingFallback />}>
               <Routes>
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/*" element={<AuthenticatedApp />} />
               </Routes>
             </Suspense>

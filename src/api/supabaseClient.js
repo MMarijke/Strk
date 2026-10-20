@@ -52,6 +52,16 @@ function fetchWithTimeout(input, init = {}) {
   return fetch(input, { ...init, signal }).finally(() => clearTimeout(timeoutId));
 }
 
+// PKCE, not the SDK's implicit-flow default -- every email-link redirect in
+// this app (password reset, and signup confirmation if that dashboard
+// setting is ever turned back on) now carries a genuinely sensitive,
+// credential-adjacent one-time grant. Implicit flow puts the access/refresh
+// tokens directly in the URL fragment after that redirect; PKCE exchanges a
+// short-lived single-use code instead, so no token ever transiently sits in
+// browser history. detectSessionInUrl stated explicitly (it's also the
+// default) since this object didn't exist before and the behavior
+// downstream auth flows depend on shouldn't be silently implicit.
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { flowType: 'pkce', detectSessionInUrl: true },
   global: { fetch: fetchWithTimeout },
 });

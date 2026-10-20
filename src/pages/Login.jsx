@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Mail, CheckCircle2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,36 +8,39 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/api/supabaseClient";
 import { setPendingPlan } from "@/lib/pendingPlan";
 
-// signInWithOtp is magic-link/OTP, not password auth -- there's no
-// "wrong password" case here. Matched by keyword rather than exact
-// string equality since Supabase's precise wording isn't something we
-// can verify without triggering it live; a brittle exact match would
-// silently stop translating anything if it differs slightly.
+// Supabase's own message for a wrong password and for a nonexistent email
+// is the same string ("Invalid login credentials") -- deliberately not
+// trying to distinguish them further here either. Confirming "no account
+// with that email" would be a user-enumeration leak the backend itself
+// doesn't make.
 function translateAuthError(message) {
   const m = (message || "").toLowerCase();
+  if (m.includes("invalid login credentials") || (m.includes("invalid") && m.includes("credentials"))) {
+    return "Invalid email or password.";
+  }
+  if (m.includes("email not confirmed")) {
+    return "Please confirm your email before logging in. Check your inbox for a confirmation link.";
+  }
   if (m.includes("rate limit")) {
-    return "You've requested a link recently. Please wait a minute before trying again.";
+    return "Too many attempts. Please wait a minute before trying again.";
   }
-  if (m.includes("unable to validate") || (m.includes("invalid") && m.includes("email"))) {
-    return "That doesn't look like a valid email address.";
-  }
-  if (m.includes("signup") && m.includes("not allowed")) {
-    return "New sign-ups aren't open right now. If you already have an account, please try again shortly.";
-  }
-  return "Something went wrong sending your sign-in link. Please try again.";
+  return "Something went wrong logging in. Please try again.";
 }
 
 export default function Login() {
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [status, setStatus] = useState("idle"); // idle | submitting | error
   const [error, setError] = useState(null);
 
   // Remembers a plan chosen on Landing's pricing section (?plan=pro) across
-  // the magic-link round-trip, which a query param alone can't survive --
-  // see pendingPlan.js. Dashboard checks this once auth completes and
-  // redirects to Subscription for "pro", so the choice isn't silently
-  // dropped the way it used to be.
+  // the signup round-trip, which a query param alone can't survive -- see
+  // pendingPlan.js. Dashboard checks this once auth completes and redirects
+  // to Subscription for "pro". Signup.jsx is the primary landing point for
+  // this param now, but Login still honors it for anyone who lands here
+  // directly with it attached (e.g. a bookmarked /login?plan=pro link).
   useEffect(() => {
     const plan = searchParams.get("plan");
     if (plan === "pro") setPendingPlan(plan);
@@ -46,14 +49,14 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const trimmed = email.trim();
-    if (!trimmed) return;
+    if (!trimmed || !password) return;
 
-    setStatus("sending");
+    setStatus("submitting");
     setError(null);
 
-    const { error: signInError } = await supabase.auth.signInWithOtp({
+    const { error: signInError } = await supabase.auth.signInWithPassword({
       email: trimmed,
-      options: { emailRedirectTo: window.location.origin },
+      password,
     });
 
     if (signInError) {
@@ -61,7 +64,8 @@ export default function Login() {
       setStatus("error");
       return;
     }
-    setStatus("sent");
+    // Success: AuthContext's own getSession()/onAuthStateChange picks up
+    // the new session automatically, nothing else to do here.
   };
 
   return (
@@ -76,74 +80,94 @@ export default function Login() {
               Strk
             </Link>
           </div>
-          <h1 className="text-3xl font-extrabold text-foreground tracking-tight mb-2">Sign in</h1>
+          <h1 className="text-3xl font-extrabold text-foreground tracking-tight mb-2">Log in</h1>
           <p className="text-muted-foreground text-sm leading-relaxed">
-            Build streaks. Stay accountable. We'll email you a link, no password needed.
+            Build streaks. Stay accountable. Welcome back.
           </p>
         </div>
 
-        {status === "sent" ? (
-          <div className="space-y-4 text-center">
-            <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
-            <p className="text-foreground font-medium">Check your inbox</p>
-            <p className="text-muted-foreground text-sm">
-              We sent a sign-in link to <span className="text-foreground">{email}</span>.
-            </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="relative">
+            {/* sr-only rather than a visible label -- the icon+placeholder
+                pairing is the deliberate visual design here, but screen
+                readers still need a real accessible name. */}
+            <Label htmlFor="email" className="sr-only">Email address</Label>
+            <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
+            <Input
+              id="email"
+              type="email"
+              autoFocus
+              required
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-12 pl-10 text-base rounded-xl"
+            />
+          </div>
+
+          <div className="relative">
+            <Label htmlFor="password" className="sr-only">Password</Label>
+            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              required
+              autoComplete="current-password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-12 pl-10 pr-10 text-base rounded-xl"
+            />
             <button
-              onClick={() => setStatus("idle")}
-              className="text-sm text-muted-foreground underline underline-offset-2"
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+              aria-label={showPassword ? "Hide password" : "Show password"}
             >
-              Use a different email
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="relative">
-              {/* sr-only rather than a visible label -- the icon+placeholder
-                  pairing is the deliberate visual design here, but screen
-                  readers still need a real accessible name for the app's
-                  one required form. */}
-              <Label htmlFor="email" className="sr-only">Email address</Label>
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
-              <Input
-                id="email"
-                type="email"
-                autoFocus
-                required
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-12 pl-10 text-base rounded-xl"
-              />
-            </div>
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
+          <div className="text-right -mt-1">
+            <Link to="/forgot-password" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+              Forgot password?
+            </Link>
+          </div>
 
-            <Button
-              type="submit"
-              size="lg"
-              disabled={status === "sending" || !email.trim()}
-              className={cn(
-                "w-full rounded-2xl h-14 text-base font-bold transition-all duration-300",
-                "shadow-xl disabled:opacity-50"
-              )}
-            >
-              {status === "sending" ? "Sending…" : "Send sign-in link"}
-            </Button>
+          {error && <p className="text-xs text-destructive">{error}</p>}
 
-            <p className="text-center text-xs text-muted-foreground leading-relaxed">
-              By continuing, you agree to our{" "}
-              <Link to="/terms" className="underline underline-offset-2 hover:text-foreground">
-                Terms of Service
-              </Link>{" "}
-              and{" "}
-              <Link to="/privacy" className="underline underline-offset-2 hover:text-foreground">
-                Privacy Policy
-              </Link>
-              .
-            </p>
-          </form>
-        )}
+          <Button
+            type="submit"
+            size="lg"
+            disabled={status === "submitting" || !email.trim() || !password}
+            className={cn(
+              "w-full rounded-2xl h-14 text-base font-bold transition-all duration-300",
+              "shadow-xl disabled:opacity-50"
+            )}
+          >
+            {status === "submitting" ? "Logging in…" : "Log in"}
+          </Button>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Don't have an account?{" "}
+            <Link to="/signup" className="font-semibold text-foreground underline underline-offset-2">
+              Sign up
+            </Link>
+          </p>
+
+          <p className="text-center text-xs text-muted-foreground leading-relaxed">
+            By continuing, you agree to our{" "}
+            <Link to="/terms" className="underline underline-offset-2 hover:text-foreground">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link to="/privacy" className="underline underline-offset-2 hover:text-foreground">
+              Privacy Policy
+            </Link>
+            .
+          </p>
+        </form>
       </div>
     </div>
   );

@@ -122,19 +122,28 @@ export default function LiveFocusHero() {
       </p>
 
       <div className="mt-8 flex flex-col items-center gap-3">
-        <Link to="/login" className="w-full max-w-xs">
+        <Link to="/signup" className="w-full max-w-xs">
           <Button
             size="lg"
             className="w-full rounded-2xl h-14 text-base font-bold shadow-xl transition-all duration-300"
           >
-            Sign in
+            Start free
           </Button>
         </Link>
-        {/* The only in-page nav on this site -- was text-xs with zero
-            padding, giving it an effective tap height of ~16px next to
-            a 56px primary button. py-3 -my-3 grows the hit area to a
-            comfortable thumb target without shifting the visible gap
-            to the button above it. */}
+        {/* Two small links below the primary CTA, same treatment (was
+            text-xs with zero padding, giving it an effective tap height of
+            ~16px next to a 56px primary button -- py-3 -my-3 grows the hit
+            area to a comfortable thumb target without shifting the visible
+            gap to the button above it). Now that sign-up and log-in are
+            separate flows (password auth, not the old magic-link where the
+            hero's one button did both), returning users need their own way
+            back in from here. */}
+        <Link
+          to="/login"
+          className="text-sm font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground py-3 -my-3 px-2 -mx-2"
+        >
+          Already have an account? Log in
+        </Link>
         <a
           href="#pricing"
           className="text-sm font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground py-3 -my-3 px-2 -mx-2"
