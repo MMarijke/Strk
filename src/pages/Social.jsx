@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useSocialActivity } from "@/hooks/useSocialActivity";
 
 function calcConsistency(completions) {
   if (!completions?.length) return 0;
@@ -103,11 +104,16 @@ export default function Social() {
   // ChallengeStartBanner/ChallengeBanner (Dashboard.jsx) deep-link here via
   // router state instead of landing generically on whatever tab happened
   // to be active -- same location.state hand-off pattern as
-  // Dashboard.jsx's joinFocusSession consumer.
+  // Dashboard.jsx's joinFocusSession consumer. FriendActivityStrip
+  // (Dashboard.jsx) reuses the same `tab` hand-off to land directly on
+  // the reactions tab.
   useEffect(() => {
     if (location.state?.selectGroup) {
       setSelectedGroup(location.state.selectGroup);
       setActiveTab("groups");
+      navigate(location.pathname, { replace: true, state: null });
+    } else if (location.state?.tab) {
+      setActiveTab(location.state.tab);
       navigate(location.pathname, { replace: true, state: null });
     }
   }, [location.state, location.pathname, navigate]);
@@ -132,28 +138,7 @@ export default function Social() {
     staleTime: 5 * 60 * 1000
   });
 
-  const { data: groups = [], isLoading: groupsLoading } = useQuery({
-    queryKey: ["groups", user?.email],
-    queryFn: () => user?.email ?
-    Group.filter({
-      '$or': [
-      { created_by: user.email },
-      { member_emails: { '$in': [user.email] } }]
-
-    }, "-created_date") :
-    [],
-    enabled: !!user?.email,
-    staleTime: 5 * 60 * 1000
-  });
-
-  const { data: reactions = [] } = useQuery({
-    queryKey: ["reactions", user?.email],
-    queryFn: () => user?.email ?
-    Reaction.filter({ recipient_email: user.email }, "-created_date") :
-    [],
-    enabled: !!user?.email,
-    staleTime: 2 * 60 * 1000
-  });
+  const { groups, groupsLoading, reactions } = useSocialActivity();
 
   // Reactions are already scoped to current user by the query
   const myReactions = reactions;
