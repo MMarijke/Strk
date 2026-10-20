@@ -7,7 +7,7 @@ import { format } from "date-fns";
 import { startReminderScheduler } from "@/lib/notificationService";
 import { startDigestScheduler } from "@/lib/groupDigestService";
 import { calculateStreak } from "@/components/habits/StreakWidget";
-import { Plus, CheckCheck, Timer } from "lucide-react";
+import { Plus, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import HabitCard from "@/components/habits/HabitCard";
@@ -408,6 +408,7 @@ export default function Dashboard() {
               score={calculateScore(habits)}
               isPro={isPro}
               freezesRemaining={freezesRemaining}
+              onCompleteAll={handleCompleteAll}
             />
           </div>
         )}
@@ -455,21 +456,6 @@ export default function Dashboard() {
         {user?.email && habits.length > 0 && (
           <div className="mb-4">
             <ChallengeBanner userEmail={user.email} habits={habits} />
-          </div>
-        )}
-
-        {/* Complete All button */}
-        {habits.length > 0 && !habits.every((h) => (h.completions || []).includes(today)) && (
-          <div className="mb-4 flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 rounded-full px-4 text-muted-foreground hover:text-foreground"
-              onClick={handleCompleteAll}
-            >
-              <CheckCheck className="w-4 h-4" />
-              Complete All
-            </Button>
           </div>
         )}
 
