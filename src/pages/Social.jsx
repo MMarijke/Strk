@@ -438,21 +438,63 @@ export default function Social() {
                 <Button variant="outline" className="w-full gap-2 rounded-xl border-primary/30 text-primary hover:bg-primary/5" onClick={() => setShowJoinFocus(true)}>
                   🎯 Join Focus Session
                 </Button>
-                {myGroups.map((group) =>
-              <Card
-                key={group.id}
-                className="border-0 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => setSelectedGroup(group.id)}>
-                
+                {myGroups.map((group) => {
+                // Computed once and used for both the visible line and the
+                // accessible name, so the two can't drift apart.
+                const memberCount = (group.member_emails || []).length;
+                const isGroupAdmin = group.created_by_id === user?.id;
+                const memberLabel = `${memberCount} member${memberCount !== 1 ? "s" : ""}`;
+                return (
+                  <Card
+                    key={group.id}
+                    // Same focusable-card pattern as HabitCard and
+                    // WeeklySummaryCard: a div with onClick and nothing else
+                    // is unreachable by keyboard and announces as plain text,
+                    // so this whole card -- the only way into a group -- was
+                    // a dead end for anyone not using a pointer. Takes
+                    // FriendActivityStrip's version of the pattern, which
+                    // adds the themed focus-visible ring the two older ones
+                    // still lack: without it the card is now reachable by
+                    // Tab but gives no indication of where focus landed,
+                    // which trades one keyboard failure for another.
+                    role="button"
+                    tabIndex={0}
+                    // Overriding the content as the accessible name, so it
+                    // has to carry the same facts the card shows rather than
+                    // just the group name. The description is deliberately
+                    // left out: it's line-clamped supplementary text, and
+                    // folding an arbitrary-length blurb into a button's name
+                    // makes a list of groups slow to scan by ear.
+                    aria-label={`Open ${group.name}, ${memberLabel}${isGroupAdmin ? ", you are an admin" : ""}`}
+                    className={cn(
+                      "border-0 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow",
+                      "outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    )}
+                    onClick={() => setSelectedGroup(group.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        // Space would otherwise scroll the page instead of
+                        // activating the card, which is what a real <button>
+                        // does and what this role promises.
+                        e.preventDefault();
+                        setSelectedGroup(group.id);
+                      }
+                    }}>
+
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                         <Users className="w-5 h-5 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm">{group.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {(group.member_emails || []).length} member{(group.member_emails || []).length !== 1 ? "s" : ""}
-                          {group.created_by_id === user?.id && " · Admin"}
+                        {/* Group names are unbounded -- CreateGroupModal's
+                            input sets no maxLength and groups.name is a bare
+                            `text` column -- so a long name, or one long
+                            unbroken string, reaches this card and would
+                            otherwise push the trophy off the row. */}
+                        <p className="font-semibold text-sm truncate">{group.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {memberLabel}
+                          {isGroupAdmin && " · Admin"}
                         </p>
                         {group.description &&
                     <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{group.description}</p>
@@ -461,7 +503,8 @@ export default function Social() {
                       <Trophy className="w-4 h-4 text-muted-foreground shrink-0" />
                     </div>
                   </Card>
-              )}
+                );
+              })}
               </div>
             }
           </TabsContent>
