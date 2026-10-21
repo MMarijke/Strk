@@ -179,45 +179,6 @@ export default function Social() {
     }
   });
 
-  // Build leaderboard from profiles + current user's own data. Memoized so
-  // LeaderboardRow (React.memo below) can actually skip re-rendering when
-  // unrelated Social state changes -- this array (and every entry object
-  // in it) was previously rebuilt from scratch on every render regardless.
-  const leaderboard = useMemo(() => {
-    const myDisplayName = getDisplayName(user?.email, profiles) !== user?.email?.split("@")[0] ?
-    getDisplayName(user?.email, profiles) :
-    user?.full_name || getDisplayName(user?.email, profiles);
-
-    const myBestStreak = Math.max(...habits.map((h) => getAllTimeBest(h.completions || [])), 0);
-    const myConsistency = habits.length ?
-    Math.round(habits.reduce((s, h) => s + calcConsistency(h.completions || []), 0) / habits.length) :
-    0;
-
-    return [
-    {
-      id: "me",
-      name: myDisplayName,
-      avatarColor: "hsl(var(--primary))",
-      bestStreak: myBestStreak,
-      consistency: myConsistency,
-      score: myBestStreak * 2 + myConsistency,
-      isMe: true,
-      isPro
-    },
-    ...profiles.
-    filter((p) => p.is_public !== false && p.created_by !== user?.email).
-    map((p) => ({
-      id: p.id,
-      name: p.display_name || p.created_by?.split("@")[0] || "?",
-      avatarColor: p.avatar_color,
-      bestStreak: p.best_streak || 0,
-      consistency: p.consistency_score || 0,
-      score: (p.best_streak || 0) * 2 + (p.consistency_score || 0),
-      isPro: p.plan === "pro"
-    }))].
-    sort((a, b) => b.score - a.score);
-  }, [user?.email, user?.full_name, profiles, habits, isPro]);
-
   const myGroups = groups.filter(
     (g) => g.created_by === user?.email || (g.member_emails || []).includes(user?.email)
   );
@@ -244,6 +205,83 @@ export default function Social() {
     enabled: !!user?.email,
   });
   const hasPendingPartnerInvite = partnerships.some((p) => p.status === "pending" && p.partner_email === user?.email);
+
+  // Everyone this user actually shares something with: a group, or an
+  // active accountability partnership. This is the population the
+  // leaderboard below is allowed to rank them against.
+  //
+  // It used to rank them against every profile the profiles query
+  // returned, which is every account in the database: user_profiles_select
+  // (20260702120003) permits `is_public = true`, that column defaults to
+  // true, and nothing in the product ever sets it false, so
+  // UserProfile.list() hands back every stranger who has ever signed up.
+  // The screen called that "Leaderboard" and showed the user their rank
+  // inside it -- a number set by people they have never met, and one that
+  // can only get less meaningful as the user base grows. It also
+  // contradicts the premise the whole product is built on: progress is
+  // meant to be witnessed by real friends, not measured against a crowd.
+  const peerEmails = useMemo(() => {
+    const set = new Set(groupmateEmails);
+    partnerships.forEach((p) => {
+      if (p.status !== "active") return;
+      const theirEmail = p.requester_email === user?.email ? p.partner_email : p.requester_email;
+      if (theirEmail && theirEmail !== user?.email) set.add(theirEmail);
+    });
+    return set;
+  }, [groupmateEmails, partnerships, user?.email]);
+
+  // Build leaderboard from the user's own data plus their peers' profiles.
+  // Memoized so LeaderboardRow (React.memo above) can actually skip
+  // re-rendering when unrelated Social state changes -- this array (and
+  // every entry object in it) was previously rebuilt from scratch on every
+  // render regardless.
+  const leaderboard = useMemo(() => {
+    const myDisplayName = getDisplayName(user?.email, profiles) !== user?.email?.split("@")[0] ?
+    getDisplayName(user?.email, profiles) :
+    user?.full_name || getDisplayName(user?.email, profiles);
+
+    const myBestStreak = Math.max(...habits.map((h) => getAllTimeBest(h.completions || [])), 0);
+    const myConsistency = habits.length ?
+    Math.round(habits.reduce((s, h) => s + calcConsistency(h.completions || []), 0) / habits.length) :
+    0;
+
+    return [
+    {
+      id: "me",
+      name: myDisplayName,
+      avatarColor: "hsl(var(--primary))",
+      bestStreak: myBestStreak,
+      consistency: myConsistency,
+      score: myBestStreak * 2 + myConsistency,
+      isMe: true,
+      isPro
+    },
+    ...profiles.
+    // is_public is still honoured: a peer who opts out (nothing sets it
+    // today, but the column and its RLS clause both exist) stays out.
+    filter((p) => p.is_public !== false && p.created_by !== user?.email && peerEmails.has(p.created_by)).
+    map((p) => ({
+      id: p.id,
+      name: p.display_name || p.created_by?.split("@")[0] || "?",
+      avatarColor: p.avatar_color,
+      bestStreak: p.best_streak || 0,
+      consistency: p.consistency_score || 0,
+      score: (p.best_streak || 0) * 2 + (p.consistency_score || 0),
+      isPro: p.plan === "pro"
+    }))].
+    sort((a, b) => b.score - a.score);
+  }, [user?.email, user?.full_name, profiles, habits, isPro, peerEmails]);
+
+  // The user is in their own leaderboard, so "is there anyone to compare
+  // against" is a question about everyone else, not about the list length.
+  //
+  // The old gate was `leaderboard.length >= 3` against that same
+  // all-accounts list, which stopped meaning anything the moment the app
+  // had three signups: it was permanently true for everyone, so the invite
+  // path below -- the one route from this screen toward actually having
+  // friends here -- had become unreachable. Gated on real peers, it shows
+  // exactly when it is true that there is nobody here yet.
+  const hasPeersOnLeaderboard = leaderboard.some((entry) => !entry.isMe);
 
   // Checked here, before CreateGroupModal ever opens, rather than letting
   // it open and then swap to UpgradeModal via its own internal effect --
@@ -373,9 +411,16 @@ export default function Social() {
 
           {/* LEADERBOARD TAB */}
           <TabsContent value="leaderboard" className="space-y-4">
-            {leaderboard.length >= 3 ?
+            {hasPeersOnLeaderboard ?
             <Card className="border-0 shadow-sm p-4 space-y-1">
-                <p className="text-xs text-muted-foreground mb-3 font-medium uppercase tracking-wide">
+                {/* Names the population before the formula. A leaderboard
+                    that doesn't say who is on it invites the reader to
+                    assume the widest possible answer, which is what this
+                    one used to actually do. */}
+                <p className="text-xs font-semibold text-foreground">
+                  You and the people you share groups with
+                </p>
+                <p className="text-xs text-muted-foreground mb-3">
                   Score = Best Streak × 2 + Consistency %
                 </p>
                 {leaderboard.map((entry, i) =>
@@ -389,10 +434,19 @@ export default function Social() {
               habits={habits}
               onInvite={() => {
                 if (navigator.share) {
-                  navigator.share({ title: "Join me on Strk!", text: "Build streaks. Stay accountable. Join me on Strk!", url: window.location.origin });
+                  // Dismissing the share sheet rejects with AbortError --
+                  // an unhandled rejection, not a failure worth reporting.
+                  navigator.share({ title: "Join me on Strk!", text: "Build streaks. Stay accountable. Join me on Strk!", url: window.location.origin }).catch(() => {});
                 } else {
-                  navigator.clipboard.writeText(window.location.origin);
-                  alert("Link copied! Share Strk with friends.");
+                  // Was a native alert(), the one in the app: a modal OS
+                  // dialog for a routine success, in a PWA where every
+                  // other confirmation is a toast. Also now reports
+                  // failure instead of claiming a copy that didn't happen
+                  // -- clipboard writes reject without a user gesture or
+                  // permission.
+                  navigator.clipboard.writeText(window.location.origin).
+                  then(() => toast.success("Invite link copied — send it to a friend.")).
+                  catch(() => toast.error("Couldn't copy the link. Long-press the address bar to copy it instead."));
                 }
               }} />
 
