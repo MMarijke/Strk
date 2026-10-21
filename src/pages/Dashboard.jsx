@@ -408,6 +408,10 @@ export default function Dashboard() {
               score={calculateScore(habits)}
               isPro={isPro}
               freezesRemaining={freezesRemaining}
+              // Same frozenHabits map HabitCard already receives below.
+              // Without it the summary's streak ignored freezes and
+              // disagreed with the card for the same habit.
+              frozenHabits={frozenHabits}
               onCompleteAll={handleCompleteAll}
             />
           </div>
