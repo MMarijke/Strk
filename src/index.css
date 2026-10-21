@@ -49,11 +49,19 @@
        AA floor for normal text. 44% clears it at ~5.81:1 with the same
        hue/saturation. */
     --destructive-text: 0 72% 44%;
-    /* Same value as Tailwind's green-500 -- this token replaces three
-       separate raw `bg-green-500` presence-dot usages (SessionRoom.jsx,
-       FocusSessionBanner.jsx, and the landing page's copy of the same
-       treatment) with one shared source, so it can't drift across them
-       and theme-switching can reach it if ever needed. */
+    /* Same value as Tailwind's green-500 -- this token replaces the raw
+       `bg-green-500` live-indicator usages (FocusSessionBanner.jsx, and
+       the landing page's LiveFocusHero illustration) with one shared
+       source, so it can't drift across them and theme-switching can
+       reach it if ever needed.
+
+       SessionRoom.jsx used to be the third usage: a pulsing dot on every
+       participant avatar. It was removed rather than retokenised, because
+       it asserted live presence that participant_emails cannot evidence --
+       membership only grows and there is no heartbeat column anywhere in
+       the schema. FocusSessionBanner's dot stays, and is a different
+       claim: that a session is running right now, which
+       ends_at/lobby_ends_at genuinely do support. */
     --success: 142 71% 45%;
     /* Same value as --sidebar-ring below (Tailwind's blue-500) -- this
        token replaces two separate raw `#3b82f6` "streak freeze applied"

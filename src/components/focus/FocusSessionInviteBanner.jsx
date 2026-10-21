@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { FocusSessionNotification } from "@/api/entities";
 import { Target } from "lucide-react";
 import NotificationBanner from "@/components/dashboard/NotificationBanner";
-import { joinFocusSession } from "@/lib/focusSessionJoin";
+import { joinFocusSession, describeJoinFailure, isJoinFailurePermanent } from "@/lib/focusSessionJoin";
 import JoinInProgressConfirm from "./JoinInProgressConfirm";
 
 // TodayTray counterpart to FocusInviteListener's global toast -- same
@@ -18,6 +18,7 @@ export default function FocusSessionInviteBanner({ userEmail, onJoined, onActive
   const queryClient = useQueryClient();
   const [view, setView] = useState("join");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const { data: notifications = [] } = useQuery({
     queryKey: ["focus-session-notifications", userEmail],
@@ -50,6 +51,7 @@ export default function FocusSessionInviteBanner({ userEmail, onJoined, onActive
 
   const attemptJoin = async (confirmActive) => {
     setLoading(true);
+    setError("");
     const result = await joinFocusSession(notif.session_code, confirmActive);
     setLoading(false);
     if (result.ok) {
@@ -61,8 +63,17 @@ export default function FocusSessionInviteBanner({ userEmail, onJoined, onActive
       setView("confirm");
       return;
     }
-    setView("ended");
-    dismissMutation.mutate(notif.id);
+    // Only a genuine NOT_FOUND means the invite is spent. This used to
+    // treat every failure as "already ended" and dismiss the notification
+    // row with it -- so one tap on bad wifi permanently discarded a
+    // still-valid invite. A transport failure now leaves the row alone
+    // and stays retryable.
+    if (isJoinFailurePermanent(result.reason)) {
+      setView("ended");
+      dismissMutation.mutate(notif.id);
+      return;
+    }
+    setError(describeJoinFailure(result.reason));
   };
 
   if (view === "ended") {
@@ -80,6 +91,7 @@ export default function FocusSessionInviteBanner({ userEmail, onJoined, onActive
           onCancel={() => setView("join")}
           onConfirm={() => attemptJoin(true)}
           loading={loading}
+          error={error}
         />
       </div>
     );
@@ -93,7 +105,13 @@ export default function FocusSessionInviteBanner({ userEmail, onJoined, onActive
       subtitle={
         loading
           ? "Joining…"
-          : `${notif.duration_minutes} min · ${notif.group_name} · ${stillInLobby ? "Tap to join" : "Tap to join (in progress)"}`
+          // A failed join reports itself here and the banner stays tappable,
+          // rather than the row being dismissed as though the session had
+          // ended. NotificationBanner has no dedicated error slot, so the
+          // subtitle carries it.
+          : error
+            ? `${error} Tap to retry.`
+            : `${notif.duration_minutes} min · ${notif.group_name} · ${stillInLobby ? "Tap to join" : "Tap to join (in progress)"}`
       }
       onDismiss={() => dismissMutation.mutate(notif.id)}
     />
