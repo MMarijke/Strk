@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { FocusSession } from "@/api/entities";
+import { FocusSession, Reaction } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
-import { differenceInSeconds, differenceInMinutes, parseISO } from "date-fns";
+import { differenceInSeconds, differenceInMinutes, parseISO, format } from "date-fns";
 import { Copy, Check, ChevronDown, Share2, TimerOff, WifiOff, Flame } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Dialog, DialogPortal, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -12,11 +12,19 @@ import { showNotification } from "@/lib/showNotification";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import LobbyRing from "./LobbyRing";
+import ReactionButton from "@/components/groups/ReactionButton";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSubscription } from "@/hooks/useSubscription";
 
 // Mirrors StartFocusModal's LOBBY_MINUTES. Only used to turn the remaining
 // seconds into the ring's fraction -- the authoritative deadline is always
 // the server-set lobby_ends_at, never this number.
 const LOBBY_SECONDS = 2 * 60;
+
+// Mirrors ReactionButton's own DAILY_LIMIT and send_reaction's server-side
+// check. Only used to show how many are left; the limit itself is enforced
+// in the RPC, never here.
+const FREE_DAILY_REACTIONS = 3;
 
 function pad(n) { return String(Math.floor(n)).padStart(2, "0"); }
 
@@ -452,8 +460,56 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
     }
   };
 
+  const { isPro } = useSubscription();
+  const queryClient = useQueryClient();
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+
+  // Same query key and client-side day filter GroupDashboard already uses
+  // for this, so the two share one cache entry instead of each fetching
+  // the sender's reactions independently.
+  const { data: reactionsSentData = [] } = useQuery({
+    queryKey: ["reactions-sent", userEmail, todayStr],
+    queryFn: () => userEmail ? Reaction.filter({ sender_email: userEmail }, "-created_date") : [],
+    enabled: !!userEmail,
+  });
+  const reactionsSentToday = reactionsSentData.filter(
+    (r) => r.created_date?.slice(0, 10) === todayStr
+  ).length;
+
+  // send_reaction derives sender identity itself and enforces the daily
+  // limit and the both-parties check server-side -- see
+  // 20261021090002 for the focus-session authorisation path this uses.
+  const sendReactionMutation = useMutation({
+    mutationFn: ({ recipient_email, emoji, focus_session_id }) =>
+      supabase.rpc("send_reaction", {
+        p_recipient_email: recipient_email,
+        p_emoji: emoji,
+        p_group_id: null,
+        p_focus_session_id: focus_session_id,
+      }).then(({ data, error }) => {
+        if (error) throw error;
+        return data;
+      }),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["reactions-sent", userEmail] });
+      queryClient.invalidateQueries({ queryKey: ["reactions", userEmail] });
+      toast.success(`Reaction sent! ${vars.emoji}`, { duration: 2000 });
+    },
+    onError: (err) => {
+      // The RPC raises this exact keyword so the client can show the
+      // upgrade path rather than a generic failure.
+      if (err?.message?.includes("DAILY_LIMIT_REACHED")) {
+        toast.error("That's today's 3 reactions. Pro removes the cap.");
+        return;
+      }
+      console.error("Failed to send reaction:", err);
+      toast.error("Couldn't send that reaction. Check your connection and try again.");
+    },
+  });
+
   const participants = session.participant_emails || [];
   const isAlone = participants.length <= 1;
+  const reactionsRemaining = Math.max(0, FREE_DAILY_REACTIONS - reactionsSentToday);
 
   // A session ending before its own deadline ends it for everyone, and every
   // other participant finds out only from this status change. Nothing used to
@@ -561,13 +617,37 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                     )} aria-hidden="true">
                       {email.split("@")[0].charAt(0).toUpperCase()}
                     </div>
-                    <span className="text-sm font-medium truncate">
+                    <span className="text-sm font-medium truncate flex-1 min-w-0">
                       {email.split("@")[0]}
                       {email === userEmail && <span className="text-xs text-muted-foreground font-normal ml-1">(you)</span>}
                     </span>
+                    {/* The reaction mechanic PRODUCT.md calls core, at the
+                        moment it is most earned. Not on your own row, and
+                        only where there is somebody else to thank. */}
+                    {email !== userEmail && (
+                      <ReactionButton
+                        recipientEmail={email}
+                        groupId={null}
+                        focusSessionId={session.id}
+                        sentTodayCount={reactionsSentToday}
+                        isPro={isPro}
+                        onSend={(data) => sendReactionMutation.mutateAsync(data)}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
+              {/* Free users get three reactions a day, enforced server-side.
+                  Showing what is left means a free user in a four-person
+                  session sees the wall coming instead of hitting it
+                  partway down the roster. */}
+              {!isPro && participants.length > 1 && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  {reactionsRemaining > 0
+                    ? `${reactionsRemaining} of 3 reactions left today`
+                    : "You've used today's 3 reactions — Pro removes the cap."}
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3">
