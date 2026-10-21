@@ -42,11 +42,21 @@ export async function startFocusSession({
   userName,
   group = null,
   durationMinutes = DEFAULT_DURATION_MINUTES,
+  habit = null,
 }) {
   const session = await FocusSession.create({
     host_email: userEmail,
     host_name: userName,
     group_id: group?.id || undefined,
+    // habit_id can only ever be the HOST's habit -- habits_select_own is
+    // owner-only, so no client can resolve anyone else's. habit_name rides
+    // along as a frozen snapshot that each other participant's client
+    // matches against their own habits, the same pattern
+    // group_challenges uses (20260810090001) for the same reason. Both are
+    // omitted when no habit is attached, which is the default and is what
+    // GroupDashboard's one-tap "Sit with us now" always sends.
+    habit_id: habit?.id || undefined,
+    habit_name: habit?.name || undefined,
     duration_minutes: durationMinutes,
     // started_at/ends_at are intentionally left unset -- start_focus_session_now()
     // sets them when the lobby actually ends, so the focus timer counts from
