@@ -1,22 +1,39 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { FocusSession } from "@/api/entities";
+import { FocusSession, Reaction } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
-import { differenceInSeconds, differenceInMinutes, parseISO } from "date-fns";
+import { differenceInSeconds, differenceInMinutes, parseISO, format } from "date-fns";
 import { Copy, Check, ChevronDown, Share2, TimerOff, WifiOff, Flame } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Dialog, DialogPortal, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, prefersReducedMotion } from "@/lib/utils";
 import confetti from "canvas-confetti";
 import { showNotification } from "@/lib/showNotification";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import LobbyRing from "./LobbyRing";
+import ReactionButton from "@/components/groups/ReactionButton";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSubscription } from "@/hooks/useSubscription";
 
-// Mirrors StartFocusModal's LOBBY_MINUTES. Only used to turn the remaining
-// seconds into the ring's fraction -- the authoritative deadline is always
-// the server-set lobby_ends_at, never this number.
-const LOBBY_SECONDS = 2 * 60;
+// How long this session's lobby runs, in seconds, measured from the row
+// itself rather than from a copy of StartFocusModal's LOBBY_MINUTES. The
+// ring needs a total to divide by, and a second hardcoded 2 would be a
+// drift source the moment that constant ever changes -- created_at and
+// lobby_ends_at are both already on the row and their difference IS the
+// lobby length. Falls back to two minutes only if created_at is somehow
+// missing, so the ring degrades to approximately right rather than to
+// NaN.
+function lobbyTotalSeconds(session) {
+  if (!session.created_at || !session.lobby_ends_at) return 120;
+  const total = differenceInSeconds(parseISO(session.lobby_ends_at), parseISO(session.created_at));
+  return total > 0 ? total : 120;
+}
+
+// Mirrors ReactionButton's own DAILY_LIMIT and send_reaction's server-side
+// check. Only used to show how many are left; the limit itself is enforced
+// in the RPC, never here.
+const FREE_DAILY_REACTIONS = 3;
 
 function pad(n) { return String(Math.floor(n)).padStart(2, "0"); }
 
@@ -94,7 +111,17 @@ function CopyCodeButton({ code, copied, onCopy }) {
 // so this needs a real answer and not an assumption that groups stay small.
 const CLUSTER_CAP = 5;
 
-function AvatarCluster({ participants, userEmail }) {
+// displayNameFor keeps "who am I" consistent everywhere this feature names
+// people. userName was passed in from all three call sites and never read --
+// so the room showed the viewer their own email prefix while the rest of the
+// app showed their chosen display name. Using it is the honest way to retire
+// a dead prop: it was threaded through for exactly this and nothing used it.
+function displayNameFor(email, userEmail, userName) {
+  if (email === userEmail && userName) return userName;
+  return email.split("@")[0];
+}
+
+function AvatarCluster({ participants, userEmail, userName }) {
   const shown = participants.slice(0, CLUSTER_CAP);
   const overflow = participants.length - shown.length;
 
@@ -113,7 +140,7 @@ function AvatarCluster({ participants, userEmail }) {
           // announcements of the same list is one too many.
           aria-hidden="true"
         >
-          {email.split("@")[0].charAt(0).toUpperCase()}
+          {displayNameFor(email, userEmail, userName).charAt(0).toUpperCase()}
         </div>
       ))}
       {overflow > 0 && (
@@ -201,6 +228,11 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   // telling someone about.
   const [pollFailures, setPollFailures] = useState(0);
   const [starting, setStarting] = useState(false);
+  // What the attached habit did when this session finished: null while
+  // unresolved, then "completed" | "already" | "none". Three distinct
+  // outcomes the screen has to be able to tell apart, which is why the RPC
+  // returns the day it wrote rather than a boolean.
+  const [habitOutcome, setHabitOutcome] = useState(null);
   // True once *this client's own* timer reached zero. Deliberately not the
   // same thing as the session's status being 'completed', which can also
   // mean somebody else ended it before its deadline -- see endedEarly in the
@@ -346,7 +378,14 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       if (secs === 0 && !completedRef.current) {
         completedRef.current = true;
         setFinishedNaturally(true);
-        confetti({ particleCount: 180, spread: 100, origin: { y: 0.5 } });
+        // 180 particles is the biggest burst in the app, and it is
+        // exactly what somebody who asked their OS for reduced motion is
+        // asking not to be shown. The screen still celebrates -- the hero,
+        // the Flame entrance and the copy carry it -- so skipping this
+        // costs the moment nothing it needed.
+        if (!prefersReducedMotion()) {
+          confetti({ particleCount: 180, spread: 100, origin: { y: 0.5 } });
+        }
         // complete_focus_session, not FocusSession.update: under
         // focus_sessions_update this write matched zero rows for every
         // non-host, and entities.js's update() ends in .select().single(),
@@ -362,6 +401,33 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
         supabase.rpc("complete_focus_session", { p_session_id: session.id })
           .then(({ error }) => { if (error) console.error("Failed to mark session completed:", error); })
           .catch((err) => console.error("Failed to mark session completed:", err));
+
+        // Credit the attached habit, if there is one. Each client completes
+        // its OWN habit -- the RPC resolves it by auth.uid() and takes no
+        // habit argument, so nobody can write anyone else's. Fire-and-forget
+        // for the same reason as the status write: the celebration must not
+        // wait on bookkeeping. The local date is the client's own calendar
+        // day, matching how Dashboard stamps a manual completion.
+        if (session.habit_name) {
+          supabase.rpc("complete_habit_from_focus_session", {
+            p_session_id: session.id,
+            p_local_date: format(new Date(), "yyyy-MM-dd"),
+          }).then(({ data, error }) => {
+            if (error) {
+              console.error("Failed to credit habit from focus session:", error);
+              setHabitOutcome("failed");
+              return;
+            }
+            // The RPC returns the day it wrote, or null when there was
+            // nothing to do. Null is ambiguous between "already done
+            // today" and "you track no habit by that name", so the client
+            // distinguishes them from what it already knows.
+            setHabitOutcome(data ? "completed" : "already");
+          }).catch((err) => {
+            console.error("Failed to credit habit from focus session:", err);
+            setHabitOutcome("failed");
+          });
+        }
       }
     };
     tick();
@@ -452,8 +518,56 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
     }
   };
 
+  const { isPro } = useSubscription();
+  const queryClient = useQueryClient();
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+
+  // Same query key and client-side day filter GroupDashboard already uses
+  // for this, so the two share one cache entry instead of each fetching
+  // the sender's reactions independently.
+  const { data: reactionsSentData = [] } = useQuery({
+    queryKey: ["reactions-sent", userEmail, todayStr],
+    queryFn: () => userEmail ? Reaction.filter({ sender_email: userEmail }, "-created_date") : [],
+    enabled: !!userEmail,
+  });
+  const reactionsSentToday = reactionsSentData.filter(
+    (r) => r.created_date?.slice(0, 10) === todayStr
+  ).length;
+
+  // send_reaction derives sender identity itself and enforces the daily
+  // limit and the both-parties check server-side -- see
+  // 20261021090002 for the focus-session authorisation path this uses.
+  const sendReactionMutation = useMutation({
+    mutationFn: ({ recipient_email, emoji, focus_session_id }) =>
+      supabase.rpc("send_reaction", {
+        p_recipient_email: recipient_email,
+        p_emoji: emoji,
+        p_group_id: null,
+        p_focus_session_id: focus_session_id,
+      }).then(({ data, error }) => {
+        if (error) throw error;
+        return data;
+      }),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["reactions-sent", userEmail] });
+      queryClient.invalidateQueries({ queryKey: ["reactions", userEmail] });
+      toast.success(`Reaction sent! ${vars.emoji}`, { duration: 2000 });
+    },
+    onError: (err) => {
+      // The RPC raises this exact keyword so the client can show the
+      // upgrade path rather than a generic failure.
+      if (err?.message?.includes("DAILY_LIMIT_REACHED")) {
+        toast.error("That's today's 3 reactions. Pro removes the cap.");
+        return;
+      }
+      console.error("Failed to send reaction:", err);
+      toast.error("Couldn't send that reaction. Check your connection and try again.");
+    },
+  });
+
   const participants = session.participant_emails || [];
   const isAlone = participants.length <= 1;
+  const reactionsRemaining = Math.max(0, FREE_DAILY_REACTIONS - reactionsSentToday);
 
   // A session ending before its own deadline ends it for everyone, and every
   // other participant finds out only from this status change. Nothing used to
@@ -472,6 +586,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
 
   if (finishedNaturally || endedEarly) {
     const minutesIn = endedEarly ? elapsedMinutes(session) : null;
+    const reduceMotion = prefersReducedMotion();
     const hostName = session.host_name || session.host_email?.split("@")[0] || "The host";
     const dismiss = () => {
       setFinishedNaturally(false);
@@ -509,13 +624,19 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                 </div>
               ) : (
                 // A one-shot entrance, matching ChallengeCompleteScreen's
-                // single authored moment. Framer Motion already honours
-                // prefers-reduced-motion through its own reducedMotion
-                // handling of transforms.
+                // single authored moment.
+                //
+                // Correcting a claim an earlier pass left in this file:
+                // Framer Motion does NOT honour prefers-reduced-motion on
+                // its own -- its reducedMotion option defaults to "never"
+                // and has to be opted into via MotionConfig, which this
+                // project does not set up. So the preference is applied
+                // here explicitly, by starting from the resting state
+                // instead of animating into it.
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.6, y: 10 }}
+                  initial={reduceMotion ? false : { opacity: 0, scale: 0.6, y: 10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{ type: "spring", stiffness: 260, damping: 18 }}
+                  transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 18 }}
                   className="w-14 h-14 rounded-2xl bg-primary/15 flex items-center justify-center mx-auto"
                   aria-hidden="true"
                 >
@@ -542,6 +663,38 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                   )}
                 </DialogDescription>
               </div>
+
+              {/* What the attached habit actually did. Four outcomes, said
+                  plainly: an early end credits nothing because the session
+                  did not happen, a network failure says so rather than
+                  claiming the habit is untracked, and "already done today"
+                  is distinguished from "you track no habit by that name" --
+                  the RPC returns the day it wrote precisely so these can be
+                  told apart instead of guessed. */}
+              {session.habit_name && (
+                <div className="pt-1">
+                  {endedEarly ? (
+                    <p className="text-xs text-muted-foreground">
+                      {session.habit_name} wasn&apos;t credited — the session didn&apos;t finish.
+                    </p>
+                  ) : habitOutcome === "completed" ? (
+                    <p className="text-xs font-medium text-primary flex items-center justify-center gap-1.5">
+                      <Flame className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      {session.habit_name} marked done for today
+                    </p>
+                  ) : habitOutcome === "already" ? (
+                    <p className="text-xs text-muted-foreground">
+                      {session.habit_name} was already done today.
+                    </p>
+                  ) : habitOutcome === "failed" ? (
+                    <p className="text-xs text-muted-foreground">
+                      Couldn&apos;t update {session.habit_name}. Mark it on your Habits screen.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Counting toward {session.habit_name}…</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* The people, named. This is the whole point of the rebuild:
@@ -559,15 +712,39 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                       "w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0",
                       email === userEmail ? "bg-primary text-primary-foreground" : "bg-primary/20 text-primary"
                     )} aria-hidden="true">
-                      {email.split("@")[0].charAt(0).toUpperCase()}
+                      {displayNameFor(email, userEmail, userName).charAt(0).toUpperCase()}
                     </div>
-                    <span className="text-sm font-medium truncate">
-                      {email.split("@")[0]}
+                    <span className="text-sm font-medium truncate flex-1 min-w-0">
+                      {displayNameFor(email, userEmail, userName)}
                       {email === userEmail && <span className="text-xs text-muted-foreground font-normal ml-1">(you)</span>}
                     </span>
+                    {/* The reaction mechanic PRODUCT.md calls core, at the
+                        moment it is most earned. Not on your own row, and
+                        only where there is somebody else to thank. */}
+                    {email !== userEmail && (
+                      <ReactionButton
+                        recipientEmail={email}
+                        groupId={null}
+                        focusSessionId={session.id}
+                        sentTodayCount={reactionsSentToday}
+                        isPro={isPro}
+                        onSend={(data) => sendReactionMutation.mutateAsync(data)}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
+              {/* Free users get three reactions a day, enforced server-side.
+                  Showing what is left means a free user in a four-person
+                  session sees the wall coming instead of hitting it
+                  partway down the roster. */}
+              {!isPro && participants.length > 1 && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  {reactionsRemaining > 0
+                    ? `${reactionsRemaining} of 3 reactions left today`
+                    : "You've used today's 3 reactions — Pro removes the cap."}
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3">
@@ -659,8 +836,8 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
             timer is running the time is the only thing that matters and
             it takes the stage back. */}
         {inLobby ? (
-          <LobbyRing fractionRemaining={lobbySecsLeft / LOBBY_SECONDS}>
-            <AvatarCluster participants={participants} userEmail={userEmail} />
+          <LobbyRing fractionRemaining={lobbySecsLeft / lobbyTotalSeconds(session)}>
+            <AvatarCluster participants={participants} userEmail={userEmail} userName={userName} />
             <div>
               <p className="text-2xl font-bold tabular-nums text-foreground" aria-hidden="true">
                 {formatCountdown(lobbySecsLeft)}
@@ -676,7 +853,12 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                 change sits directly in the accessibility tree. */}
             <div
               className={cn(
-                "text-8xl font-black tabular-nums tracking-tight transition-colors",
+                // text-7xl below sm, not 8xl: "60:00" is five font-black
+                // glyphs, and at 96px that is roughly 258px against the
+                // 272px a 320px viewport leaves after px-6 -- fitting with
+                // nothing to spare. The house pattern steps type for the
+                // same reason (Dashboard's text-2xl sm:text-3xl).
+                "text-7xl sm:text-8xl font-black tabular-nums tracking-tight transition-colors",
                 secsLeft <= 60 ? "text-destructive" : "text-foreground"
               )}
               aria-hidden="true"

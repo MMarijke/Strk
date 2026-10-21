@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Group } from "@/api/entities";
+import { Group, Habit } from "@/api/entities";
 import { useQuery } from "@tanstack/react-query";
 import { startFocusSession, LOBBY_MINUTES } from "@/lib/focusSessionStart";
 
@@ -12,6 +12,7 @@ const DURATIONS = [25, 45, 60];
 export default function StartFocusModal({ open, onOpenChange, userEmail, userName, onSessionCreated }) {
   const [duration, setDuration] = useState(25);
   const [groupId, setGroupId] = useState("");
+  const [habitId, setHabitId] = useState("");
   const [loading, setLoading] = useState(false);
 
   const { data: groups = [] } = useQuery({
@@ -22,6 +23,19 @@ export default function StartFocusModal({ open, onOpenChange, userEmail, userNam
     enabled: !!userEmail,
   });
 
+  // Same query key and staleTime as Dashboard/Social/GroupDashboard, so
+  // this shares their cache entry rather than adding a fetch.
+  const { data: allHabits = [] } = useQuery({
+    queryKey: ["habits", userEmail],
+    queryFn: () => userEmail ? Habit.filter({ created_by: userEmail }, "-created_date") : [],
+    enabled: !!userEmail,
+    staleTime: 5 * 60 * 1000,
+  });
+  // Archived habits are ones the user has stopped tracking; attaching a
+  // session to one would silently revive its streak.
+  const habits = allHabits.filter((h) => !h.archived);
+  const selectedHabit = habits.find((h) => h.id === habitId);
+
   const handleStart = async () => {
     setLoading(true);
     try {
@@ -29,11 +43,19 @@ export default function StartFocusModal({ open, onOpenChange, userEmail, userNam
       // lib/focusSessionStart.js, shared with GroupDashboard's
       // "Sit with us now" -- one path for one row, so the two cannot
       // drift on what a session looks like or who gets told about it.
+      //
+      // The habit rides along rather than being set here: habit_id is
+      // necessarily the HOST's habit (habits_select_own is owner-only, so
+      // no client can resolve anyone else's) and habit_name is a frozen
+      // snapshot each other participant's client matches against their own
+      // habits -- the same pattern group_challenges uses (20260810090001)
+      // for the same reason.
       const session = await startFocusSession({
         userEmail,
         userName,
         group: groups.find((g) => g.id === groupId) || null,
         durationMinutes: duration,
+        habit: selectedHabit || null,
       });
       onOpenChange(false);
       onSessionCreated(session);
@@ -88,6 +110,33 @@ export default function StartFocusModal({ open, onOpenChange, userEmail, userNam
                   <option key={g.id} value={g.id}>{g.name}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Habit (optional) -- same weight and optional-ness as the
+              group selector above it. A session with no habit behaves
+              exactly as it always has. */}
+          {habits.length > 0 && (
+            <div>
+              <label htmlFor="focus-habit" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Counts toward (optional)
+              </label>
+              <select
+                id="focus-habit"
+                value={habitId}
+                onChange={(e) => setHabitId(e.target.value)}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">No habit</option>
+                {habits.map((h) => (
+                  <option key={h.id} value={h.id}>{h.name}</option>
+                ))}
+              </select>
+              {selectedHabit && (
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Finishing this session marks {selectedHabit.name} done for everyone who tracks it.
+                </p>
+              )}
             </div>
           )}
 
