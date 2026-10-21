@@ -128,11 +128,17 @@ export function isOldEnoughForFreeze(habit, yesterday) {
  * genuine cross-user write and none of those facts are safe to trust from
  * the caller.
  */
-export async function assistFreeze(targetEmail, habitId, missedDate) {
+// groupId is recorded on the assist so the group activity feed can
+// attribute it (20261021090004). The RPC validates that the named group is
+// one both parties belong to, so it is a stricter check than the old
+// "any shared group", not a looser one. Optional: without it the assist
+// still succeeds and simply does not appear in any feed.
+export async function assistFreeze(targetEmail, habitId, missedDate, groupId = null) {
   const { data, error } = await supabase.rpc("assist_streak_freeze", {
     p_target_email: targetEmail,
     p_habit_id: habitId,
     p_missed_date: missedDate,
+    p_group_id: groupId,
   });
 
   if (error) {
