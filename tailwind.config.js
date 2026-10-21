@@ -45,7 +45,10 @@ module.exports = {
   				text: 'hsl(var(--destructive-text))'
   			},
   			success: 'hsl(var(--success))',
-  			frozen: 'hsl(var(--frozen))',
+  			frozen: {
+  				DEFAULT: 'hsl(var(--frozen))',
+  				text: 'hsl(var(--frozen-text))'
+  			},
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',

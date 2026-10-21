@@ -22,7 +22,7 @@ export default function FreezeConfirmModal({ open, onOpenChange, habit, freezesR
           marked as frozen, so your streak stays alive!
         </p>
         {isPro ? (
-          <p className="text-sm text-blue-500 font-medium">✨ Pro: unlimited freezes</p>
+          <p className="text-sm text-frozen-text font-medium">✨ Pro: unlimited freezes</p>
         ) : noFreezesLeft ? (
           <div className="rounded-lg bg-muted/60 p-3 space-y-1">
             <p className="text-sm font-semibold text-destructive">No freezes left this month</p>
@@ -46,7 +46,7 @@ export default function FreezeConfirmModal({ open, onOpenChange, habit, freezesR
           <Button
             onClick={() => { onConfirm(); onOpenChange(false); }}
             disabled={noFreezesLeft}
-            className="bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-50"
+            className="bg-frozen hover:bg-frozen/90 text-white disabled:opacity-50"
           >
             ❄️ Use Freeze
           </Button>
