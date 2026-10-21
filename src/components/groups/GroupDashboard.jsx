@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Reaction, Habit, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, subDays, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
@@ -131,15 +131,6 @@ function RankIcon({ rank, isTied }) {
   );
 }
 
-function generateInviteCode() {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-}
-
-function getInviteLink(code) {
-  return `${window.location.origin}?join=${code}`;
-}
-
 export default function GroupDashboard({ group, userId, userEmail, userFullName, profiles = [], onBack, onUpdate, onDelete, onRemoveMember, onSessionStarted }) {
   const [showSettings, setShowSettings] = useState(false);
   const [copied, setCopied] = useState(null);
@@ -147,7 +138,6 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
   const [viewingChallenge, setViewingChallenge] = useState(false);
   const [showWeeklyReport, setShowWeeklyReport] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
-  const [newName, setNewName] = useState(group.name);
   const [assistCandidate, setAssistCandidate] = useState(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [startingSession, setStartingSession] = useState(false);
@@ -306,7 +296,11 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
             </div>
           </div>
           <button
-            className="w-full rounded-lg bg-primary text-primary-foreground text-xs font-semibold py-1.5 hover:bg-primary/90 transition-colors"
+            // h-11, not py-1.5: 6px of padding plus a 16px line-height
+            // came to a 28px target. The touch-target passes missed it
+            // because it lives inside a toast() argument rather than in
+            // the render tree they were reading.
+            className="w-full h-11 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors"
             onClick={() => setViewingChallenge(true)}
           >
             View Challenge →
@@ -371,50 +365,61 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     return !isAfter(start, today) && !isAfter(today, end);
   });
 
-  const myStats = calcScore(habits);
-  const myTopHabit = getTopHabit(habits);
+  // Memoized for the reason Social.jsx documents on its own equivalent:
+  // calcScore runs a 30-day membership scan per habit, and this file had
+  // no useMemo anywhere in 700-odd lines, so every unrelated state change
+  // -- opening the settings modal, a copied-code timeout firing, the
+  // activity feed resolving -- re-ran the whole derivation. It also gave
+  // `rows` a fresh identity each time, which is what stops a leaderboard
+  // row from ever being able to skip a re-render.
+  const myStats = useMemo(() => calcScore(habits), [habits]);
+  const myTopHabit = useMemo(() => getTopHabit(habits), [habits]);
 
-  const unrankedRows = memberEmails.map((email) => {
-    const name = email === userEmail
-      ? (getDisplayName(email, profiles) !== email.split("@")[0] ? getDisplayName(email, profiles) : (userFullName || getDisplayName(email, profiles)))
-      : getDisplayName(email, profiles);
-    if (email === userEmail) {
-      return { email, name, isMe: true, isPro, ...myStats, topHabit: myTopHabit, lastCompletionDate: null, hasData: true };
-    }
-    const memberProfile = profiles.find((p) => p.created_by === email);
-    if (!memberProfile) {
-      // Private profile (is_public = false, invisible under RLS) or no
-      // profile row created yet (it's written lazily, on first display-name
-      // save) -- an honest "no data" state, not a real 0. Showing a bare 0
-      // here was the bug: indistinguishable from a genuine score of zero.
-      // The two causes are indistinguishable from the client too, so the
-      // copy states the fact without asserting which one it is.
-      return { email, name, isMe: false, isPro: false, score: null, bestStreak: 0, consistency: 0, topHabit: null, lastCompletionDate: null, hasData: false };
-    }
-    return {
-      email,
-      name,
-      isMe: false,
-      isPro: memberProfile.plan === "pro",
-      score: (memberProfile.best_streak || 0) * 2 + (memberProfile.consistency_score || 0),
-      bestStreak: memberProfile.best_streak || 0,
-      consistency: memberProfile.consistency_score || 0,
-      // Stays null for everyone but you, and not as a placeholder: another
-      // member's habits are unreadable under RLS, so there is no top habit
-      // to resolve. describeMemberActivity covers their line instead.
-      topHabit: null,
-      lastCompletionDate: memberProfile.last_completion_date || null,
-      hasData: true,
-    };
-  });
+  const rows = useMemo(() => {
+    const unranked = memberEmails.map((email) => {
+      const name = email === userEmail
+        ? (getDisplayName(email, profiles) !== email.split("@")[0] ? getDisplayName(email, profiles) : (userFullName || getDisplayName(email, profiles)))
+        : getDisplayName(email, profiles);
+      if (email === userEmail) {
+        return { email, name, isMe: true, isPro, ...myStats, topHabit: myTopHabit, lastCompletionDate: null, hasData: true };
+      }
+      const memberProfile = profiles.find((p) => p.created_by === email);
+      if (!memberProfile) {
+        // Private profile (is_public = false, invisible under RLS) or no
+        // profile row created yet (it's written lazily, on first display-name
+        // save) -- an honest "no data" state, not a real 0. Showing a bare 0
+        // here was the bug: indistinguishable from a genuine score of zero.
+        // The two causes are indistinguishable from the client too, so the
+        // copy states the fact without asserting which one it is.
+        return { email, name, isMe: false, isPro: false, score: null, bestStreak: 0, consistency: 0, topHabit: null, lastCompletionDate: null, hasData: false };
+      }
+      return {
+        email,
+        name,
+        isMe: false,
+        isPro: memberProfile.plan === "pro",
+        score: (memberProfile.best_streak || 0) * 2 + (memberProfile.consistency_score || 0),
+        bestStreak: memberProfile.best_streak || 0,
+        consistency: memberProfile.consistency_score || 0,
+        // Stays null for everyone but you, and not as a placeholder: another
+        // member's habits are unreadable under RLS, so there is no top habit
+        // to resolve. describeMemberActivity covers their line instead.
+        topHabit: null,
+        lastCompletionDate: memberProfile.last_completion_date || null,
+        hasData: true,
+      };
+    });
 
-  // Equal scores share a place rather than being separated by whatever
-  // order member_emails happened to be in -- see assignCompetitionRanks in
-  // lib/utils. A member with no readable profile keeps score: null, gets a
-  // position, and is never reported as tied with another one.
-  const rows = assignCompetitionRanks(
-    unrankedRows.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
-  );
+    // Equal scores share a place rather than being separated by whatever
+    // order member_emails happened to be in -- see assignCompetitionRanks in
+    // lib/utils. A member with no readable profile keeps score: null, gets a
+    // position, and is never reported as tied with another one.
+    return assignCompetitionRanks(
+      unranked.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+    );
+    // memberEmails is derived from group.member_emails, so a membership
+    // change still rebuilds this.
+  }, [memberEmails, profiles, userEmail, userFullName, myStats, myTopHabit, isPro]);
 
   // One tap, 25 minutes, straight to the lobby. The group screen
   // deliberately does not ask for a duration: the lobby is where you find
@@ -449,18 +454,14 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const handleRegenerateCode = () => {
-    const code = generateInviteCode();
-    onUpdate({ invite_code: code });
-  };
-
-  const handleRename = () => {
-    if (newName.trim() && newName.trim() !== group.name) {
-      onUpdate({ name: newName.trim() });
-    }
-  };
-
-  const inviteLink = getInviteLink(group.invite_code || "--------");
+  // handleRegenerateCode, handleRename and inviteLink used to sit here,
+  // all three unreferenced -- residue of an admin panel that moved into
+  // GroupSettingsModal and left its logic behind. Every one of them is
+  // implemented there, wired to the same onUpdate prop this screen passes
+  // down. Deferred twice while fixing defects next to them; removed here
+  // because a reader cannot tell dead code from code they have not yet
+  // found the caller for, and four eslint warnings suppressed by --quiet
+  // is a bad place to keep that distinction.
 
   // Weekly report view
   if (showWeeklyReport) {
@@ -650,7 +651,12 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
               <RankIcon rank={row.rank} isTied={row.isTied} />
             </div>
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary shrink-0">
-              {row.name[0].toUpperCase()}
+              {/* Guarded: getDisplayName returns "" when a profile's
+                  display_name is whitespace -- nothing trims it on save --
+                  and row.name[0] is then undefined, which throws on
+                  .toUpperCase(). Narrow, but it would take the whole
+                  leaderboard down rather than one row. */}
+              {(row.name[0] || "?").toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate flex items-center gap-1">
