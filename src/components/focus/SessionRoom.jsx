@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { FocusSession } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
 import { differenceInSeconds, differenceInMinutes, parseISO } from "date-fns";
-import { Copy, Check, X, Share2, TimerOff } from "lucide-react";
+import { Copy, Check, ChevronDown, Share2, TimerOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import confetti from "canvas-confetti";
@@ -59,6 +59,13 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   const [secsLeft, setSecsLeft] = useState(0);
   const [lobbySecsLeft, setLobbySecsLeft] = useState(0);
   const [copied, setCopied] = useState(false);
+  // Two-step inline confirms rather than modals, matching GroupDashboard's
+  // member-removal pattern. "end" needs one because it stops three other
+  // people's focus blocks and cannot be undone; "leave" needs one because
+  // rejoining mid-session costs you the time already elapsed.
+  const [pendingAction, setPendingAction] = useState(null);
+  const [actionError, setActionError] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
   // True once *this client's own* timer reached zero. Deliberately not the
   // same thing as the session's status being 'completed', which can also
   // mean somebody else ended it before its deadline -- see endedEarly in the
@@ -170,7 +177,21 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
         completedRef.current = true;
         setFinishedNaturally(true);
         confetti({ particleCount: 180, spread: 100, origin: { y: 0.5 } });
-        FocusSession.update(session.id, { status: "completed" });
+        // complete_focus_session, not FocusSession.update: under
+        // focus_sessions_update this write matched zero rows for every
+        // non-host, and entities.js's update() ends in .select().single(),
+        // which throws on zero rows -- so every non-host finishing a session
+        // fired a guaranteed-to-fail write and an unhandled rejection. The
+        // screen rendered anyway (local state), which is why it went
+        // unnoticed. Worse, if the host's tab was shut when the timer
+        // elapsed, nobody could write the status at all and the row stayed
+        // 'active'. The RPC authorises on `now() >= ends_at`, so any
+        // participant can ratify an ending the clock already decided.
+        // Still fire-and-forget: the user's completion screen must not wait
+        // on a bookkeeping write, but the failure is no longer silent.
+        supabase.rpc("complete_focus_session", { p_session_id: session.id })
+          .then(({ error }) => { if (error) console.error("Failed to mark session completed:", error); })
+          .catch((err) => console.error("Failed to mark session completed:", err));
       }
     };
     tick();
@@ -190,9 +211,43 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
     else navigator.clipboard.writeText(text);
   };
 
-  const handleEnd = async () => {
-    await FocusSession.update(session.id, { status: "completed" });
-    onClose();
+  // Host only, and guarded by the inline confirm in the footer. Writes
+  // status for everyone, which each other client turns into the "Session
+  // Ended Early" screen. Errors now surface instead of leaving an inert
+  // tap: previously this awaited with no catch, so a failed write meant
+  // onClose() never ran and the button appeared to do nothing.
+  const handleEndForEveryone = async () => {
+    setActionBusy(true);
+    setActionError("");
+    try {
+      await FocusSession.update(session.id, { status: "completed" });
+      onClose();
+    } catch (err) {
+      console.error("Failed to end focus session:", err);
+      setActionError("Couldn't end the session. Check your connection and try again.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  // Non-host only. Closing the room was never leaving it: onClose() drops
+  // the room but leaves the caller in participant_emails, so
+  // FocusSessionBanner immediately offers "tap to return" and a session
+  // joined by mistake could not be escaped. This removes them for real, via
+  // an RPC because focus_sessions_update is host-only.
+  const handleLeave = async () => {
+    setActionBusy(true);
+    setActionError("");
+    try {
+      const { error } = await supabase.rpc("leave_focus_session", { p_session_id: session.id });
+      if (error) throw error;
+      onClose();
+    } catch (err) {
+      console.error("Failed to leave focus session:", err);
+      setActionError("Couldn't leave the session. Check your connection and try again.");
+    } finally {
+      setActionBusy(false);
+    }
   };
 
   const participants = session.participant_emails || [];
@@ -271,8 +326,21 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
           <p className="font-bold text-sm">Focus Session</p>
           <p className="text-xs text-muted-foreground">{session.duration_minutes} min · {inLobby ? "starting soon" : session.status}</p>
         </div>
-        <Button variant="ghost" size="icon" className="rounded-full" onClick={onClose} aria-label="Close focus session">
-          <X className="w-4 h-4" />
+        {/* Was an X labelled "Close focus session", which is what it looks
+            like and not what it does: the session keeps running and the
+            Dashboard banner offers to take you straight back. A chevron and
+            an honest label, since leaving for real is now its own footer
+            action. h-11 w-11 rather than size="icon"'s 36px -- this is the
+            top-right corner of a one-handed screen. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 rounded-full"
+          onClick={onClose}
+          aria-label="Minimise — the session keeps running"
+          title="Minimise — the session keeps running"
+        >
+          <ChevronDown className="w-5 h-5" />
         </Button>
       </div>
 
@@ -317,11 +385,66 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
             Start Now
           </Button>
         )}
-        {!inLobby && isHost && (
-          <Button variant="outline" className="w-full rounded-xl h-11 text-destructive border-destructive/30 hover:bg-destructive/5" onClick={handleEnd}>
-            End Session Early
-          </Button>
+
+        {actionError && (
+          <p className="text-xs text-destructive-text text-center" role="alert">{actionError}</p>
         )}
+
+        {/* The footer used to render for the host alone, so a non-host had
+            no control of any kind -- their only interactive exit was the
+            top-right icon, which did not actually leave. */}
+        {pendingAction === "end" ? (
+          <>
+            {/* Names the blast radius. "End Session Early" never disclosed
+                that it ends the session for everyone, and it was one
+                unguarded tap. */}
+            <p className="text-xs text-muted-foreground text-center">
+              End this session for all {participants.length} of you? This can't be undone.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1 rounded-xl h-11" onClick={() => setPendingAction(null)} disabled={actionBusy}>
+                Keep going
+              </Button>
+              <Button
+                className="flex-1 rounded-xl h-11 font-semibold bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={handleEndForEveryone}
+                disabled={actionBusy}
+              >
+                {actionBusy ? "Ending…" : "End for everyone"}
+              </Button>
+            </div>
+          </>
+        ) : pendingAction === "leave" ? (
+          <>
+            <p className="text-xs text-muted-foreground text-center">
+              Leave this session? The others keep going, and rejoining later starts you with whatever time is left.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1 rounded-xl h-11" onClick={() => setPendingAction(null)} disabled={actionBusy}>
+                Stay
+              </Button>
+              <Button className="flex-1 rounded-xl h-11 font-semibold" onClick={handleLeave} disabled={actionBusy}>
+                {actionBusy ? "Leaving…" : "Leave"}
+              </Button>
+            </div>
+          </>
+        ) : !inLobby && isHost ? (
+          <Button
+            variant="outline"
+            className="w-full rounded-xl h-11 text-destructive-text border-destructive/30 hover:bg-destructive/5"
+            onClick={() => { setActionError(""); setPendingAction("end"); }}
+          >
+            End for everyone
+          </Button>
+        ) : !isHost ? (
+          <Button
+            variant="outline"
+            className="w-full rounded-xl h-11"
+            onClick={() => { setActionError(""); setPendingAction("leave"); }}
+          >
+            Leave session
+          </Button>
+        ) : null}
       </div>
     </div>
   );
