@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Reaction, Habit, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, subDays, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
-import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, Plus, Sparkles, Users } from "lucide-react";
+import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, Plus, Sparkles, Users, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
@@ -10,7 +10,7 @@ import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
 import CreateChallengeModal from "./CreateChallengeModal";
 import InviteMembersSheet from "./InviteMembersSheet";
 import ChallengeLeaderboard from "./ChallengeLeaderboard";
-import ReactionButton from "./ReactionButton";
+import ReactionButton, { DAILY_LIMIT } from "./ReactionButton";
 import GroupWeeklyReport from "./GroupWeeklyReport";
 import GroupSettingsModal from "./GroupSettingsModal";
 import FreezeAssistConfirmModal from "./FreezeAssistConfirmModal";
@@ -216,14 +216,20 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     enabled: !!group.id,
   });
 
-  // Freeze Assist (Pro-exclusive): who in this group currently has a habit
-  // eligible for a freeze. Only fetched for Pro users -- Free can't act on
-  // this, and get_group_freeze_candidates does real cross-member work
-  // server-side, not worth running for someone who could never use it.
+  // Freeze Assist: who in this group currently has a habit eligible for a
+  // freeze.
+  //
+  // No longer gated on isPro. It used to be, which meant a Free user never
+  // learned the feature existed -- the most generous thing Pro does in
+  // this product was invisible to exactly the people deciding whether to
+  // pay for it. Fetching it for everyone is safe: the RPC
+  // (20260915090003) authorises on authentication and group membership
+  // only, and assist_streak_freeze enforces the Pro check on the WRITE,
+  // so revealing the affordance cannot let a Free user act on it.
   const { data: freezeCandidates = [], isError: freezeError } = useQuery({
     queryKey: ["group-freeze-candidates", group.id, todayStr],
     queryFn: () => getGroupFreezeCandidates(group.id, todayStr),
-    enabled: !!group.id && isPro,
+    enabled: !!group.id,
     staleTime: 5 * 60 * 1000,
   });
   const freezeCandidateByEmail = new Map(freezeCandidates.map((c) => [c.member_email, c]));
@@ -550,7 +556,16 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         </Button>
         <div className="flex-1 min-w-0">
           <h2 className="font-bold text-lg truncate">{group.name}</h2>
-          <p className="text-xs text-muted-foreground">{memberEmails.length} member{memberEmails.length !== 1 ? "s" : ""}</p>
+          {/* Your role, said out loud. The screen gated challenge creation,
+              settings and member removal on isAdmin and never once told you
+              which side of that line you were on -- capability was
+              communicated purely by absence, so a non-admin wondering why
+              they cannot start a challenge had nothing to read. Social.jsx
+              already announces it on the card you tapped to get here. */}
+          <p className="text-xs text-muted-foreground">
+            {memberEmails.length} member{memberEmails.length !== 1 ? "s" : ""}
+            {isAdmin ? " · you're the admin" : " · you're a member"}
+          </p>
         </div>
         <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full" onClick={() => setShowSettings(true)} aria-label="Group settings">
           <Settings className="w-4 h-4" />
@@ -731,20 +746,27 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                 onSend={(data) => createReactionMutation.mutateAsync(data)}
               />
             )}
-            {/* Freeze Assist: only ever visible to a Pro viewer, and only
-                for a groupmate get_group_freeze_candidates actually found
-                eligible right now -- most rows never show this. */}
-            {!row.isMe && isPro && freezeCandidateByEmail.has(row.email) && (
+            {/* Freeze Assist, now shown to everyone it is genuinely
+                available for -- only for a groupmate the RPC actually
+                found eligible right now, so most rows never show it.
+                A Free viewer gets the same affordance in a locked state
+                that opens the upgrade path rather than the confirm: the
+                boundary is now something you can see before you reach
+                for it, instead of a feature you never knew existed. */}
+            {!row.isMe && freezeCandidateByEmail.has(row.email) && (
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-11 w-11 shrink-0"
-                style={{ color: "hsl(var(--frozen-text))" }}
-                onClick={() => setAssistCandidate({ ...freezeCandidateByEmail.get(row.email), targetName: row.name })}
-                aria-label={`Save ${row.name}'s streak`}
-                title={`Save ${row.name}'s streak`}
+                className={cn("h-11 w-11 shrink-0", !isPro && "opacity-60")}
+                style={isPro ? { color: "hsl(var(--frozen-text))" } : undefined}
+                onClick={() => isPro
+                  ? setAssistCandidate({ ...freezeCandidateByEmail.get(row.email), targetName: row.name })
+                  : setShowUpgrade(true)}
+                aria-label={isPro
+                  ? `Save ${row.name}'s streak`
+                  : `Save ${row.name}'s streak — a Pro feature. See what Pro includes.`}
               >
-                ❄️
+                {isPro ? "❄️" : <Lock className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />}
               </Button>
             )}
             {/* Member removal used to live here, as a per-row icon that
@@ -771,6 +793,21 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                 weight to tell them apart under a thumb. */}
           </div>
         ))}
+        {/* The reaction allowance, stated once for the card rather than
+            per row. It was previously discoverable only by hitting it:
+            ReactionButton computed `remaining` and put it in a `title`,
+            which is a hover tooltip and so says nothing at all on the
+            touch screen this ships to -- a failure this very file
+            documents, for a different element, a hundred lines up. Said
+            plainly, a free user sees the wall coming instead of meeting
+            it mid-gesture. Omitted entirely for Pro, who have no wall. */}
+        {!isPro && memberEmails.length > 1 && (
+          <p className="text-xs text-muted-foreground pt-2">
+            {reactionsSentToday >= DAILY_LIMIT
+              ? "You've used today's 3 reactions — Pro removes the cap."
+              : `${DAILY_LIMIT - reactionsSentToday} of ${DAILY_LIMIT} reactions left today`}
+          </p>
+        )}
         </>
         )}
       </div>

@@ -8,7 +8,12 @@ const QUICK_REACTIONS = [
   { emoji: "⚡", label: "lightning" },
   { emoji: "🫶", label: "heart hands" },
 ];
-const DAILY_LIMIT = 3;
+// Exported so the surfaces that tell a user how many they have left read
+// the same number this component enforces against. send_reaction
+// (20260811090005) is the real authority -- this is for display only -- but
+// three hardcoded 3s drifting apart is how a screen ends up promising an
+// allowance the server disagrees with.
+export const DAILY_LIMIT = 3;
 
 export default function ReactionButton({ recipientEmail, groupId, onSend, sentTodayCount = 0, isPro = false }) {
   const [open, setOpen] = useState(false);
