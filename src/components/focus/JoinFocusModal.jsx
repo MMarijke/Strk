@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { joinFocusSession } from "@/lib/focusSessionJoin";
+import { joinFocusSession, describeJoinFailure } from "@/lib/focusSessionJoin";
 import JoinInProgressConfirm from "./JoinInProgressConfirm";
 
 export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessionJoined }) {
@@ -35,7 +35,11 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
         setInProgressConfirm(true);
         return;
       }
-      setError("Session not found or already ended");
+      // Was a flat "Session not found or already ended" for every failure
+      // that wasn't IN_PROGRESS, including a 5s request timeout -- so a
+      // valid code on bad wifi was reported as a wrong code. The reason
+      // now comes classified, and the copy lives with the classifier.
+      setError(describeJoinFailure(result.reason));
       return;
     }
 
@@ -57,7 +61,7 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
     // after the user had deliberately accepted less time. It now renders
     // inside the confirm itself, so the failure lands in the same view that
     // produced it and the decision context is preserved.
-    if (!result.ok) { setError("Couldn't join that session. Check your connection and try again."); return; }
+    if (!result.ok) { setError(describeJoinFailure(result.reason)); return; }
     onOpenChange(false);
     onSessionJoined(result.session);
     reset();

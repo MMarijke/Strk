@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { FocusSessionNotification } from "@/api/entities";
-import { joinFocusSession } from "@/lib/focusSessionJoin";
+import { joinFocusSession, describeJoinFailure, isJoinFailurePermanent } from "@/lib/focusSessionJoin";
 import JoinInProgressConfirm from "./JoinInProgressConfirm";
 
 // The toast's own content, so the join -> maybe-confirm -> maybe-ended
@@ -15,10 +15,12 @@ import JoinInProgressConfirm from "./JoinInProgressConfirm";
 function FocusInviteToastBody({ notif, onJoined, onStale, onCancel }) {
   const [view, setView] = useState("join");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const stillInLobby = notif.lobby_ends_at && new Date(notif.lobby_ends_at) > new Date();
 
   const attemptJoin = async (confirmActive) => {
     setLoading(true);
+    setError("");
     const result = await joinFocusSession(notif.session_code, confirmActive);
     setLoading(false);
     if (result.ok) {
@@ -29,8 +31,17 @@ function FocusInviteToastBody({ notif, onJoined, onStale, onCancel }) {
       setView("confirm");
       return;
     }
-    setView("ended");
-    onStale();
+    // Only a genuine NOT_FOUND means the invite is spent. This used to
+    // treat every failure as "already ended" and call onStale(), which
+    // dismisses the notification row -- so one tap on bad wifi
+    // permanently discarded a still-valid invite. A transport failure now
+    // leaves the invite alone and stays retryable.
+    if (isJoinFailurePermanent(result.reason)) {
+      setView("ended");
+      onStale();
+      return;
+    }
+    setError(describeJoinFailure(result.reason));
   };
 
   if (view === "ended") {
@@ -38,7 +49,7 @@ function FocusInviteToastBody({ notif, onJoined, onStale, onCancel }) {
   }
 
   if (view === "confirm") {
-    return <JoinInProgressConfirm onCancel={onCancel} onConfirm={() => attemptJoin(true)} loading={loading} />;
+    return <JoinInProgressConfirm onCancel={onCancel} onConfirm={() => attemptJoin(true)} loading={loading} error={error} />;
   }
 
   return (
@@ -55,12 +66,13 @@ function FocusInviteToastBody({ notif, onJoined, onStale, onCancel }) {
           </p>
         </div>
       </div>
+      {error && <p className="text-xs text-destructive-text" role="alert">{error}</p>}
       <button
         className="w-full rounded-lg bg-primary text-primary-foreground text-xs font-semibold py-1.5 hover:bg-primary/90 transition-colors disabled:opacity-60"
         onClick={() => attemptJoin(false)}
         disabled={loading}
       >
-        {loading ? "Joining…" : "Join →"}
+        {loading ? "Joining…" : error ? "Try again" : "Join →"}
       </button>
     </div>
   );

@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { FocusSession } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
 import { differenceInSeconds, differenceInMinutes, parseISO } from "date-fns";
-import { Copy, Check, ChevronDown, Share2, TimerOff } from "lucide-react";
+import { Copy, Check, ChevronDown, Share2, TimerOff, WifiOff } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Dialog, DialogPortal, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import confetti from "canvas-confetti";
 import { showNotification } from "@/lib/showNotification";
+import { toast } from "sonner";
 
 function pad(n) { return String(Math.floor(n)).padStart(2, "0"); }
 
@@ -109,6 +110,12 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   const [pendingAction, setPendingAction] = useState(null);
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+  // Consecutive poll failures, not a boolean: one miss is a blip and
+  // saying "Reconnecting…" for it would cry wolf every time a packet
+  // drops. Two in a row (30s of no contact) is a real problem worth
+  // telling someone about.
+  const [pollFailures, setPollFailures] = useState(0);
+  const [starting, setStarting] = useState(false);
   // True once *this client's own* timer reached zero. Deliberately not the
   // same thing as the session's status being 'completed', which can also
   // mean somebody else ended it before its deadline -- see endedEarly in the
@@ -124,12 +131,36 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   // lobby, to pick up the active-transition if another client's tab is the
   // one driving it).
   useEffect(() => {
-    const poll = setInterval(async () => {
+    // Was an un-caught await inside setInterval: a rejection was an
+    // unhandled promise rejection every 15 seconds, and the room looked
+    // completely healthy while its participant list quietly froze. On a
+    // surface whose job is telling you who is here with you, silently
+    // showing stale presence is the worst available failure. The room now
+    // says it has lost touch.
+    const refresh = async () => {
       if (document.hidden) return;
-      const sessions = await FocusSession.filter({ session_code: session.session_code });
-      if (sessions[0]) setSession(sessions[0]);
-    }, 15000);
-    return () => clearInterval(poll);
+      try {
+        const sessions = await FocusSession.filter({ session_code: session.session_code });
+        if (sessions[0]) setSession(sessions[0]);
+        setPollFailures(0);
+      } catch (err) {
+        console.error("Focus session poll failed:", err);
+        setPollFailures((n) => n + 1);
+      }
+    };
+    const poll = setInterval(refresh, 15000);
+
+    // The interval skips while the tab is hidden, which is right -- but it
+    // meant returning to the tab could show up to 15s of stale roster, or
+    // a stale 'waiting' status, and the lobby is only 2 minutes long. One
+    // immediate refresh on becoming visible closes that window.
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [session.session_code]);
 
   // Notify host when participants join
@@ -157,6 +188,11 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   const advanceToActive = useCallback(async (force) => {
     if (advancingRef.current) return;
     advancingRef.current = true;
+    // Only the host's deliberate "Start Now" gets a pending state. The
+    // automatic call at the end of the lobby fires from every client's
+    // 1s tick and must stay invisible -- showing "Starting…" on a button
+    // nobody pressed would be noise.
+    if (force) setStarting(true);
     try {
       const { data, error } = await supabase.rpc("start_focus_session_now", {
         p_session_id: session.id,
@@ -176,8 +212,14 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       }
     } catch (err) {
       console.error("Failed to start focus session:", err);
+      // Reported only for the host's explicit press. The automatic path
+      // self-heals -- the 1s tick keeps re-calling while secs is 0 and
+      // advancingRef resets in `finally` -- so surfacing its transient
+      // failures would alarm people about something already recovering.
+      if (force) setActionError("Couldn't start the session. Check your connection and try again.");
     } finally {
       advancingRef.current = false;
+      if (force) setStarting(false);
     }
   }, [session.id, session.session_code]);
 
@@ -242,16 +284,48 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
     return () => clearInterval(t);
   }, [session.status, session.ends_at]);
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(session.session_code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // Both of these used to assume success. handleCopyCode set copied=true
+  // unconditionally and never caught, so where the clipboard is
+  // unavailable or rejects -- no permission, non-secure context -- the
+  // user got a green checkmark over an empty clipboard. The confirmation
+  // now follows the write rather than racing it.
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(session.session_code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy session code:", err);
+      toast.error("Couldn't copy the code. Long-press it to copy instead.");
+    }
   };
 
-  const handleInvite = () => {
+  // handleInvite's fallback branch copied with no feedback whatsoever, so
+  // on any browser without Web Share the Invite button appeared to do
+  // nothing at all. And navigator.share rejects with AbortError when the
+  // user simply dismisses the sheet, which was landing as an unhandled
+  // rejection on the ordinary cancel path.
+  const handleInvite = async () => {
     const text = `Join my focus session on Strk! Code: ${session.session_code}. ${window.location.origin}?focus=${session.session_code}`;
-    if (navigator.share) navigator.share({ title: "Strk Focus", text });
-    else navigator.clipboard.writeText(text);
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Strk Focus", text });
+      } catch (err) {
+        // Dismissing the share sheet is a decision, not a failure.
+        if (err?.name !== "AbortError") {
+          console.error("Failed to share focus session:", err);
+          toast.error("Couldn't open the share sheet. The code is on screen to send manually.");
+        }
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Invite copied — send it to whoever you want in the session.");
+    } catch (err) {
+      console.error("Failed to copy focus invite:", err);
+      toast.error("Couldn't copy the invite. The code is on screen to send manually.");
+    }
   };
 
   // Host only, and guarded by the inline confirm in the footer. Writes
@@ -390,6 +464,16 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
           <DialogDescription className="text-xs text-muted-foreground">
             {session.duration_minutes} min · {inLobby ? "starting soon" : session.status}
           </DialogDescription>
+          {/* Two consecutive misses, so a single dropped request stays
+              quiet. Announced as well as shown: a frozen roster is
+              invisible either way, so the only honest signal is saying
+              so. */}
+          {pollFailures >= 2 && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5" role="status">
+              <WifiOff className="w-3 h-3 shrink-0" aria-hidden="true" />
+              Reconnecting… who&apos;s here may be out of date
+            </p>
+          )}
         </div>
         {/* Was an X labelled "Close focus session", which is what it looks
             like and not what it does: the session keeps running and the
@@ -464,8 +548,12 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       {/* Footer actions */}
       <div className="px-6 pb-6 space-y-2" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}>
         {inLobby && isHost && (
-          <Button className="w-full rounded-xl h-11 font-semibold" onClick={() => advanceToActive(true)}>
-            Start Now
+          <Button
+            className="w-full rounded-xl h-11 font-semibold"
+            onClick={() => { setActionError(""); advanceToActive(true); }}
+            disabled={starting}
+          >
+            {starting ? "Starting…" : "Start Now"}
           </Button>
         )}
 
