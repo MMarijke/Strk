@@ -209,6 +209,11 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   // telling someone about.
   const [pollFailures, setPollFailures] = useState(0);
   const [starting, setStarting] = useState(false);
+  // What the attached habit did when this session finished: null while
+  // unresolved, then "completed" | "already" | "none". Three distinct
+  // outcomes the screen has to be able to tell apart, which is why the RPC
+  // returns the day it wrote rather than a boolean.
+  const [habitOutcome, setHabitOutcome] = useState(null);
   // True once *this client's own* timer reached zero. Deliberately not the
   // same thing as the session's status being 'completed', which can also
   // mean somebody else ended it before its deadline -- see endedEarly in the
@@ -370,6 +375,33 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
         supabase.rpc("complete_focus_session", { p_session_id: session.id })
           .then(({ error }) => { if (error) console.error("Failed to mark session completed:", error); })
           .catch((err) => console.error("Failed to mark session completed:", err));
+
+        // Credit the attached habit, if there is one. Each client completes
+        // its OWN habit -- the RPC resolves it by auth.uid() and takes no
+        // habit argument, so nobody can write anyone else's. Fire-and-forget
+        // for the same reason as the status write: the celebration must not
+        // wait on bookkeeping. The local date is the client's own calendar
+        // day, matching how Dashboard stamps a manual completion.
+        if (session.habit_name) {
+          supabase.rpc("complete_habit_from_focus_session", {
+            p_session_id: session.id,
+            p_local_date: format(new Date(), "yyyy-MM-dd"),
+          }).then(({ data, error }) => {
+            if (error) {
+              console.error("Failed to credit habit from focus session:", error);
+              setHabitOutcome("failed");
+              return;
+            }
+            // The RPC returns the day it wrote, or null when there was
+            // nothing to do. Null is ambiguous between "already done
+            // today" and "you track no habit by that name", so the client
+            // distinguishes them from what it already knows.
+            setHabitOutcome(data ? "completed" : "already");
+          }).catch((err) => {
+            console.error("Failed to credit habit from focus session:", err);
+            setHabitOutcome("failed");
+          });
+        }
       }
     };
     tick();
@@ -598,6 +630,38 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                   )}
                 </DialogDescription>
               </div>
+
+              {/* What the attached habit actually did. Four outcomes, said
+                  plainly: an early end credits nothing because the session
+                  did not happen, a network failure says so rather than
+                  claiming the habit is untracked, and "already done today"
+                  is distinguished from "you track no habit by that name" --
+                  the RPC returns the day it wrote precisely so these can be
+                  told apart instead of guessed. */}
+              {session.habit_name && (
+                <div className="pt-1">
+                  {endedEarly ? (
+                    <p className="text-xs text-muted-foreground">
+                      {session.habit_name} wasn&apos;t credited — the session didn&apos;t finish.
+                    </p>
+                  ) : habitOutcome === "completed" ? (
+                    <p className="text-xs font-medium text-primary flex items-center justify-center gap-1.5">
+                      <Flame className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      {session.habit_name} marked done for today
+                    </p>
+                  ) : habitOutcome === "already" ? (
+                    <p className="text-xs text-muted-foreground">
+                      {session.habit_name} was already done today.
+                    </p>
+                  ) : habitOutcome === "failed" ? (
+                    <p className="text-xs text-muted-foreground">
+                      Couldn&apos;t update {session.habit_name}. Mark it on your Habits screen.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Counting toward {session.habit_name}…</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* The people, named. This is the whole point of the rebuild:
