@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { FocusSession } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
-import { differenceInSeconds, parseISO } from "date-fns";
-import { Copy, Check, X, Share2 } from "lucide-react";
+import { differenceInSeconds, differenceInMinutes, parseISO } from "date-fns";
+import { Copy, Check, X, Share2, TimerOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import confetti from "canvas-confetti";
@@ -15,6 +15,16 @@ function formatCountdown(totalSecs) {
   const m = Math.floor(totalSecs / 60);
   const s = totalSecs % 60;
   return `${m}:${pad(s)}`;
+}
+
+// Whole minutes between the session actually starting and now, capped at its
+// own duration and never negative. Used to tell a participant how far a
+// session got before someone ended it. Null when it never started, which is
+// why the copy that uses it is conditional rather than printing "0".
+function elapsedMinutes(session) {
+  if (!session.started_at) return null;
+  const mins = differenceInMinutes(new Date(), parseISO(session.started_at));
+  return Math.max(0, Math.min(session.duration_minutes, mins));
 }
 
 function ParticipantList({ participants }) {
@@ -49,7 +59,12 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   const [secsLeft, setSecsLeft] = useState(0);
   const [lobbySecsLeft, setLobbySecsLeft] = useState(0);
   const [copied, setCopied] = useState(false);
-  const [completed, setCompleted] = useState(false);
+  // True once *this client's own* timer reached zero. Deliberately not the
+  // same thing as the session's status being 'completed', which can also
+  // mean somebody else ended it before its deadline -- see endedEarly in the
+  // render below. The two are different events and get different screens:
+  // one is a celebration, the other is news.
+  const [finishedNaturally, setFinishedNaturally] = useState(false);
   const isHost = session.host_email === userEmail;
   const warnedRef = useRef(false);
   const completedRef = useRef(false);
@@ -153,7 +168,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       // Completion
       if (secs === 0 && !completedRef.current) {
         completedRef.current = true;
-        setCompleted(true);
+        setFinishedNaturally(true);
         confetti({ particleCount: 180, spread: 100, origin: { y: 0.5 } });
         FocusSession.update(session.id, { status: "completed" });
       }
@@ -182,18 +197,63 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
 
   const participants = session.participant_emails || [];
 
-  if (completed) {
+  // A session ending before its own deadline ends it for everyone, and every
+  // other participant finds out only from this status change. Nothing used to
+  // handle it: the active-timer effect above bails on `status !== "active"`,
+  // so its interval stopped, secsLeft kept whatever value it last held, and
+  // the room went on rendering a 96px countdown claiming time was still
+  // running -- indefinitely, under a 12px header that by then read
+  // "completed". The most prominent element on the screen was lying, in a
+  // feature whose whole credibility is being right about time.
+  //
+  // Derived from session.status rather than tracked in its own state on
+  // purpose: a state-setting effect would leave one frame where status is
+  // already 'completed' and the stale countdown is still painted. This way
+  // the room cannot render a number for a session that has stopped.
+  const endedEarly = !finishedNaturally && session.status === "completed";
+
+  if (finishedNaturally || endedEarly) {
+    const minutesIn = endedEarly ? elapsedMinutes(session) : null;
+    const hostName = session.host_name || session.host_email?.split("@")[0] || "The host";
+    const dismiss = () => {
+      setFinishedNaturally(false);
+      completedRef.current = false;
+      warnedRef.current = false;
+      onClose();
+    };
+
     return (
       <div className="fixed inset-0 z-[60] bg-background flex flex-col items-center justify-center p-8 text-center">
-        <div className="text-7xl mb-4">🎉</div>
-        <h1 className="text-3xl font-extrabold text-foreground mb-2">Session Complete!</h1>
-        <p className="text-muted-foreground mb-1">{session.duration_minutes} minutes of deep focus</p>
-        <p className="text-muted-foreground mb-8">{participants.length} participant{participants.length !== 1 ? "s" : ""}</p>
+        {/* A real icon rather than a second emoji: this screen is the one
+            place in the flow that has to read as information, not
+            celebration, and 🎉's counterpart would be a frown. */}
+        {endedEarly ? (
+          <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4" aria-hidden="true">
+            <TimerOff className="w-8 h-8 text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="text-7xl mb-4" aria-hidden="true">🎉</div>
+        )}
+        {/* role="status" so the swap is announced rather than silently
+            replacing the screen. The room's wider live-region work is a
+            separate pass; an explanation nobody is told about is not an
+            explanation, so this much ships with the fix. */}
+        <div role="status">
+          <h1 className="text-3xl font-extrabold text-foreground mb-2">
+            {endedEarly ? "Session Ended Early" : "Session Complete!"}
+          </h1>
+          {endedEarly ? (
+            <p className="text-muted-foreground mb-1">
+              {hostName} ended it for everyone
+              {minutesIn !== null && minutesIn > 0 && ` after ${minutesIn} of ${session.duration_minutes} minutes`}.
+            </p>
+          ) : (
+            <p className="text-muted-foreground mb-1">{session.duration_minutes} minutes of deep focus</p>
+          )}
+          <p className="text-muted-foreground mb-8">{participants.length} participant{participants.length !== 1 ? "s" : ""}</p>
+        </div>
         <div className="flex gap-3 w-full max-w-xs">
-          <Button
-            className="flex-1 rounded-xl h-11"
-            onClick={() => { setCompleted(false); completedRef.current = false; warnedRef.current = false; onClose(); }}
-          >
+          <Button className="flex-1 rounded-xl h-11" onClick={dismiss}>
             Done
           </Button>
         </div>

@@ -45,9 +45,18 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
 
   const handleJoinAnyway = async () => {
     setLoading(true);
+    setError("");
     const result = await joinFocusSession(code, true);
     setLoading(false);
-    if (!result.ok) { setError("Failed to join session"); return; }
+    // This error used to be set and then never rendered: the only error
+    // element lived in the other branch of the inProgressConfirm ternary
+    // below, so while the confirm was showing there was nowhere on screen
+    // for it to appear. The button finished its "Joining…" state and the
+    // modal just sat there -- on precisely the flaky-connection path, right
+    // after the user had deliberately accepted less time. It now renders
+    // inside the confirm itself, so the failure lands in the same view that
+    // produced it and the decision context is preserved.
+    if (!result.ok) { setError("Couldn't join that session. Check your connection and try again."); return; }
     onOpenChange(false);
     onSessionJoined(result.session);
     reset();
@@ -61,7 +70,7 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
         </DialogHeader>
 
         {inProgressConfirm ? (
-          <JoinInProgressConfirm onCancel={reset} onConfirm={handleJoinAnyway} loading={loading} />
+          <JoinInProgressConfirm onCancel={reset} onConfirm={handleJoinAnyway} loading={loading} error={error} />
         ) : (
           <div className="space-y-4 pt-1">
             <Input
@@ -71,7 +80,12 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
               maxLength={6}
               className="font-mono text-center text-lg tracking-widest uppercase rounded-xl h-12"
             />
-            {error && <p className="text-xs text-destructive text-center">{error}</p>}
+            {/* text-destructive-text, not text-destructive: src/index.css
+                documents that --destructive measures 3.90:1 against
+                --background, under the AA floor for body text, which is
+                exactly why --destructive-text exists. role="alert" so a
+                rejected code is announced rather than silently appearing. */}
+            {error && <p className="text-xs text-destructive-text text-center" role="alert">{error}</p>}
             <Button className="w-full rounded-xl h-11 font-semibold" onClick={handleJoin} disabled={loading}>
               {loading ? "Joining…" : "Join Session"}
             </Button>
