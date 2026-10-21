@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { joinFocusSession } from "@/lib/focusSessionJoin";
 import JoinInProgressConfirm from "./JoinInProgressConfirm";
 
@@ -73,11 +74,24 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
           <JoinInProgressConfirm onCancel={reset} onConfirm={handleJoinAnyway} loading={loading} error={error} />
         ) : (
           <div className="space-y-4 pt-1">
+            {/* An sr-only Label rather than relying on the placeholder,
+                which is the convention Login.jsx already sets here (and
+                comments on): a placeholder is not an accessible name, and
+                it disappears the moment there is a value. aria-invalid and
+                aria-describedby tie the field to the error below it, so a
+                rejected code is both announced and attributed to the
+                field that caused it. */}
+            <Label htmlFor="focus-code" className="sr-only">Session code</Label>
             <Input
+              id="focus-code"
               placeholder="Enter 6-character code"
               value={code}
               onChange={(e) => { setCode(e.target.value.toUpperCase()); setError(""); }}
               maxLength={6}
+              autoComplete="off"
+              autoCapitalize="characters"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "focus-code-error" : undefined}
               className="font-mono text-center text-lg tracking-widest uppercase rounded-xl h-12"
             />
             {/* text-destructive-text, not text-destructive: src/index.css
@@ -85,7 +99,7 @@ export default function JoinFocusModal({ open, onOpenChange, userEmail, onSessio
                 --background, under the AA floor for body text, which is
                 exactly why --destructive-text exists. role="alert" so a
                 rejected code is announced rather than silently appearing. */}
-            {error && <p className="text-xs text-destructive-text text-center" role="alert">{error}</p>}
+            {error && <p id="focus-code-error" className="text-xs text-destructive-text text-center" role="alert">{error}</p>}
             <Button className="w-full rounded-xl h-11 font-semibold" onClick={handleJoin} disabled={loading}>
               {loading ? "Joining…" : "Join Session"}
             </Button>

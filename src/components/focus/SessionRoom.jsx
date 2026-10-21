@@ -3,6 +3,8 @@ import { FocusSession } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
 import { differenceInSeconds, differenceInMinutes, parseISO } from "date-fns";
 import { Copy, Check, ChevronDown, Share2, TimerOff } from "lucide-react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Dialog, DialogPortal, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import confetti from "canvas-confetti";
@@ -27,10 +29,48 @@ function elapsedMinutes(session) {
   return Math.max(0, Math.min(session.duration_minutes, mins));
 }
 
+// The full-screen room, as a real modal dialog.
+//
+// It used to be a plain `fixed inset-0` div, which meant: no role, no
+// accessible name, no focus trap, no Escape, and -- because Dashboard
+// renders it as a sibling rather than a portal -- the whole Dashboard
+// stayed in the tab order behind it, so a keyboard user tabbed through
+// invisible "New habit" and habit-card controls while a full-screen
+// overlay was up. Radix in modal mode gives all of that: portal, focus
+// trap and restore, Escape, scroll lock, and aria-hidden on everything
+// outside.
+//
+// Composed from the primitives rather than the project's styled
+// DialogContent, which is a centred max-w-lg card with its own close
+// button and enter/exit animations -- overriding all of that to be
+// full-screen would mean fighting it and shipping two close buttons.
+function RoomDialog({ onMinimise, labelledBy, children }) {
+  return (
+    <Dialog open modal onOpenChange={(next) => { if (!next) onMinimise(); }}>
+      <DialogPortal>
+        <DialogPrimitive.Content
+          aria-labelledby={labelledBy}
+          className="fixed inset-0 z-[60] bg-background flex flex-col focus:outline-none"
+          style={{ paddingTop: "env(safe-area-inset-top)" }}
+        >
+          {children}
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    </Dialog>
+  );
+}
+
 function ParticipantList({ participants }) {
   return (
     <div className="w-full max-w-xs">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 text-center">
+      {/* aria-live on the count rather than a separate "someone joined"
+          region: the count already changes when the roster does, so this
+          announces a join without inventing a second thing to say or
+          competing with the timer region below. */}
+      <p
+        className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 text-center"
+        aria-live="polite"
+      >
         Participants ({participants.length})
       </p>
       <div className="flex flex-wrap justify-center gap-4">
@@ -43,7 +83,10 @@ function ParticipantList({ participants }) {
                 <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg">
                   {initials}
                 </div>
-                <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-success border-2 border-background animate-pulse" />
+                {/* Decorative: it carries no information a screen reader
+                    could act on, and the roster line above already says
+                    who is here. */}
+                <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-success border-2 border-background animate-pulse" aria-hidden="true" />
               </div>
               <span className="text-[11px] text-muted-foreground max-w-[56px] truncate text-center">{name}</span>
             </div>
@@ -278,53 +321,75 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
     };
 
     return (
-      <div className="fixed inset-0 z-[60] bg-background flex flex-col items-center justify-center p-8 text-center">
-        {/* A real icon rather than a second emoji: this screen is the one
-            place in the flow that has to read as information, not
-            celebration, and 🎉's counterpart would be a frown. */}
-        {endedEarly ? (
-          <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4" aria-hidden="true">
-            <TimerOff className="w-8 h-8 text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="text-7xl mb-4" aria-hidden="true">🎉</div>
-        )}
-        {/* role="status" so the swap is announced rather than silently
-            replacing the screen. The room's wider live-region work is a
-            separate pass; an explanation nobody is told about is not an
-            explanation, so this much ships with the fix. */}
-        <div role="status">
-          <h1 className="text-3xl font-extrabold text-foreground mb-2">
-            {endedEarly ? "Session Ended Early" : "Session Complete!"}
-          </h1>
+      // Dismiss, not onClose, for the Escape/overlay path too: this screen
+      // has to reset the completion refs or reopening the room from the
+      // Dashboard banner would land straight back on it.
+      <RoomDialog onMinimise={dismiss} labelledBy="focus-session-outcome">
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          {/* A real icon rather than a second emoji: this screen is the one
+              place in the flow that has to read as information, not
+              celebration, and 🎉's counterpart would be a frown. */}
           {endedEarly ? (
-            <p className="text-muted-foreground mb-1">
-              {hostName} ended it for everyone
-              {minutesIn !== null && minutesIn > 0 && ` after ${minutesIn} of ${session.duration_minutes} minutes`}.
-            </p>
+            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4" aria-hidden="true">
+              <TimerOff className="w-8 h-8 text-muted-foreground" />
+            </div>
           ) : (
-            <p className="text-muted-foreground mb-1">{session.duration_minutes} minutes of deep focus</p>
+            <div className="text-7xl mb-4" aria-hidden="true">🎉</div>
           )}
-          <p className="text-muted-foreground mb-8">{participants.length} participant{participants.length !== 1 ? "s" : ""}</p>
+          {/* role="status" so the swap is announced rather than silently
+              replacing the screen. DialogTitle renders the h2 that names
+              the dialog, so the outcome is both the heading and the
+              accessible name instead of a loose h1 nobody is pointed at. */}
+          <div role="status">
+            <DialogTitle id="focus-session-outcome" className="text-3xl font-extrabold text-foreground mb-2">
+              {endedEarly ? "Session Ended Early" : "Session Complete!"}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground mb-1 text-base">
+              {endedEarly ? (
+                <>
+                  {hostName} ended it for everyone
+                  {minutesIn !== null && minutesIn > 0 && ` after ${minutesIn} of ${session.duration_minutes} minutes`}.
+                </>
+              ) : (
+                `${session.duration_minutes} minutes of deep focus`
+              )}
+            </DialogDescription>
+            <p className="text-muted-foreground mb-8">{participants.length} participant{participants.length !== 1 ? "s" : ""}</p>
+          </div>
+          <div className="flex gap-3 w-full max-w-xs">
+            <Button className="flex-1 rounded-xl h-11" onClick={dismiss}>
+              Done
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-3 w-full max-w-xs">
-          <Button className="flex-1 rounded-xl h-11" onClick={dismiss}>
-            Done
-          </Button>
-        </div>
-      </div>
+      </RoomDialog>
     );
   }
 
   const inLobby = session.status === "waiting";
 
+  // Minute granularity, deliberately. The countdown itself re-renders every
+  // second, and a live region tracking it would make a screen reader read a
+  // number 1,500 times per session, drowning out everything else on the
+  // screen. This changes once a minute, so it announces once a minute -- and
+  // the last minute is called out by name rather than as "1".
+  const liveStatus = inLobby
+    ? (lobbySecsLeft > 60
+        ? `Starting in ${Math.ceil(lobbySecsLeft / 60)} minutes`
+        : "Starting in less than a minute")
+    : secsLeft <= 60
+      ? "Final minute of the session"
+      : `${Math.ceil(secsLeft / 60)} minutes remaining`;
+
   return (
-    <div className="fixed inset-0 z-[60] bg-background flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+    <RoomDialog onMinimise={onClose} labelledBy="focus-session-heading">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div>
-          <p className="font-bold text-sm">Focus Session</p>
-          <p className="text-xs text-muted-foreground">{session.duration_minutes} min · {inLobby ? "starting soon" : session.status}</p>
+          <DialogTitle id="focus-session-heading" className="font-bold text-sm">Focus Session</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            {session.duration_minutes} min · {inLobby ? "starting soon" : session.status}
+          </DialogDescription>
         </div>
         {/* Was an X labelled "Close focus session", which is what it looks
             like and not what it does: the session keeps running and the
@@ -350,12 +415,20 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
           {inLobby && (
             <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Starting in</p>
           )}
-          <div className={cn(
-            "text-8xl font-black tabular-nums tracking-tight transition-colors",
-            !inLobby && secsLeft <= 60 ? "text-destructive" : "text-foreground"
-          )}>
+          {/* aria-hidden on the visible digits, with the live region below
+              carrying the same information at a rate a screen reader can
+              actually use. Without this a per-second DOM change sits
+              directly in the accessibility tree. */}
+          <div
+            className={cn(
+              "text-8xl font-black tabular-nums tracking-tight transition-colors",
+              !inLobby && secsLeft <= 60 ? "text-destructive" : "text-foreground"
+            )}
+            aria-hidden="true"
+          >
             {formatCountdown(inLobby ? lobbySecsLeft : secsLeft)}
           </div>
+          <p className="sr-only" aria-live="polite" aria-atomic="true">{liveStatus}</p>
           <p className="text-sm text-muted-foreground mt-2">
             {inLobby ? "until the timer begins" : "remaining"}
           </p>
@@ -366,9 +439,19 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Session Code</p>
           <div className="flex items-center gap-2 bg-muted rounded-2xl px-5 py-3">
             <span className="font-mono font-black text-2xl tracking-widest text-foreground">{session.session_code}</span>
-            <button onClick={handleCopyCode} className="text-muted-foreground hover:text-foreground transition-colors">
-              {copied ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
+            {/* Was a bare icon-only button with no accessible name at all --
+                announced as "button" -- and a ~16px hit area, the smallest
+                target on the screen, on the only way to get the code out
+                besides Invite. Named, 44px, and the copied state is now
+                carried by text rather than only by swapping the glyph. */}
+            <button
+              onClick={handleCopyCode}
+              className="h-11 w-11 -mr-2 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              aria-label={`Copy session code ${session.session_code}`}
+            >
+              {copied ? <Check className="w-4 h-4 text-primary" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
             </button>
+            <span className="sr-only" aria-live="polite">{copied ? "Session code copied" : ""}</span>
           </div>
           <Button variant="outline" size="sm" className="gap-1.5 rounded-xl" onClick={handleInvite}>
             <Share2 className="w-3.5 h-3.5" /> Invite
@@ -446,6 +529,6 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
           </Button>
         ) : null}
       </div>
-    </div>
+    </RoomDialog>
   );
 }
