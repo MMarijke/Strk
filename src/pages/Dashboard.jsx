@@ -562,6 +562,7 @@ export default function Dashboard() {
           userEmail={user?.email}
           userName={user?.full_name || user?.email?.split("@")[0]}
           onClose={() => setActiveSession(null)}
+          onStartAnother={() => setShowFocusModal(true)}
         />
         )}
         </div>

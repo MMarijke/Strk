@@ -603,6 +603,10 @@ export default function Social() {
         userEmail={user?.email}
         onSessionJoined={(s) => setActiveSession(s)} />
       
+      {/* No onStartAnother passed here on purpose: this page has a join
+          flow but no start flow (StartFocusModal lives on Dashboard), so
+          the completion screen omits "Start another" rather than offering
+          a button with nowhere to go. */}
       {activeSession &&
       <SessionRoom
         session={activeSession}

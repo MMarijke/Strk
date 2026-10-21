@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { FocusSession } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
 import { differenceInSeconds, differenceInMinutes, parseISO } from "date-fns";
-import { Copy, Check, ChevronDown, Share2, TimerOff, WifiOff } from "lucide-react";
+import { Copy, Check, ChevronDown, Share2, TimerOff, WifiOff, Flame } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Dialog, DialogPortal, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,13 @@ import { cn } from "@/lib/utils";
 import confetti from "canvas-confetti";
 import { showNotification } from "@/lib/showNotification";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
+import LobbyRing from "./LobbyRing";
+
+// Mirrors StartFocusModal's LOBBY_MINUTES. Only used to turn the remaining
+// seconds into the ring's fraction -- the authoritative deadline is always
+// the server-set lobby_ends_at, never this number.
+const LOBBY_SECONDS = 2 * 60;
 
 function pad(n) { return String(Math.floor(n)).padStart(2, "0"); }
 
@@ -81,6 +88,56 @@ function CopyCodeButton({ code, copied, onCopy }) {
   );
 }
 
+// Up to five initials, then a count. The cluster sits inside LobbyRing, so
+// it has a fixed budget: it caps rather than growing, and the ring never
+// has to scale with headcount. There is no participant cap in the schema,
+// so this needs a real answer and not an assumption that groups stay small.
+const CLUSTER_CAP = 5;
+
+function AvatarCluster({ participants, userEmail }) {
+  const shown = participants.slice(0, CLUSTER_CAP);
+  const overflow = participants.length - shown.length;
+
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2">
+      {shown.map((email) => (
+        <div
+          key={email}
+          className={cn(
+            "w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shrink-0",
+            email === userEmail
+              ? "bg-primary text-primary-foreground"
+              : "bg-primary/20 text-primary"
+          )}
+          // The name is carried by the roster line under the ring; two
+          // announcements of the same list is one too many.
+          aria-hidden="true"
+        >
+          {email.split("@")[0].charAt(0).toUpperCase()}
+        </div>
+      ))}
+      {overflow > 0 && (
+        <div
+          className="w-12 h-12 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-sm font-bold shrink-0"
+          aria-hidden="true"
+        >
+          +{overflow}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Who is in the lobby, in words, because a cluster of initials cannot say
+// it. Short on purpose: it sits under a 240px ring on a 320px screen.
+function describeRoster(participants, userEmail) {
+  const others = participants.filter((email) => email !== userEmail).map((email) => email.split("@")[0]);
+  if (others.length === 0) return "No one else yet";
+  if (others.length === 1) return `You and ${others[0]}`;
+  if (others.length === 2) return `You, ${others[0]} and ${others[1]}`;
+  return `You and ${others.length} others`;
+}
+
 function ParticipantList({ participants }) {
   return (
     <div className="w-full max-w-xs">
@@ -126,7 +183,7 @@ function ParticipantList({ participants }) {
   );
 }
 
-export default function SessionRoom({ session: initialSession, userEmail, userName, onClose }) {
+export default function SessionRoom({ session: initialSession, userEmail, userName, onClose, onStartAnother }) {
   const [session, setSession] = useState(initialSession);
   const [secsLeft, setSecsLeft] = useState(0);
   const [lobbySecsLeft, setLobbySecsLeft] = useState(0);
@@ -396,6 +453,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   };
 
   const participants = session.participant_emails || [];
+  const isAlone = participants.length <= 1;
 
   // A session ending before its own deadline ends it for everyone, and every
   // other participant finds out only from this status change. Nothing used to
@@ -427,41 +485,114 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       // has to reset the completion refs or reopening the room from the
       // Dashboard banner would land straight back on it.
       <RoomDialog onMinimise={dismiss} labelledBy="focus-session-outcome">
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-          {/* A real icon rather than a second emoji: this screen is the one
-              place in the flow that has to read as information, not
-              celebration, and 🎉's counterpart would be a frown. */}
-          {endedEarly ? (
-            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4" aria-hidden="true">
-              <TimerOff className="w-8 h-8 text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="text-7xl mb-4" aria-hidden="true">🎉</div>
-          )}
-          {/* role="status" so the swap is announced rather than silently
-              replacing the screen. DialogTitle renders the h2 that names
-              the dialog, so the outcome is both the heading and the
-              accessible name instead of a loose h1 nobody is pointed at. */}
-          <div role="status">
-            <DialogTitle id="focus-session-outcome" className="text-3xl font-extrabold text-foreground mb-2">
-              {endedEarly ? "Session Ended Early" : "Session Complete!"}
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground mb-1 text-base">
+        <div className="flex-1 overflow-y-auto px-5 py-8 flex flex-col justify-center">
+          <div className="w-full max-w-sm mx-auto space-y-4">
+            {/* Built on ChallengeCompleteScreen's hero, which is this app's
+                precedent for ending a shared thing well: a framed gradient,
+                the brand Flame, and the people named. The old screen was an
+                emoji, two grey lines and "Done" -- it named nobody, which on
+                the product's core social feature is the peak-end moment
+                thrown away.
+                Two deliberate departures from that precedent: no eyebrow
+                above the heading (the heading carries its own weight), and
+                the facts run as one line rather than framed stat tiles,
+                which is the hero-metric template this screen doesn't need. */}
+            <div className={cn(
+              "rounded-2xl border p-6 text-center space-y-3",
+              endedEarly
+                ? "bg-muted/40 border-border"
+                : "bg-gradient-to-br from-primary/20 via-accent/15 to-primary/10 border-primary/30"
+            )}>
               {endedEarly ? (
+                <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mx-auto" aria-hidden="true">
+                  <TimerOff className="w-7 h-7 text-muted-foreground" />
+                </div>
+              ) : (
+                // A one-shot entrance, matching ChallengeCompleteScreen's
+                // single authored moment. Framer Motion already honours
+                // prefers-reduced-motion through its own reducedMotion
+                // handling of transforms.
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.6, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ type: "spring", stiffness: 260, damping: 18 }}
+                  className="w-14 h-14 rounded-2xl bg-primary/15 flex items-center justify-center mx-auto"
+                  aria-hidden="true"
+                >
+                  <Flame className="w-7 h-7 text-primary" />
+                </motion.div>
+              )}
+
+              {/* role="status" so the swap is announced rather than
+                  silently replacing the screen. DialogTitle renders the h2
+                  that names the dialog, so the outcome is both the heading
+                  and the accessible name. */}
+              <div role="status">
+                <DialogTitle id="focus-session-outcome" className="text-2xl font-extrabold text-foreground">
+                  {endedEarly ? "Session Ended Early" : "Session Complete"}
+                </DialogTitle>
+                <DialogDescription className="text-sm text-muted-foreground mt-1">
+                  {endedEarly ? (
+                    <>
+                      {hostName} ended it for everyone
+                      {minutesIn !== null && minutesIn > 0 && ` after ${minutesIn} of ${session.duration_minutes} minutes`}.
+                    </>
+                  ) : (
+                    `${session.duration_minutes} minutes · ${participants.length === 1 ? "on your own" : `${participants.length} of you`}`
+                  )}
+                </DialogDescription>
+              </div>
+            </div>
+
+            {/* The people, named. This is the whole point of the rebuild:
+                the roster is what makes the session a shared thing rather
+                than a timer that happened to be running. Shown for an early
+                end too -- they did sit together, whatever cut it short. */}
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                {participants.length === 1 ? "Just you" : "You focused with"}
+              </p>
+              <ul className="space-y-2">
+                {participants.map((email) => (
+                  <li key={email} className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0",
+                      email === userEmail ? "bg-primary text-primary-foreground" : "bg-primary/20 text-primary"
+                    )} aria-hidden="true">
+                      {email.split("@")[0].charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm font-medium truncate">
+                      {email.split("@")[0]}
+                      {email === userEmail && <span className="text-xs text-muted-foreground font-normal ml-1">(you)</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex gap-3">
+              {/* "Start another" only where the caller can actually open
+                  the start flow, and only after a real finish -- offering
+                  it under a session somebody just cut short reads as
+                  tone-deaf. */}
+              {onStartAnother && !endedEarly ? (
                 <>
-                  {hostName} ended it for everyone
-                  {minutesIn !== null && minutesIn > 0 && ` after ${minutesIn} of ${session.duration_minutes} minutes`}.
+                  <Button variant="outline" className="flex-1 rounded-xl h-11" onClick={dismiss}>
+                    Done
+                  </Button>
+                  <Button
+                    className="flex-1 rounded-xl h-11 font-semibold"
+                    onClick={() => { dismiss(); onStartAnother(); }}
+                  >
+                    Start another
+                  </Button>
                 </>
               ) : (
-                `${session.duration_minutes} minutes of deep focus`
+                <Button className="flex-1 rounded-xl h-11" onClick={dismiss}>
+                  Done
+                </Button>
               )}
-            </DialogDescription>
-            <p className="text-muted-foreground mb-8">{participants.length} participant{participants.length !== 1 ? "s" : ""}</p>
-          </div>
-          <div className="flex gap-3 w-full max-w-xs">
-            <Button className="flex-1 rounded-xl h-11" onClick={dismiss}>
-              Done
-            </Button>
+            </div>
           </div>
         </div>
       </RoomDialog>
@@ -522,29 +653,40 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center gap-8 px-6 py-6">
-        {/* Countdown */}
-        <div className="text-center">
-          {inLobby && (
-            <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Starting in</p>
-          )}
-          {/* aria-hidden on the visible digits, with the live region below
-              carrying the same information at a rate a screen reader can
-              actually use. Without this a per-second DOM change sits
-              directly in the accessibility tree. */}
-          <div
-            className={cn(
-              "text-8xl font-black tabular-nums tracking-tight transition-colors",
-              !inLobby && secsLeft <= 60 ? "text-destructive" : "text-foreground"
-            )}
-            aria-hidden="true"
-          >
-            {formatCountdown(inLobby ? lobbySecsLeft : secsLeft)}
+        {/* The lobby and the running session want opposite hierarchies.
+            The lobby's one question is "is anyone coming?", so the people
+            are the hero and the time is the ring around them. Once the
+            timer is running the time is the only thing that matters and
+            it takes the stage back. */}
+        {inLobby ? (
+          <LobbyRing fractionRemaining={lobbySecsLeft / LOBBY_SECONDS}>
+            <AvatarCluster participants={participants} userEmail={userEmail} />
+            <div>
+              <p className="text-2xl font-bold tabular-nums text-foreground" aria-hidden="true">
+                {formatCountdown(lobbySecsLeft)}
+              </p>
+              <p className="text-xs text-muted-foreground">until the timer begins</p>
+            </div>
+          </LobbyRing>
+        ) : (
+          <div className="text-center">
+            {/* aria-hidden on the visible digits, with the live region
+                below carrying the same information at a rate a screen
+                reader can actually use. Without this a per-second DOM
+                change sits directly in the accessibility tree. */}
+            <div
+              className={cn(
+                "text-8xl font-black tabular-nums tracking-tight transition-colors",
+                secsLeft <= 60 ? "text-destructive" : "text-foreground"
+              )}
+              aria-hidden="true"
+            >
+              {formatCountdown(secsLeft)}
+            </div>
+            <p className="text-sm text-muted-foreground mt-2">remaining</p>
           </div>
-          <p className="sr-only" aria-live="polite" aria-atomic="true">{liveStatus}</p>
-          <p className="text-sm text-muted-foreground mt-2">
-            {inLobby ? "until the timer begins" : "remaining"}
-          </p>
-        </div>
+        )}
+        <p className="sr-only" aria-live="polite" aria-atomic="true">{liveStatus}</p>
 
         {/* Lobby: the code is the second most important thing on screen,
             because the lobby exists to get people in. Active: joining
@@ -554,17 +696,42 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
             Demoted, not removed -- you can still pull someone in. */}
         {inLobby ? (
           <>
-            <div className="flex flex-col items-center gap-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Session Code</p>
-              <div className="flex items-center gap-2 bg-muted rounded-2xl px-5 py-3">
-                <span className="font-mono font-black text-2xl tracking-widest text-foreground">{session.session_code}</span>
-                <CopyCodeButton code={session.session_code} copied={copied} onCopy={handleCopyCode} />
-              </div>
-              <Button variant="outline" size="sm" className="gap-1.5 rounded-xl" onClick={handleInvite}>
-                <Share2 className="w-3.5 h-3.5" /> Invite
-              </Button>
+            {/* The roster in words, since a cluster of initials can't say
+                who is there. aria-live because this is now the line that
+                changes when somebody joins -- the lobby no longer renders
+                ParticipantList, which used to carry that announcement. */}
+            <p className="text-sm font-medium text-foreground text-center" aria-live="polite">
+              {describeRoster(participants, userEmail)}
+            </p>
+            <div className="flex flex-col items-center gap-2 w-full max-w-xs">
+              {/* Alone in the lobby, Invite is the only action that can
+                  change anything, so it stops being a quiet outline button
+                  below the code and becomes the primary one. This is the
+                  state the old layout failed hardest: it answered "is
+                  anyone coming?" with a roster of yourself. */}
+              {isAlone ? (
+                <>
+                  <Button className="w-full rounded-xl h-11 gap-2 font-semibold" onClick={handleInvite}>
+                    <Share2 className="w-4 h-4" /> Invite someone
+                  </Button>
+                  <div className="flex items-center gap-1 text-muted-foreground">
+                    <span className="text-xs uppercase tracking-wide">or share code</span>
+                    <span className="font-mono text-sm tracking-widest text-foreground ml-1">{session.session_code}</span>
+                    <CopyCodeButton code={session.session_code} copied={copied} onCopy={handleCopyCode} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 bg-muted rounded-2xl px-5 py-3">
+                    <span className="font-mono font-black text-2xl tracking-widest text-foreground">{session.session_code}</span>
+                    <CopyCodeButton code={session.session_code} copied={copied} onCopy={handleCopyCode} />
+                  </div>
+                  <Button variant="outline" size="sm" className="gap-1.5 rounded-xl" onClick={handleInvite}>
+                    <Share2 className="w-3.5 h-3.5" /> Invite
+                  </Button>
+                </>
+              )}
             </div>
-            <ParticipantList participants={participants} />
           </>
         ) : (
           <>
