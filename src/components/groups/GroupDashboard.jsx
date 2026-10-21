@@ -220,7 +220,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     // group_challenges_set_habit_name trigger's server-derived value),
     // not vars (the client-submitted payload) -- the client no longer
     // sends habit_name at all now that habit selection is habit_id-based.
-    onSuccess: async (newChallenge, vars) => {
+    onSuccess: (newChallenge, vars) => {
       trackEvent("challenge_started");
       queryClient.invalidateQueries({ queryKey: ["group-challenges"] });
       queryClient.invalidateQueries({ queryKey: ["challenge-notifications"] });
@@ -231,7 +231,16 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       // starter, only recipient_email varies per row).
       const otherMembers = (group.member_emails || []).filter((e) => e !== userEmail);
       const adminName = getDisplayName(userEmail, profiles) || userFullName || userEmail.split("@")[0];
-      await ChallengeNotification.createMany(
+      // Deliberately NOT awaited, and no longer ahead of the toast.
+      //
+      // This used to be `await`ed at the top of onSuccess, which meant a
+      // failed notification insert threw before the toast and before
+      // setViewingChallenge -- so the challenge was live for the whole
+      // group, nobody had been told, and the admin was left looking at a
+      // modal stuck on "Creating…". A notification failure must never
+      // present as a creation failure: by the time we are in onSuccess the
+      // challenge exists, and that is the fact the admin needs.
+      ChallengeNotification.createMany(
         otherMembers.map((email) => ({
           challenge_id: newChallenge.id,
           group_id: group.id,
@@ -243,7 +252,10 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
           recipient_email: email,
           dismissed: false,
         }))
-      );
+      ).catch((err) => {
+        console.error("Challenge created but notifications failed:", err);
+        toast.error("Challenge started, but we couldn't notify everyone. They'll still see it in the group.", { duration: 5000 });
+      });
 
       // Show a 5s toast for the admin with details and a "View Challenge" action
       toast(
@@ -266,6 +278,18 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       );
 
       setViewingChallenge(true);
+    },
+    // The only one of this file's three mutations that had no onError.
+    // GroupChallenge.create can genuinely fail --
+    // enforce_challenge_duration_plan_limit_trigger (20260915090002)
+    // exists precisely to reject a duration a Free plan may not use -- and
+    // without this the rejection surfaced nowhere at all.
+    onError: (err) => {
+      console.error("Failed to create challenge:", err);
+      const message = err?.message?.includes("duration")
+        ? "That challenge length isn't available on your plan."
+        : "Couldn't start the challenge. Check your connection and try again.";
+      toast.error(message, { duration: 4000 });
     },
   });
 
