@@ -494,7 +494,11 @@ export default function Social() {
               onBack={() => setSelectedGroup(null)}
               onUpdate={(data) => updateGroupMutation.mutateAsync({ id: activeGroup.id, data })}
               onDelete={() => deleteGroupMutation.mutateAsync(activeGroup.id)}
-              onRemoveMember={(email) => removeMember(activeGroup, email)} /> :
+              onRemoveMember={(email) => removeMember(activeGroup, email)}
+              // Same hand-off StartFocusModal's onSessionCreated uses, so
+              // the room opens over this page exactly as it does when a
+              // session is started from the Habits screen.
+              onSessionStarted={(session) => setActiveSession(session)} /> :
 
             groupsLoading ?
             <div className="space-y-3">

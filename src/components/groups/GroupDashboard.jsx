@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Reaction, Habit, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, subDays, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
-import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, UserMinus, Settings, Trophy, Plus, Sparkles } from "lucide-react";
+import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, Plus, Sparkles, Users, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
@@ -10,7 +10,7 @@ import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
 import CreateChallengeModal from "./CreateChallengeModal";
 import InviteMembersSheet from "./InviteMembersSheet";
 import ChallengeLeaderboard from "./ChallengeLeaderboard";
-import ReactionButton from "./ReactionButton";
+import ReactionButton, { DAILY_LIMIT } from "./ReactionButton";
 import GroupWeeklyReport from "./GroupWeeklyReport";
 import GroupSettingsModal from "./GroupSettingsModal";
 import FreezeAssistConfirmModal from "./FreezeAssistConfirmModal";
@@ -23,6 +23,8 @@ import { trackEvent } from "@/lib/analytics";
 import { useSubscription } from "@/hooks/useSubscription";
 import { supabase } from "@/api/supabaseClient";
 import { getGroupFreezeCandidates, assistFreeze } from "@/lib/freezeService";
+import { startFocusSession, DEFAULT_DURATION_MINUTES } from "@/lib/focusSessionStart";
+import GroupActivityFeed from "./GroupActivityFeed";
 
 function calcConsistency(completions) {
   if (!completions?.length) return 0;
@@ -94,6 +96,25 @@ function describeMemberActivity(lastCompletionDate) {
 // Same change as Social.jsx's RankIcon, for the same reasons: the icons
 // carry no text, so the place -- the single most important fact in a
 // leaderboard row -- was announced as nothing at all for the top three.
+// Same inline strip ChallengeLeaderboard already uses for this exact job
+// (a failed fetch inside an otherwise-usable card), so a load failure looks
+// the same wherever it happens in this feature rather than inventing a
+// second error language one folder over.
+function LoadErrorStrip({ message, onRetry }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive-text text-xs">
+      <span>{message}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="font-semibold underline underline-offset-2 shrink-0 h-11 px-1"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 function RankIcon({ rank, isTied }) {
   const label = isTied ? `Tied for ${ordinal(rank)}` : ordinal(rank);
   const icon =
@@ -119,10 +140,9 @@ function getInviteLink(code) {
   return `${window.location.origin}?join=${code}`;
 }
 
-export default function GroupDashboard({ group, userId, userEmail, userFullName, profiles = [], onBack, onUpdate, onDelete, onRemoveMember }) {
+export default function GroupDashboard({ group, userId, userEmail, userFullName, profiles = [], onBack, onUpdate, onDelete, onRemoveMember, onSessionStarted }) {
   const [showSettings, setShowSettings] = useState(false);
   const [copied, setCopied] = useState(null);
-  const [confirmRemove, setConfirmRemove] = useState(null);
   const [showCreateChallenge, setShowCreateChallenge] = useState(false);
   const [viewingChallenge, setViewingChallenge] = useState(false);
   const [showWeeklyReport, setShowWeeklyReport] = useState(false);
@@ -130,6 +150,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
   const [newName, setNewName] = useState(group.name);
   const [assistCandidate, setAssistCandidate] = useState(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [startingSession, setStartingSession] = useState(false);
 
   const queryClient = useQueryClient();
   const { isPro } = useSubscription();
@@ -166,7 +187,12 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     (r) => r.created_date?.slice(0, 10) === todayStr
   ).length;
 
-  const { data: habits = [] } = useQuery({
+  const {
+    data: habits = [],
+    isLoading: habitsLoading,
+    isError: habitsError,
+    refetch: refetchHabits,
+  } = useQuery({
     queryKey: ["habits", userEmail],
     queryFn: () => userEmail
       ? Habit.filter({ created_by: userEmail }, "-created_date")
@@ -177,7 +203,11 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: challenges = [] } = useQuery({
+  const {
+    data: challenges = [],
+    isError: challengesError,
+    refetch: refetchChallenges,
+  } = useQuery({
     queryKey: ["group-challenges", group.id],
     queryFn: () => GroupChallenge.filter(
       { group_id: group.id },
@@ -186,20 +216,26 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     enabled: !!group.id,
   });
 
-  // Freeze Assist (Pro-exclusive): who in this group currently has a habit
-  // eligible for a freeze. Only fetched for Pro users -- Free can't act on
-  // this, and get_group_freeze_candidates does real cross-member work
-  // server-side, not worth running for someone who could never use it.
-  const { data: freezeCandidates = [] } = useQuery({
+  // Freeze Assist: who in this group currently has a habit eligible for a
+  // freeze.
+  //
+  // No longer gated on isPro. It used to be, which meant a Free user never
+  // learned the feature existed -- the most generous thing Pro does in
+  // this product was invisible to exactly the people deciding whether to
+  // pay for it. Fetching it for everyone is safe: the RPC
+  // (20260915090003) authorises on authentication and group membership
+  // only, and assist_streak_freeze enforces the Pro check on the WRITE,
+  // so revealing the affordance cannot let a Free user act on it.
+  const { data: freezeCandidates = [], isError: freezeError } = useQuery({
     queryKey: ["group-freeze-candidates", group.id, todayStr],
     queryFn: () => getGroupFreezeCandidates(group.id, todayStr),
-    enabled: !!group.id && isPro,
+    enabled: !!group.id,
     staleTime: 5 * 60 * 1000,
   });
   const freezeCandidateByEmail = new Map(freezeCandidates.map((c) => [c.member_email, c]));
 
   const assistFreezeMutation = useMutation({
-    mutationFn: ({ targetEmail, habitId, missedDate }) => assistFreeze(targetEmail, habitId, missedDate),
+    mutationFn: ({ targetEmail, habitId, missedDate }) => assistFreeze(targetEmail, habitId, missedDate, group.id),
     onSuccess: (result, vars) => {
       if (!result.success) {
         toast.error(result.reason || "Couldn't save that streak. Please try again.", { duration: 3500 });
@@ -207,6 +243,8 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       }
       trackEvent("freeze_assist_used");
       queryClient.invalidateQueries({ queryKey: ["group-freeze-candidates", group.id] });
+      // The assist is now a feed event too.
+      queryClient.invalidateQueries({ queryKey: ["group-activity", group.id] });
       toast.success(`Streak saved! ${vars.targetName} will see it was you. 🔥`, { duration: 3000 });
     },
     onError: () => {
@@ -220,7 +258,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     // group_challenges_set_habit_name trigger's server-derived value),
     // not vars (the client-submitted payload) -- the client no longer
     // sends habit_name at all now that habit selection is habit_id-based.
-    onSuccess: async (newChallenge, vars) => {
+    onSuccess: (newChallenge, vars) => {
       trackEvent("challenge_started");
       queryClient.invalidateQueries({ queryKey: ["group-challenges"] });
       queryClient.invalidateQueries({ queryKey: ["challenge-notifications"] });
@@ -231,7 +269,16 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       // starter, only recipient_email varies per row).
       const otherMembers = (group.member_emails || []).filter((e) => e !== userEmail);
       const adminName = getDisplayName(userEmail, profiles) || userFullName || userEmail.split("@")[0];
-      await ChallengeNotification.createMany(
+      // Deliberately NOT awaited, and no longer ahead of the toast.
+      //
+      // This used to be `await`ed at the top of onSuccess, which meant a
+      // failed notification insert threw before the toast and before
+      // setViewingChallenge -- so the challenge was live for the whole
+      // group, nobody had been told, and the admin was left looking at a
+      // modal stuck on "Creating…". A notification failure must never
+      // present as a creation failure: by the time we are in onSuccess the
+      // challenge exists, and that is the fact the admin needs.
+      ChallengeNotification.createMany(
         otherMembers.map((email) => ({
           challenge_id: newChallenge.id,
           group_id: group.id,
@@ -243,7 +290,10 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
           recipient_email: email,
           dismissed: false,
         }))
-      );
+      ).catch((err) => {
+        console.error("Challenge created but notifications failed:", err);
+        toast.error("Challenge started, but we couldn't notify everyone. They'll still see it in the group.", { duration: 5000 });
+      });
 
       // Show a 5s toast for the admin with details and a "View Challenge" action
       toast(
@@ -266,6 +316,18 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       );
 
       setViewingChallenge(true);
+    },
+    // The only one of this file's three mutations that had no onError.
+    // GroupChallenge.create can genuinely fail --
+    // enforce_challenge_duration_plan_limit_trigger (20260915090002)
+    // exists precisely to reject a duration a Free plan may not use -- and
+    // without this the rejection surfaced nowhere at all.
+    onError: (err) => {
+      console.error("Failed to create challenge:", err);
+      const message = err?.message?.includes("duration")
+        ? "That challenge length isn't available on your plan."
+        : "Couldn't start the challenge. Check your connection and try again.";
+      toast.error(message, { duration: 4000 });
     },
   });
 
@@ -354,6 +416,33 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     unrankedRows.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
   );
 
+  // One tap, 25 minutes, straight to the lobby. The group screen
+  // deliberately does not ask for a duration: the lobby is where you find
+  // out who is coming, and 25 is both the existing default and the
+  // shortest option, so this is the smallest commitment on offer. Anyone
+  // wanting 45 or 60 still has the full modal on the Habits screen.
+  const handleSitWithUs = async () => {
+    if (startingSession) return;
+    setStartingSession(true);
+    try {
+      const session = await startFocusSession({
+        userEmail,
+        userName: userFullName || getDisplayName(userEmail, profiles),
+        group,
+        durationMinutes: DEFAULT_DURATION_MINUTES,
+      });
+      // Hands the session up the same way StartFocusModal's
+      // onSessionCreated does, so the room opens over whichever page
+      // rendered this screen.
+      onSessionStarted?.(session);
+    } catch (err) {
+      console.error("Failed to start focus session:", err);
+      toast.error("Couldn't start the session. Check your connection and try again.");
+    } finally {
+      setStartingSession(false);
+    }
+  };
+
   const handleCopy = (text, type) => {
     navigator.clipboard.writeText(text);
     setCopied(type);
@@ -409,7 +498,43 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
           isAdmin={isAdmin}
           onStartNew={() => { setViewingChallenge(false); setShowCreateChallenge(true); }}
         />
-        <CreateChallengeModal
+        {/* Invite, the weekly report and the invite code all sit below the
+          live content now. The old order led with Invite -- the rarest
+          action on the screen -- and put the only time-sensitive element,
+          an active challenge, last. These are the things you come here for
+          occasionally, so they read in that order.
+
+          Invite stays a real button rather than moving into the settings
+          sheet: GroupSettingsModal shows the invite code and can
+          regenerate it, but it has no share action, so InviteMembersSheet
+          is the only path to one. Demoted, not removed. */}
+      <Button
+        variant="outline"
+        className="w-full gap-2 rounded-xl h-11 border-primary/30 text-primary hover:bg-primary/5"
+        onClick={() => setShowInvite(true)}
+      >
+        <Share2 className="w-4 h-4" />
+        Invite Members
+      </Button>
+
+      {!isAdmin && group.invite_code && (
+        <div className="flex items-center gap-2 bg-muted/60 rounded-xl px-3 py-2">
+          <span className="text-xs text-muted-foreground flex-1 font-mono truncate">{group.invite_code}</span>
+          <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => handleCopy(group.invite_code, "code")} aria-label={copied === "code" ? "Copied!" : "Copy invite code"}>
+            {copied === "code" ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
+          </Button>
+        </div>
+      )}
+
+      <Button
+        variant="outline"
+        className="w-full gap-2 rounded-xl h-11"
+        onClick={() => setShowWeeklyReport(true)}
+      >
+        📊 Last week's report
+      </Button>
+
+      <CreateChallengeModal
           open={showCreateChallenge}
           onOpenChange={setShowCreateChallenge}
           group={group}
@@ -431,33 +556,54 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         </Button>
         <div className="flex-1 min-w-0">
           <h2 className="font-bold text-lg truncate">{group.name}</h2>
-          <p className="text-xs text-muted-foreground">{memberEmails.length} member{memberEmails.length !== 1 ? "s" : ""}</p>
+          {/* Your role, said out loud. The screen gated challenge creation,
+              settings and member removal on isAdmin and never once told you
+              which side of that line you were on -- capability was
+              communicated purely by absence, so a non-admin wondering why
+              they cannot start a challenge had nothing to read. Social.jsx
+              already announces it on the card you tapped to get here. */}
+          <p className="text-xs text-muted-foreground">
+            {memberEmails.length} member{memberEmails.length !== 1 ? "s" : ""}
+            {isAdmin ? " · you're the admin" : " · you're a member"}
+          </p>
         </div>
         <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full" onClick={() => setShowSettings(true)} aria-label="Group settings">
           <Settings className="w-4 h-4" />
         </Button>
       </div>
 
-      {/* Invite Members Button */}
+      {/* The screen's one primary action, and the only filled button on it.
+          PRODUCT.md names synchronised sessions as the mechanism the whole
+          app is organised around, and this was the one surface listing
+          your friends by name where you could not start one with them --
+          Social's groups LIST offered it, and it disappeared the moment
+          you opened a group. It is also what generates the activity this
+          screen now records. */}
       <Button
-        variant="outline"
-        className="w-full gap-2 rounded-xl h-11 border-primary/30 text-primary hover:bg-primary/5"
-        onClick={() => setShowInvite(true)}
+        className="w-full gap-2 rounded-xl h-11 font-semibold"
+        onClick={handleSitWithUs}
+        disabled={startingSession}
       >
-        <Share2 className="w-4 h-4" />
-        Invite Members
+        <Users className="w-4 h-4" />
+        {startingSession ? "Starting…" : "Sit with us now"}
       </Button>
+      <p className="text-xs text-muted-foreground text-center -mt-2">
+        Starts a 25-minute session · everyone here gets a nudge to join
+      </p>
 
-      {/* Admin panel */}
-      {!isAdmin && group.invite_code && (
-        <div className="flex items-center gap-2 bg-muted/60 rounded-xl px-3 py-2">
-          <span className="text-xs text-muted-foreground flex-1 font-mono truncate">{group.invite_code}</span>
-          <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => handleCopy(group.invite_code, "code")} aria-label={copied === "code" ? "Copied!" : "Copy invite code"}>
-            {copied === "code" ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
-          </Button>
-        </div>
-      )}
+      <GroupActivityFeed
+        groupId={group.id}
+        userEmail={userEmail}
+        profiles={profiles}
+        memberCount={memberEmails.length}
+        isSolo={memberEmails.length <= 1}
+      />
 
+      {/* Leaderboard, now below the feed rather than being the screen's
+          whole point. Unchanged otherwise: the score feeds Social's own
+          leaderboard and the badge definitions, and ranking is a real
+          draw for part of the audience. The screen gains a purpose rather
+          than trading one away. */}
       {/* Leaderboard */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-2">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Leaderboard</p>
@@ -468,6 +614,30 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         <p className="text-[11px] text-muted-foreground mb-3">
           Score = Best Streak × 2 + Consistency %
         </p>
+
+        {/* Your own row is computed from your habits, so until that query
+            resolves the leaderboard cannot say where you place. It used to
+            render anyway -- 0 pts and "No habits yet" -- which showed you
+            as the group's worst performer for a spinner's worth of
+            latency, and permanently if the fetch failed. */}
+        {habitsLoading ? (
+          <div className="space-y-2" role="status" aria-label="Loading leaderboard">
+            {Array.from({ length: Math.min(rows.length || 3, 5) }).map((_, i) => (
+              <div key={i} className="h-12 rounded-xl bg-primary/10 animate-pulse" />
+            ))}
+          </div>
+        ) : habitsError ? (
+          <LoadErrorStrip
+            message="Couldn't load your habits, so your score is missing."
+            onRetry={() => refetchHabits()}
+          />
+        ) : (
+        <>
+        {freezeError && isPro && (
+          <p className="text-xs text-muted-foreground mb-2">
+            Couldn&apos;t check who needs a streak save right now.
+          </p>
+        )}
         {rows.map((row) => (
           <div key={row.email} className={cn(
             "flex items-center gap-3 p-2 rounded-xl",
@@ -576,48 +746,70 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                 onSend={(data) => createReactionMutation.mutateAsync(data)}
               />
             )}
-            {/* Freeze Assist: only ever visible to a Pro viewer, and only
-                for a groupmate get_group_freeze_candidates actually found
-                eligible right now -- most rows never show this. */}
-            {!row.isMe && isPro && freezeCandidateByEmail.has(row.email) && (
+            {/* Freeze Assist, now shown to everyone it is genuinely
+                available for -- only for a groupmate the RPC actually
+                found eligible right now, so most rows never show it.
+                A Free viewer gets the same affordance in a locked state
+                that opens the upgrade path rather than the confirm: the
+                boundary is now something you can see before you reach
+                for it, instead of a feature you never knew existed. */}
+            {!row.isMe && freezeCandidateByEmail.has(row.email) && (
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-11 w-11 shrink-0"
-                style={{ color: "hsl(var(--frozen-text))" }}
-                onClick={() => setAssistCandidate({ ...freezeCandidateByEmail.get(row.email), targetName: row.name })}
-                aria-label={`Save ${row.name}'s streak`}
-                title={`Save ${row.name}'s streak`}
+                className={cn("h-11 w-11 shrink-0", !isPro && "opacity-60")}
+                style={isPro ? { color: "hsl(var(--frozen-text))" } : undefined}
+                onClick={() => isPro
+                  ? setAssistCandidate({ ...freezeCandidateByEmail.get(row.email), targetName: row.name })
+                  : setShowUpgrade(true)}
+                aria-label={isPro
+                  ? `Save ${row.name}'s streak`
+                  : `Save ${row.name}'s streak — a Pro feature. See what Pro includes.`}
               >
-                ❄️
+                {isPro ? "❄️" : <Lock className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />}
               </Button>
             )}
-            {isAdmin && !row.isMe && (
-              confirmRemove === row.email ? (
-                // h-11 without w-11: these two carry text labels, and a
-                // fixed 44px width would clamp "Remove" and "Cancel" into
-                // a square and clip them. Height is the axis that was
-                // failing anyway -- at h-7 this was a 28px target, the
-                // smallest in the file, on the one action here that cannot
-                // be undone.
-                <div className="flex gap-1 shrink-0">
-                  <Button size="sm" variant="destructive" className="h-11 text-xs"
-                    onClick={() => { onRemoveMember(row.email); setConfirmRemove(null); }}>
-                    Remove
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-11 text-xs" onClick={() => setConfirmRemove(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
-                <Button size="icon" variant="ghost" className="h-11 w-11 text-muted-foreground hover:text-destructive shrink-0"
-                  onClick={() => setConfirmRemove(row.email)} aria-label={`Remove ${row.email} from group`}>
-                  <UserMinus className="w-3.5 h-3.5" />
-                </Button>
-              )
-            )}
+            {/* Member removal used to live here, as a per-row icon that
+                swapped into an inline Remove/Cancel pair. It is gone, in
+                favour of the identical flow GroupSettingsModal already
+                owns (reached via the gear in the header), which is the
+                correct one in every respect this one was not:
+                  * it names the person ("Remove {name} from the group?")
+                    where this confirm said only "Remove";
+                  * it awaits the call and reports failure, where this
+                    fired `onRemoveMember(row.email)` and discarded the
+                    promise -- groups_update is creator-only, so a failed
+                    write was an unhandled rejection with no toast and no
+                    restored state, and the row simply reappeared on the
+                    next refetch;
+                  * it shows a "Removing…" pending state, where this had
+                    none;
+                  * and it uses the member's display name in its
+                    aria-label, where this read out a raw email address
+                    exposed nowhere else on the screen.
+                Removing it also unstacks the row: react, Save-streak and
+                remove-member were three adjacent ghost buttons at the
+                right edge, one of them irreversible, with no visual
+                weight to tell them apart under a thumb. */}
           </div>
         ))}
+        {/* The reaction allowance, stated once for the card rather than
+            per row. It was previously discoverable only by hitting it:
+            ReactionButton computed `remaining` and put it in a `title`,
+            which is a hover tooltip and so says nothing at all on the
+            touch screen this ships to -- a failure this very file
+            documents, for a different element, a hundred lines up. Said
+            plainly, a free user sees the wall coming instead of meeting
+            it mid-gesture. Omitted entirely for Pro, who have no wall. */}
+        {!isPro && memberEmails.length > 1 && (
+          <p className="text-xs text-muted-foreground pt-2">
+            {reactionsSentToday >= DAILY_LIMIT
+              ? "You've used today's 3 reactions — Pro removes the cap."
+              : `${DAILY_LIMIT - reactionsSentToday} of ${DAILY_LIMIT} reactions left today`}
+          </p>
+        )}
+        </>
+        )}
       </div>
 
       {/* A "Habits being tracked" card used to sit here, listing category
@@ -631,19 +823,6 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
           wanted back, it needs a get_group_habit_categories(p_group_id)
           SECURITY DEFINER RPC alongside get_group_freeze_candidates
           (20260915090003), returning distinct-member counts per category. */}
-      {/* Last week's report */}
-      {/* h-11 only: full-width already, so height was the failing axis.
-          Not in the brief's list of four -- it has no explicit size, so it
-          inherits the Button default of h-9 and reads as compliant until
-          you resolve the variant. */}
-      <Button
-        variant="outline"
-        className="w-full gap-2 rounded-xl h-11"
-        onClick={() => setShowWeeklyReport(true)}
-      >
-        📊 Last week's report
-      </Button>
-
       {/* Group Challenge */}
       {activeChallenge ? (
         <button
@@ -661,6 +840,16 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
             <span className="text-xs bg-accent/20 text-accent font-semibold px-2 py-0.5 rounded-full">Live</span>
           </div>
         </button>
+      ) : challengesError ? (
+        // Not the "Start a Group Challenge" CTA. A failed challenges fetch
+        // leaves activeChallenge undefined, which is indistinguishable from
+        // "this group has no challenge" -- so the admin was invited to
+        // start a second one on top of a live challenge they simply
+        // couldn't see.
+        <LoadErrorStrip
+          message="Couldn't load this group's challenges."
+          onRetry={() => refetchChallenges()}
+        />
       ) : isAdmin ? (
         <Button
           variant="outline"

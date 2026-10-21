@@ -56,17 +56,31 @@ export default function CreateChallengeModal({ open, onOpenChange, group, onCrea
     // habit_name is intentionally not sent here -- the group_challenges_
     // set_habit_name trigger derives it server-side from habit_id, the
     // only place it's now considered authoritative.
-    await onCreate({
-      group_id: group.id,
-      habit_id: habitId,
-      description: description.trim() || undefined,
-      duration_days: effectiveDuration,
-      start_date: startDate,
-      end_date: end,
-      member_emails: group.member_emails || [],
-      is_active: true,
-    });
-    setLoading(false);
+    // try/finally so `loading` always clears. Without it, a rejected
+    // onCreate skipped every line below: the button stayed disabled
+    // reading "Creating…" forever, with no message and no way back except
+    // dismissing the dialog. The reset and the close now happen only on
+    // success, so a failure leaves the admin's entered values intact to
+    // retry -- the caller surfaces the reason via its own onError.
+    try {
+      await onCreate({
+        group_id: group.id,
+        habit_id: habitId,
+        description: description.trim() || undefined,
+        duration_days: effectiveDuration,
+        start_date: startDate,
+        end_date: end,
+        member_emails: group.member_emails || [],
+        is_active: true,
+      });
+    } catch {
+      // Reported by the mutation's onError; nothing to add here beyond
+      // keeping the dialog open with the form still filled in.
+      return;
+    } finally {
+      setLoading(false);
+    }
+
     setHabitId("");
     setDescription("");
     setDuration(7);

@@ -1,18 +1,13 @@
 import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Group, FocusSession, FocusSessionNotification } from "@/api/entities";
-import { addMinutes, formatISO } from "date-fns";
+import { Group } from "@/api/entities";
 import { useQuery } from "@tanstack/react-query";
-import { trackEvent } from "@/lib/analytics";
+import { startFocusSession, LOBBY_MINUTES } from "@/lib/focusSessionStart";
 
 const DURATIONS = [25, 45, 60];
-const LOBBY_MINUTES = 2;
-
-function genCode() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
-}
 
 export default function StartFocusModal({ open, onOpenChange, userEmail, userName, onSessionCreated }) {
   const [duration, setDuration] = useState(25);
@@ -29,48 +24,24 @@ export default function StartFocusModal({ open, onOpenChange, userEmail, userNam
 
   const handleStart = async () => {
     setLoading(true);
-    const now = new Date();
-    // started_at/ends_at are intentionally left unset here -- they're set
-    // by start_focus_session_now() when the lobby actually ends (natural
-    // elapse or host force-start), so the real focus timer counts from
-    // when it truly begins rather than from session creation.
-    const session = await FocusSession.create({
-      host_email: userEmail,
-      host_name: userName,
-      group_id: groupId || undefined,
-      duration_minutes: duration,
-      lobby_ends_at: formatISO(addMinutes(now, LOBBY_MINUTES)),
-      status: "waiting",
-      participant_emails: [userEmail],
-      session_code: genCode(),
-    });
-    trackEvent("focus_session_started");
-    setLoading(false);
-    onOpenChange(false);
-    onSessionCreated(session);
-
-    // Fire-and-forget: the host must not wait on this to land in their own
-    // lobby. Only fires when a group was actually picked (groupId truthy) --
-    // no group selected means no one gets notified, same as today.
-    if (groupId) {
-      const group = groups.find((g) => g.id === groupId);
-      const otherMembers = (group?.member_emails || []).filter((e) => e !== userEmail);
-      if (otherMembers.length > 0) {
-        FocusSessionNotification.createMany(
-          otherMembers.map((email) => ({
-            session_id: session.id,
-            session_code: session.session_code,
-            group_id: groupId,
-            group_name: group.name,
-            host_email: userEmail,
-            host_name: userName,
-            duration_minutes: duration,
-            lobby_ends_at: session.lobby_ends_at,
-            recipient_email: email,
-            dismissed: false,
-          }))
-        ).catch((err) => console.warn("Failed to notify group of focus session:", err));
-      }
+    try {
+      // Creation and group notification both live in
+      // lib/focusSessionStart.js, shared with GroupDashboard's
+      // "Sit with us now" -- one path for one row, so the two cannot
+      // drift on what a session looks like or who gets told about it.
+      const session = await startFocusSession({
+        userEmail,
+        userName,
+        group: groups.find((g) => g.id === groupId) || null,
+        durationMinutes: duration,
+      });
+      onOpenChange(false);
+      onSessionCreated(session);
+    } catch (err) {
+      console.error("Failed to start focus session:", err);
+      toast.error("Couldn't start the session. Check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
