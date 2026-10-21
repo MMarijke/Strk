@@ -8,7 +8,7 @@ import { Users, Trophy, Plus, LogIn, Crown, Medal, Sparkles, Handshake } from "l
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getRank } from "@/lib/utils";
+import { getRank, assignCompetitionRanks, ordinal } from "@/lib/utils";
 import { getDisplayName } from "@/lib/displayName";
 import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
 import { cn } from "@/lib/utils";
@@ -34,21 +34,39 @@ function calcConsistency(completions) {
   return Math.round(last30.filter((d) => completions.includes(d)).length / 30 * 100);
 }
 
-function RankIcon({ rank }) {
-  if (rank === 1) return <Crown className="w-5 h-5 text-yellow-500" />;
-  if (rank === 2) return <Medal className="w-5 h-5 text-muted-foreground" />;
-  if (rank === 3) return <Medal className="w-5 h-5 text-amber-600" />;
-  return <span className="text-sm font-bold text-muted-foreground w-5 text-center">#{rank}</span>;
+// The icons carry no text, so a screen reader previously heard nothing at
+// all for the top three places and a bare "#4" for the rest. The place is
+// the single most important fact in a leaderboard row, so it gets a real
+// accessible name -- and when it's shared, says so.
+function RankIcon({ rank, isTied }) {
+  const label = isTied ? `Tied for ${ordinal(rank)}` : ordinal(rank);
+  const icon =
+    rank === 1 ? <Crown className="w-5 h-5 text-yellow-500" aria-hidden="true" /> :
+    rank === 2 ? <Medal className="w-5 h-5 text-muted-foreground" aria-hidden="true" /> :
+    rank === 3 ? <Medal className="w-5 h-5 text-amber-600" aria-hidden="true" /> :
+    <span className="text-sm font-bold text-muted-foreground w-5 text-center tabular-nums" aria-hidden="true">#{rank}</span>;
+
+  return (
+    <>
+      {icon}
+      <span className="sr-only">{label}</span>
+    </>
+  );
 }
 
-const LeaderboardRow = React.memo(function LeaderboardRow({ rank, entry }) {
+const LeaderboardRow = React.memo(function LeaderboardRow({ entry }) {
+  // entry.rank, not the row's index: equal scores share a place, so the
+  // position in the list and the place awarded are no longer the same
+  // number. The highlight follows the place too, so both halves of a tie
+  // for 3rd are lit rather than just whichever one sorted first.
+  const { rank, isTied } = entry;
   return (
     <div className={cn(
       "flex items-center gap-3 p-3 rounded-xl transition-colors",
       rank <= 3 ? "bg-muted/60" : "hover:bg-muted/40"
     )}>
       <div className="w-8 flex items-center justify-center shrink-0">
-        <RankIcon rank={rank} />
+        <RankIcon rank={rank} isTied={isTied} />
       </div>
       <div
         className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
@@ -70,8 +88,15 @@ const LeaderboardRow = React.memo(function LeaderboardRow({ rank, entry }) {
         <p className="text-xs text-muted-foreground">{entry.consistency}% consistency</p>
       </div>
       <div className="text-right shrink-0">
-        <p className="text-sm font-bold text-foreground">{entry.score}</p>
-        <p className="text-[10px] text-muted-foreground">points</p>
+        <p className="text-sm font-bold text-foreground tabular-nums">{entry.score}</p>
+        {/* The tie rides on the unit line rather than taking a third line
+            of its own, which would make tied rows taller than untied ones
+            and leave the list ragged. Already announced by RankIcon's
+            accessible name, so this is aria-hidden to avoid saying it
+            twice. */}
+        <p className="text-[10px] text-muted-foreground">
+          points{isTied && <span aria-hidden="true"> · tied</span>}
+        </p>
       </div>
     </div>);
 
@@ -245,7 +270,7 @@ export default function Social() {
     Math.round(habits.reduce((s, h) => s + calcConsistency(h.completions || []), 0) / habits.length) :
     0;
 
-    return [
+    const sorted = [
     {
       id: "me",
       name: myDisplayName,
@@ -270,6 +295,10 @@ export default function Social() {
       isPro: p.plan === "pro"
     }))].
     sort((a, b) => b.score - a.score);
+
+    // Equal scores share a place rather than being separated by whatever
+    // order the rows arrived in -- see assignCompetitionRanks in lib/utils.
+    return assignCompetitionRanks(sorted);
   }, [user?.email, user?.full_name, profiles, habits, isPro, peerEmails]);
 
   // The user is in their own leaderboard, so "is there anyone to compare
@@ -423,9 +452,9 @@ export default function Social() {
                 <p className="text-xs text-muted-foreground mb-3">
                   Score = Best Streak × 2 + Consistency %
                 </p>
-                {leaderboard.map((entry, i) =>
+                {leaderboard.map((entry) =>
               <div key={entry.id} className={cn(entry.isMe && "ring-1 ring-primary/30 rounded-xl")}>
-                    <LeaderboardRow rank={i + 1} entry={entry} />
+                    <LeaderboardRow entry={entry} />
                   </div>
               )}
               </Card> :

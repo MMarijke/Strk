@@ -16,7 +16,7 @@ import GroupSettingsModal from "./GroupSettingsModal";
 import FreezeAssistConfirmModal from "./FreezeAssistConfirmModal";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
 import { getDisplayName } from "@/lib/displayName";
-import { getRank } from "@/lib/utils";
+import { getRank, assignCompetitionRanks, ordinal } from "@/lib/utils";
 import { toast } from "sonner";
 import { format as fmtDate } from "date-fns";
 import { trackEvent } from "@/lib/analytics";
@@ -96,11 +96,23 @@ function describeMemberActivity(lastCompletionDate) {
   return `Completed ${format(day, sameYear ? "MMM d" : "MMM d, yyyy")}`;
 }
 
-function RankIcon({ rank }) {
-  if (rank === 1) return <Crown className="w-4 h-4 text-yellow-500" />;
-  if (rank === 2) return <Medal className="w-4 h-4 text-muted-foreground" />;
-  if (rank === 3) return <Medal className="w-4 h-4 text-amber-600" />;
-  return <span className="text-xs font-bold text-muted-foreground w-4 text-center">#{rank}</span>;
+// Same change as Social.jsx's RankIcon, for the same reasons: the icons
+// carry no text, so the place -- the single most important fact in a
+// leaderboard row -- was announced as nothing at all for the top three.
+function RankIcon({ rank, isTied }) {
+  const label = isTied ? `Tied for ${ordinal(rank)}` : ordinal(rank);
+  const icon =
+    rank === 1 ? <Crown className="w-4 h-4 text-yellow-500" aria-hidden="true" /> :
+    rank === 2 ? <Medal className="w-4 h-4 text-muted-foreground" aria-hidden="true" /> :
+    rank === 3 ? <Medal className="w-4 h-4 text-amber-600" aria-hidden="true" /> :
+    <span className="text-xs font-bold text-muted-foreground w-4 text-center tabular-nums" aria-hidden="true">#{rank}</span>;
+
+  return (
+    <>
+      {icon}
+      <span className="sr-only">{label}</span>
+    </>
+  );
 }
 
 function generateInviteCode() {
@@ -305,7 +317,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
   const myStats = calcScore(habits);
   const myTopHabit = getTopHabit(habits);
 
-  const rows = memberEmails.map((email) => {
+  const unrankedRows = memberEmails.map((email) => {
     const name = email === userEmail
       ? (getDisplayName(email, profiles) !== email.split("@")[0] ? getDisplayName(email, profiles) : (userFullName || getDisplayName(email, profiles)))
       : getDisplayName(email, profiles);
@@ -337,7 +349,15 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       lastCompletionDate: memberProfile.last_completion_date || null,
       hasData: true,
     };
-  }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  });
+
+  // Equal scores share a place rather than being separated by whatever
+  // order member_emails happened to be in -- see assignCompetitionRanks in
+  // lib/utils. A member with no readable profile keeps score: null, gets a
+  // position, and is never reported as tied with another one.
+  const rows = assignCompetitionRanks(
+    unrankedRows.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+  );
 
   const categoryCount = {};
   habits.forEach((h) => {
@@ -458,13 +478,16 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         <p className="text-[11px] text-muted-foreground mb-3">
           Score = Best Streak × 2 + Consistency %
         </p>
-        {rows.map((row, i) => (
+        {rows.map((row) => (
           <div key={row.email} className={cn(
             "flex items-center gap-3 p-2 rounded-xl",
-            row.isMe ? "bg-primary/5 ring-1 ring-primary/20" : i < 3 ? "bg-muted/50" : ""
+            // row.rank, not the row's index: the top-three highlight now
+            // follows the place awarded, so both halves of a tie for 3rd
+            // are lit rather than just whichever one sorted first.
+            row.isMe ? "bg-primary/5 ring-1 ring-primary/20" : row.rank <= 3 ? "bg-muted/50" : ""
           )}>
             <div className="w-6 flex items-center justify-center shrink-0">
-              <RankIcon rank={i + 1} />
+              <RankIcon rank={row.rank} isTied={row.isTied} />
             </div>
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary shrink-0">
               {row.name[0].toUpperCase()}
@@ -518,7 +541,14 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
               {row.hasData ? (
                 <>
                   <p className="text-sm font-bold tabular-nums">{row.score}</p>
-                  <p className="text-[10px] text-muted-foreground">pts</p>
+                  {/* The tie rides on the unit line rather than taking a
+                      third line of its own, which would make tied rows
+                      taller than untied ones and leave the list ragged.
+                      Already announced by RankIcon's accessible name, so
+                      this is aria-hidden to avoid saying it twice. */}
+                  <p className="text-[10px] text-muted-foreground">
+                    pts{row.isTied && <span aria-hidden="true"> · tied</span>}
+                  </p>
                 </>
               ) : (
                 // The name line already explains this state -- repeating it

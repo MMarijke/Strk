@@ -117,6 +117,59 @@ export const RANKS = [
   { key: "legend",  title: "Legend",  emoji: "👑", minScore: 400, maxScore: Infinity, color: "gold" },
 ];
 
+// Standard competition ranking ("1-2-2-4"): equal scores share a place, and
+// the next distinct score skips the places the tie consumed.
+//
+// Both leaderboards previously ranked by array index, so two people with an
+// identical score got different places -- one a crown, the other a silver
+// medal -- decided by whatever order the rows arrived in. On this product
+// that is not a cosmetic detail: the score is the whole point of the
+// screen, and awarding one of two equal performances a lower place is
+// simply wrong, in a way a user can notice by reading two adjacent rows.
+//
+// Expects `entries` already sorted by score, descending. Returns new
+// objects (never mutates) carrying `rank` and `isTied`.
+//
+// A non-numeric score -- GroupDashboard uses `score: null` for a member
+// whose profile isn't readable -- still gets a position so the list keeps
+// counting, but is never reported as tied: two members who share nothing
+// but the absence of data have not tied with each other.
+export function assignCompetitionRanks(entries) {
+  let prevScore;
+  let prevRank = 0;
+
+  const ranked = entries.map((entry, i) => {
+    const comparable = typeof entry.score === "number";
+    const rank = comparable && i > 0 && entry.score === prevScore ? prevRank : i + 1;
+    prevScore = comparable ? entry.score : undefined;
+    prevRank = rank;
+    return { ...entry, rank };
+  });
+
+  const seen = new Set();
+  const shared = new Set();
+  for (const entry of ranked) {
+    if (typeof entry.score !== "number") continue;
+    if (seen.has(entry.rank)) shared.add(entry.rank);
+    seen.add(entry.rank);
+  }
+
+  return ranked.map((entry) => ({
+    ...entry,
+    isTied: typeof entry.score === "number" && shared.has(entry.rank),
+  }));
+}
+
+// "1st" / "2nd" / "23rd" -- for the accessible name on a rank, which has
+// to read as a place rather than as a bare digit next to an unlabelled
+// medal icon.
+export function ordinal(n) {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const suffix = { 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th";
+  return `${n}${suffix}`;
+}
+
 export function getRank(score) {
   const s = Math.max(0, score);
   const idx = RANKS.findLastIndex((r) => s >= r.minScore);
