@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Reaction, Habit, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, subDays, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
-import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, UserMinus, Settings, Trophy, Plus, Sparkles } from "lucide-react";
+import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
@@ -141,7 +141,6 @@ function getInviteLink(code) {
 export default function GroupDashboard({ group, userId, userEmail, userFullName, profiles = [], onBack, onUpdate, onDelete, onRemoveMember }) {
   const [showSettings, setShowSettings] = useState(false);
   const [copied, setCopied] = useState(null);
-  const [confirmRemove, setConfirmRemove] = useState(null);
   const [showCreateChallenge, setShowCreateChallenge] = useState(false);
   const [viewingChallenge, setViewingChallenge] = useState(false);
   const [showWeeklyReport, setShowWeeklyReport] = useState(false);
@@ -668,30 +667,28 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                 ❄️
               </Button>
             )}
-            {isAdmin && !row.isMe && (
-              confirmRemove === row.email ? (
-                // h-11 without w-11: these two carry text labels, and a
-                // fixed 44px width would clamp "Remove" and "Cancel" into
-                // a square and clip them. Height is the axis that was
-                // failing anyway -- at h-7 this was a 28px target, the
-                // smallest in the file, on the one action here that cannot
-                // be undone.
-                <div className="flex gap-1 shrink-0">
-                  <Button size="sm" variant="destructive" className="h-11 text-xs"
-                    onClick={() => { onRemoveMember(row.email); setConfirmRemove(null); }}>
-                    Remove
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-11 text-xs" onClick={() => setConfirmRemove(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
-                <Button size="icon" variant="ghost" className="h-11 w-11 text-muted-foreground hover:text-destructive shrink-0"
-                  onClick={() => setConfirmRemove(row.email)} aria-label={`Remove ${row.email} from group`}>
-                  <UserMinus className="w-3.5 h-3.5" />
-                </Button>
-              )
-            )}
+            {/* Member removal used to live here, as a per-row icon that
+                swapped into an inline Remove/Cancel pair. It is gone, in
+                favour of the identical flow GroupSettingsModal already
+                owns (reached via the gear in the header), which is the
+                correct one in every respect this one was not:
+                  * it names the person ("Remove {name} from the group?")
+                    where this confirm said only "Remove";
+                  * it awaits the call and reports failure, where this
+                    fired `onRemoveMember(row.email)` and discarded the
+                    promise -- groups_update is creator-only, so a failed
+                    write was an unhandled rejection with no toast and no
+                    restored state, and the row simply reappeared on the
+                    next refetch;
+                  * it shows a "Removing…" pending state, where this had
+                    none;
+                  * and it uses the member's display name in its
+                    aria-label, where this read out a raw email address
+                    exposed nowhere else on the screen.
+                Removing it also unstacks the row: react, Save-streak and
+                remove-member were three adjacent ghost buttons at the
+                right edge, one of them irreversible, with no visual
+                weight to tell them apart under a thumb. */}
           </div>
         ))}
         </>

@@ -202,14 +202,20 @@ export default function GroupSettingsModal({
                     <div key={email} className="rounded-xl bg-muted/50 p-3">
                       {confirmRemove === email ? (
                         <div className="space-y-2">
-                          <p className="text-xs font-medium text-destructive">
+                          <p className="text-xs font-medium text-destructive-text">
                             Remove {name} from the group?
                           </p>
                           <div className="flex gap-2">
-                            <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => handleRemove(email)} disabled={removingEmail === email}>
+                            {/* h-11 without w-11: both carry text labels,
+                                so a fixed 44px width would clamp them.
+                                Height was the failing axis -- at h-7 these
+                                were 28px, and this is now the only route
+                                to an irreversible action, so they have to
+                                be properly tappable. */}
+                            <Button size="sm" variant="destructive" className="h-11 text-xs" onClick={() => handleRemove(email)} disabled={removingEmail === email}>
                               {removingEmail === email ? "Removing…" : "Remove"}
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmRemove(null)} disabled={removingEmail === email}>
+                            <Button size="sm" variant="ghost" className="h-11 text-xs" onClick={() => setConfirmRemove(null)} disabled={removingEmail === email}>
                               Cancel
                             </Button>
                           </div>
@@ -225,7 +231,7 @@ export default function GroupSettingsModal({
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                            className="h-11 w-11 text-muted-foreground hover:text-destructive shrink-0"
                             onClick={() => setConfirmRemove(email)}
                             aria-label={`Remove ${name} from group`}
                           >
