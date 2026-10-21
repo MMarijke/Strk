@@ -156,10 +156,12 @@ export async function getGroupFreezeCandidates(groupId, todayStr) {
     p_group_id: groupId,
     p_today: todayStr,
   });
-  if (error) {
-    console.error("getGroupFreezeCandidates failed:", error);
-    return [];
-  }
+  // Throws rather than returning [] -- GroupDashboard is the only caller
+  // and it now renders an error state. Swallowing the error made a failed
+  // RPC indistinguishable from "nobody in this group needs a freeze right
+  // now", so every Save-streak button silently vanished and the Pro user
+  // was left believing the feature had nothing to offer.
+  if (error) throw error;
   return data || [];
 }
 

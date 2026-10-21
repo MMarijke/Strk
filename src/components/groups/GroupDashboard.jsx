@@ -94,6 +94,25 @@ function describeMemberActivity(lastCompletionDate) {
 // Same change as Social.jsx's RankIcon, for the same reasons: the icons
 // carry no text, so the place -- the single most important fact in a
 // leaderboard row -- was announced as nothing at all for the top three.
+// Same inline strip ChallengeLeaderboard already uses for this exact job
+// (a failed fetch inside an otherwise-usable card), so a load failure looks
+// the same wherever it happens in this feature rather than inventing a
+// second error language one folder over.
+function LoadErrorStrip({ message, onRetry }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive-text text-xs">
+      <span>{message}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="font-semibold underline underline-offset-2 shrink-0 h-11 px-1"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 function RankIcon({ rank, isTied }) {
   const label = isTied ? `Tied for ${ordinal(rank)}` : ordinal(rank);
   const icon =
@@ -166,7 +185,12 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     (r) => r.created_date?.slice(0, 10) === todayStr
   ).length;
 
-  const { data: habits = [] } = useQuery({
+  const {
+    data: habits = [],
+    isLoading: habitsLoading,
+    isError: habitsError,
+    refetch: refetchHabits,
+  } = useQuery({
     queryKey: ["habits", userEmail],
     queryFn: () => userEmail
       ? Habit.filter({ created_by: userEmail }, "-created_date")
@@ -177,7 +201,11 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: challenges = [] } = useQuery({
+  const {
+    data: challenges = [],
+    isError: challengesError,
+    refetch: refetchChallenges,
+  } = useQuery({
     queryKey: ["group-challenges", group.id],
     queryFn: () => GroupChallenge.filter(
       { group_id: group.id },
@@ -190,7 +218,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
   // eligible for a freeze. Only fetched for Pro users -- Free can't act on
   // this, and get_group_freeze_candidates does real cross-member work
   // server-side, not worth running for someone who could never use it.
-  const { data: freezeCandidates = [] } = useQuery({
+  const { data: freezeCandidates = [], isError: freezeError } = useQuery({
     queryKey: ["group-freeze-candidates", group.id, todayStr],
     queryFn: () => getGroupFreezeCandidates(group.id, todayStr),
     enabled: !!group.id && isPro,
@@ -492,6 +520,30 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         <p className="text-[11px] text-muted-foreground mb-3">
           Score = Best Streak × 2 + Consistency %
         </p>
+
+        {/* Your own row is computed from your habits, so until that query
+            resolves the leaderboard cannot say where you place. It used to
+            render anyway -- 0 pts and "No habits yet" -- which showed you
+            as the group's worst performer for a spinner's worth of
+            latency, and permanently if the fetch failed. */}
+        {habitsLoading ? (
+          <div className="space-y-2" role="status" aria-label="Loading leaderboard">
+            {Array.from({ length: Math.min(rows.length || 3, 5) }).map((_, i) => (
+              <div key={i} className="h-12 rounded-xl bg-primary/10 animate-pulse" />
+            ))}
+          </div>
+        ) : habitsError ? (
+          <LoadErrorStrip
+            message="Couldn't load your habits, so your score is missing."
+            onRetry={() => refetchHabits()}
+          />
+        ) : (
+        <>
+        {freezeError && isPro && (
+          <p className="text-xs text-muted-foreground mb-2">
+            Couldn&apos;t check who needs a streak save right now.
+          </p>
+        )}
         {rows.map((row) => (
           <div key={row.email} className={cn(
             "flex items-center gap-3 p-2 rounded-xl",
@@ -642,6 +694,8 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
             )}
           </div>
         ))}
+        </>
+        )}
       </div>
 
       {/* A "Habits being tracked" card used to sit here, listing category
@@ -685,6 +739,16 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
             <span className="text-xs bg-accent/20 text-accent font-semibold px-2 py-0.5 rounded-full">Live</span>
           </div>
         </button>
+      ) : challengesError ? (
+        // Not the "Start a Group Challenge" CTA. A failed challenges fetch
+        // leaves activeChallenge undefined, which is indistinguishable from
+        // "this group has no challenge" -- so the admin was invited to
+        // start a second one on top of a live challenge they simply
+        // couldn't see.
+        <LoadErrorStrip
+          message="Couldn't load this group's challenges."
+          onRetry={() => refetchChallenges()}
+        />
       ) : isAdmin ? (
         <Button
           variant="outline"
