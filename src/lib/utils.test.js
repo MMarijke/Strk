@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { annualSavingsPct, assignCompetitionRanks, ordinal } from "./utils";
+import { describe, it, expect, afterEach } from "vitest";
+import { annualSavingsPct, assignCompetitionRanks, ordinal, prefersReducedMotion } from "./utils";
 
 // Paddle price objects always look like { unit_price: { amount, currency_code } },
 // amount in cents as a string (matching Paddle's own API response shape).
@@ -136,5 +136,27 @@ describe("ordinal", () => {
 
   it("resumes st/nd/rd past the exceptions", () => {
     expect([21, 22, 23, 101, 111, 112].map(ordinal)).toEqual(["21st", "22nd", "23rd", "101st", "111th", "112th"]);
+  });
+});
+
+describe("prefersReducedMotion", () => {
+  const realMatchMedia = window.matchMedia;
+  afterEach(() => { window.matchMedia = realMatchMedia; });
+
+  it("reports the preference when the OS asks for reduced motion", () => {
+    window.matchMedia = (q) => ({ matches: q === "(prefers-reduced-motion: reduce)" });
+    expect(prefersReducedMotion()).toBe(true);
+  });
+
+  it("reports no preference when the query does not match", () => {
+    window.matchMedia = () => ({ matches: false });
+    expect(prefersReducedMotion()).toBe(false);
+  });
+
+  it("defaults to showing motion where matchMedia is unavailable, rather than throwing", () => {
+    // An old browser or a bare test environment must still get the
+    // celebration, not a crash on the completion screen.
+    window.matchMedia = undefined;
+    expect(prefersReducedMotion()).toBe(false);
   });
 });

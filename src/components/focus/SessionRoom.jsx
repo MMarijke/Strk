@@ -6,7 +6,7 @@ import { Copy, Check, ChevronDown, Share2, TimerOff, WifiOff, Flame } from "luci
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Dialog, DialogPortal, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, prefersReducedMotion } from "@/lib/utils";
 import confetti from "canvas-confetti";
 import { showNotification } from "@/lib/showNotification";
 import { toast } from "sonner";
@@ -16,10 +16,19 @@ import ReactionButton from "@/components/groups/ReactionButton";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@/hooks/useSubscription";
 
-// Mirrors StartFocusModal's LOBBY_MINUTES. Only used to turn the remaining
-// seconds into the ring's fraction -- the authoritative deadline is always
-// the server-set lobby_ends_at, never this number.
-const LOBBY_SECONDS = 2 * 60;
+// How long this session's lobby runs, in seconds, measured from the row
+// itself rather than from a copy of StartFocusModal's LOBBY_MINUTES. The
+// ring needs a total to divide by, and a second hardcoded 2 would be a
+// drift source the moment that constant ever changes -- created_at and
+// lobby_ends_at are both already on the row and their difference IS the
+// lobby length. Falls back to two minutes only if created_at is somehow
+// missing, so the ring degrades to approximately right rather than to
+// NaN.
+function lobbyTotalSeconds(session) {
+  if (!session.created_at || !session.lobby_ends_at) return 120;
+  const total = differenceInSeconds(parseISO(session.lobby_ends_at), parseISO(session.created_at));
+  return total > 0 ? total : 120;
+}
 
 // Mirrors ReactionButton's own DAILY_LIMIT and send_reaction's server-side
 // check. Only used to show how many are left; the limit itself is enforced
@@ -102,7 +111,17 @@ function CopyCodeButton({ code, copied, onCopy }) {
 // so this needs a real answer and not an assumption that groups stay small.
 const CLUSTER_CAP = 5;
 
-function AvatarCluster({ participants, userEmail }) {
+// displayNameFor keeps "who am I" consistent everywhere this feature names
+// people. userName was passed in from all three call sites and never read --
+// so the room showed the viewer their own email prefix while the rest of the
+// app showed their chosen display name. Using it is the honest way to retire
+// a dead prop: it was threaded through for exactly this and nothing used it.
+function displayNameFor(email, userEmail, userName) {
+  if (email === userEmail && userName) return userName;
+  return email.split("@")[0];
+}
+
+function AvatarCluster({ participants, userEmail, userName }) {
   const shown = participants.slice(0, CLUSTER_CAP);
   const overflow = participants.length - shown.length;
 
@@ -121,7 +140,7 @@ function AvatarCluster({ participants, userEmail }) {
           // announcements of the same list is one too many.
           aria-hidden="true"
         >
-          {email.split("@")[0].charAt(0).toUpperCase()}
+          {displayNameFor(email, userEmail, userName).charAt(0).toUpperCase()}
         </div>
       ))}
       {overflow > 0 && (
@@ -359,7 +378,14 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
       if (secs === 0 && !completedRef.current) {
         completedRef.current = true;
         setFinishedNaturally(true);
-        confetti({ particleCount: 180, spread: 100, origin: { y: 0.5 } });
+        // 180 particles is the biggest burst in the app, and it is
+        // exactly what somebody who asked their OS for reduced motion is
+        // asking not to be shown. The screen still celebrates -- the hero,
+        // the Flame entrance and the copy carry it -- so skipping this
+        // costs the moment nothing it needed.
+        if (!prefersReducedMotion()) {
+          confetti({ particleCount: 180, spread: 100, origin: { y: 0.5 } });
+        }
         // complete_focus_session, not FocusSession.update: under
         // focus_sessions_update this write matched zero rows for every
         // non-host, and entities.js's update() ends in .select().single(),
@@ -560,6 +586,7 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
 
   if (finishedNaturally || endedEarly) {
     const minutesIn = endedEarly ? elapsedMinutes(session) : null;
+    const reduceMotion = prefersReducedMotion();
     const hostName = session.host_name || session.host_email?.split("@")[0] || "The host";
     const dismiss = () => {
       setFinishedNaturally(false);
@@ -597,13 +624,19 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                 </div>
               ) : (
                 // A one-shot entrance, matching ChallengeCompleteScreen's
-                // single authored moment. Framer Motion already honours
-                // prefers-reduced-motion through its own reducedMotion
-                // handling of transforms.
+                // single authored moment.
+                //
+                // Correcting a claim an earlier pass left in this file:
+                // Framer Motion does NOT honour prefers-reduced-motion on
+                // its own -- its reducedMotion option defaults to "never"
+                // and has to be opted into via MotionConfig, which this
+                // project does not set up. So the preference is applied
+                // here explicitly, by starting from the resting state
+                // instead of animating into it.
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.6, y: 10 }}
+                  initial={reduceMotion ? false : { opacity: 0, scale: 0.6, y: 10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{ type: "spring", stiffness: 260, damping: 18 }}
+                  transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 18 }}
                   className="w-14 h-14 rounded-2xl bg-primary/15 flex items-center justify-center mx-auto"
                   aria-hidden="true"
                 >
@@ -679,10 +712,10 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                       "w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0",
                       email === userEmail ? "bg-primary text-primary-foreground" : "bg-primary/20 text-primary"
                     )} aria-hidden="true">
-                      {email.split("@")[0].charAt(0).toUpperCase()}
+                      {displayNameFor(email, userEmail, userName).charAt(0).toUpperCase()}
                     </div>
                     <span className="text-sm font-medium truncate flex-1 min-w-0">
-                      {email.split("@")[0]}
+                      {displayNameFor(email, userEmail, userName)}
                       {email === userEmail && <span className="text-xs text-muted-foreground font-normal ml-1">(you)</span>}
                     </span>
                     {/* The reaction mechanic PRODUCT.md calls core, at the
@@ -803,8 +836,8 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
             timer is running the time is the only thing that matters and
             it takes the stage back. */}
         {inLobby ? (
-          <LobbyRing fractionRemaining={lobbySecsLeft / LOBBY_SECONDS}>
-            <AvatarCluster participants={participants} userEmail={userEmail} />
+          <LobbyRing fractionRemaining={lobbySecsLeft / lobbyTotalSeconds(session)}>
+            <AvatarCluster participants={participants} userEmail={userEmail} userName={userName} />
             <div>
               <p className="text-2xl font-bold tabular-nums text-foreground" aria-hidden="true">
                 {formatCountdown(lobbySecsLeft)}
@@ -820,7 +853,12 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                 change sits directly in the accessibility tree. */}
             <div
               className={cn(
-                "text-8xl font-black tabular-nums tracking-tight transition-colors",
+                // text-7xl below sm, not 8xl: "60:00" is five font-black
+                // glyphs, and at 96px that is roughly 258px against the
+                // 272px a 320px viewport leaves after px-6 -- fitting with
+                // nothing to spare. The house pattern steps type for the
+                // same reason (Dashboard's text-2xl sm:text-3xl).
+                "text-7xl sm:text-8xl font-black tabular-nums tracking-tight transition-colors",
                 secsLeft <= 60 ? "text-destructive" : "text-foreground"
               )}
               aria-hidden="true"
