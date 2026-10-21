@@ -24,11 +24,6 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { supabase } from "@/api/supabaseClient";
 import { getGroupFreezeCandidates, assistFreeze } from "@/lib/freezeService";
 
-const CATEGORY_LABELS = {
-  health: "Health", fitness: "Fitness", mindfulness: "Mindfulness",
-  learning: "Learning", productivity: "Productivity", social: "Social", other: "Other",
-};
-
 function calcConsistency(completions) {
   if (!completions?.length) return 0;
   const last30 = Array.from({ length: 30 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
@@ -359,11 +354,6 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     unrankedRows.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
   );
 
-  const categoryCount = {};
-  habits.forEach((h) => {
-    if (h.category) categoryCount[h.category] = (categoryCount[h.category] || 0) + 1;
-  });
-
   const handleCopy = (text, type) => {
     navigator.clipboard.writeText(text);
     setCopied(type);
@@ -630,19 +620,17 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         ))}
       </div>
 
-      {/* Habits being tracked */}
-      {Object.keys(categoryCount).length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Habits being tracked</p>
-          {Object.entries(categoryCount).map(([cat, count]) => (
-            <div key={cat} className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{CATEGORY_LABELS[cat] || cat}</span>
-              <span className="font-medium">{count} member{count !== 1 ? "s" : ""} tracking</span>
-            </div>
-          ))}
-        </div>
-      )}
-
+      {/* A "Habits being tracked" card used to sit here, listing category
+          counts as "{n} members tracking". It was built from `habits`, which
+          is Habit.filter({ created_by: userEmail }) -- the viewer's own
+          habits and nobody else's, because habits_select_own is owner-only.
+          So it reported your three Health habits to the group as "3 members
+          tracking Health", in a group that might have one member.
+          Deleted rather than relabelled: nothing the client can read makes
+          an honest group-level statement about habits. If the signal is
+          wanted back, it needs a get_group_habit_categories(p_group_id)
+          SECURITY DEFINER RPC alongside get_group_freeze_candidates
+          (20260915090003), returning distinct-member counts per category. */}
       {/* Last week's report */}
       {/* h-11 only: full-width already, so height was the failing axis.
           Not in the brief's list of four -- it has no explicit size, so it
