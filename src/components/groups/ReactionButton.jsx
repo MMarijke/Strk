@@ -10,7 +10,11 @@ const QUICK_REACTIONS = [
 ];
 const DAILY_LIMIT = 3;
 
-export default function ReactionButton({ recipientEmail, groupId, onSend, sentTodayCount = 0, isPro = false }) {
+// focusSessionId is the alternative authorisation context added in
+// 20261021090002: a reaction carries either a group or a session, never
+// both, and send_reaction checks whichever one it is given. Defaulted so
+// GroupDashboard's existing group-only usage is unchanged.
+export default function ReactionButton({ recipientEmail, groupId, focusSessionId = null, onSend, sentTodayCount = 0, isPro = false }) {
   const [open, setOpen] = useState(false);
   const [sent, setSent] = useState(null);
   const ref = useRef(null);
@@ -43,6 +47,7 @@ export default function ReactionButton({ recipientEmail, groupId, onSend, sentTo
       await onSend({
         recipient_email: recipientEmail,
         group_id: groupId,
+        focus_session_id: focusSessionId,
         emoji,
       });
       setSent(emoji);
