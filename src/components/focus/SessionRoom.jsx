@@ -61,10 +61,35 @@ function RoomDialog({ onMinimise, labelledBy, children }) {
   );
 }
 
+// One copy control for both the lobby's prominent code pill and the
+// active session's quiet inline row -- the two treatments differ in
+// surrounding type and weight, not in what the button is, so it stays one
+// implementation rather than two that can drift apart on the label or the
+// 44px target.
+function CopyCodeButton({ code, copied, onCopy }) {
+  return (
+    <>
+      <button
+        onClick={onCopy}
+        className="h-11 w-11 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        aria-label={`Copy session code ${code}`}
+      >
+        {copied ? <Check className="w-4 h-4 text-primary" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+      </button>
+      <span className="sr-only" aria-live="polite">{copied ? "Session code copied" : ""}</span>
+    </>
+  );
+}
+
 function ParticipantList({ participants }) {
   return (
     <div className="w-full max-w-xs">
-      {/* aria-live on the count rather than a separate "someone joined"
+      {/* "Joined", not "Participants". This list is built from
+          participant_emails, which only ever grows: nobody is removed on
+          leaving until they explicitly leave, and there is no heartbeat
+          column anywhere in the schema. So the honest claim is that these
+          people joined, not that they are present.
+          aria-live on the count rather than a separate "someone joined"
           region: the count already changes when the roster does, so this
           announces a join without inventing a second thing to say or
           competing with the timer region below. */}
@@ -72,22 +97,25 @@ function ParticipantList({ participants }) {
         className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 text-center"
         aria-live="polite"
       >
-        Participants ({participants.length})
+        Joined ({participants.length})
       </p>
       <div className="flex flex-wrap justify-center gap-4">
         {participants.map((email) => {
           const initials = email.split("@")[0].charAt(0).toUpperCase();
           const name = email.split("@")[0];
           return (
+            // The pulsing green presence dot that used to sit on each
+            // avatar is gone, along with the `relative` wrapper that
+            // positioned it. It claimed live presence the data cannot
+            // support -- derived purely from membership, so a friend who
+            // joined and walked away kept pulsing green for 25 minutes.
+            // On a surface whose selling point is who is here with you, a
+            // fabricated presence indicator is worse than none, and real
+            // presence would need a heartbeat we deliberately are not
+            // adding.
             <div key={email} className="flex flex-col items-center gap-1.5">
-              <div className="relative">
-                <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg">
-                  {initials}
-                </div>
-                {/* Decorative: it carries no information a screen reader
-                    could act on, and the roster line above already says
-                    who is here. */}
-                <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-success border-2 border-background animate-pulse" aria-hidden="true" />
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg">
+                {initials}
               </div>
               <span className="text-[11px] text-muted-foreground max-w-[56px] truncate text-center">{name}</span>
             </div>
@@ -518,31 +546,39 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
           </p>
         </div>
 
-        {/* Session code */}
-        <div className="flex flex-col items-center gap-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Session Code</p>
-          <div className="flex items-center gap-2 bg-muted rounded-2xl px-5 py-3">
-            <span className="font-mono font-black text-2xl tracking-widest text-foreground">{session.session_code}</span>
-            {/* Was a bare icon-only button with no accessible name at all --
-                announced as "button" -- and a ~16px hit area, the smallest
-                target on the screen, on the only way to get the code out
-                besides Invite. Named, 44px, and the copied state is now
-                carried by text rather than only by swapping the glyph. */}
-            <button
-              onClick={handleCopyCode}
-              className="h-11 w-11 -mr-2 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              aria-label={`Copy session code ${session.session_code}`}
-            >
-              {copied ? <Check className="w-4 h-4 text-primary" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
-            </button>
-            <span className="sr-only" aria-live="polite">{copied ? "Session code copied" : ""}</span>
-          </div>
-          <Button variant="outline" size="sm" className="gap-1.5 rounded-xl" onClick={handleInvite}>
-            <Share2 className="w-3.5 h-3.5" /> Invite
-          </Button>
-        </div>
-
-        <ParticipantList participants={participants} />
+        {/* Lobby: the code is the second most important thing on screen,
+            because the lobby exists to get people in. Active: joining
+            late is a confirmation-gated edge case, so the code stops
+            holding centre-screen for the next 25 to 60 minutes and the
+            people you are sitting with take that place instead.
+            Demoted, not removed -- you can still pull someone in. */}
+        {inLobby ? (
+          <>
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Session Code</p>
+              <div className="flex items-center gap-2 bg-muted rounded-2xl px-5 py-3">
+                <span className="font-mono font-black text-2xl tracking-widest text-foreground">{session.session_code}</span>
+                <CopyCodeButton code={session.session_code} copied={copied} onCopy={handleCopyCode} />
+              </div>
+              <Button variant="outline" size="sm" className="gap-1.5 rounded-xl" onClick={handleInvite}>
+                <Share2 className="w-3.5 h-3.5" /> Invite
+              </Button>
+            </div>
+            <ParticipantList participants={participants} />
+          </>
+        ) : (
+          <>
+            <ParticipantList participants={participants} />
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <span className="text-xs uppercase tracking-wide">Code</span>
+              <span className="font-mono text-sm tracking-widest text-foreground ml-1">{session.session_code}</span>
+              <CopyCodeButton code={session.session_code} copied={copied} onCopy={handleCopyCode} />
+              <Button variant="ghost" size="sm" className="gap-1.5 rounded-xl h-11" onClick={handleInvite}>
+                <Share2 className="w-3.5 h-3.5" /> Invite
+              </Button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Footer actions */}
