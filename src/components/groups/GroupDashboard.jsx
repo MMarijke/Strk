@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Reaction, Habit, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, subDays, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
-import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, Plus, Sparkles } from "lucide-react";
+import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, Plus, Sparkles, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
@@ -23,6 +23,7 @@ import { trackEvent } from "@/lib/analytics";
 import { useSubscription } from "@/hooks/useSubscription";
 import { supabase } from "@/api/supabaseClient";
 import { getGroupFreezeCandidates, assistFreeze } from "@/lib/freezeService";
+import { startFocusSession, DEFAULT_DURATION_MINUTES } from "@/lib/focusSessionStart";
 
 function calcConsistency(completions) {
   if (!completions?.length) return 0;
@@ -138,7 +139,7 @@ function getInviteLink(code) {
   return `${window.location.origin}?join=${code}`;
 }
 
-export default function GroupDashboard({ group, userId, userEmail, userFullName, profiles = [], onBack, onUpdate, onDelete, onRemoveMember }) {
+export default function GroupDashboard({ group, userId, userEmail, userFullName, profiles = [], onBack, onUpdate, onDelete, onRemoveMember, onSessionStarted }) {
   const [showSettings, setShowSettings] = useState(false);
   const [copied, setCopied] = useState(null);
   const [showCreateChallenge, setShowCreateChallenge] = useState(false);
@@ -148,6 +149,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
   const [newName, setNewName] = useState(group.name);
   const [assistCandidate, setAssistCandidate] = useState(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [startingSession, setStartingSession] = useState(false);
 
   const queryClient = useQueryClient();
   const { isPro } = useSubscription();
@@ -405,6 +407,33 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     unrankedRows.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
   );
 
+  // One tap, 25 minutes, straight to the lobby. The group screen
+  // deliberately does not ask for a duration: the lobby is where you find
+  // out who is coming, and 25 is both the existing default and the
+  // shortest option, so this is the smallest commitment on offer. Anyone
+  // wanting 45 or 60 still has the full modal on the Habits screen.
+  const handleSitWithUs = async () => {
+    if (startingSession) return;
+    setStartingSession(true);
+    try {
+      const session = await startFocusSession({
+        userEmail,
+        userName: userFullName || getDisplayName(userEmail, profiles),
+        group,
+        durationMinutes: DEFAULT_DURATION_MINUTES,
+      });
+      // Hands the session up the same way StartFocusModal's
+      // onSessionCreated does, so the room opens over whichever page
+      // rendered this screen.
+      onSessionStarted?.(session);
+    } catch (err) {
+      console.error("Failed to start focus session:", err);
+      toast.error("Couldn't start the session. Check your connection and try again.");
+    } finally {
+      setStartingSession(false);
+    }
+  };
+
   const handleCopy = (text, type) => {
     navigator.clipboard.writeText(text);
     setCopied(type);
@@ -460,7 +489,43 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
           isAdmin={isAdmin}
           onStartNew={() => { setViewingChallenge(false); setShowCreateChallenge(true); }}
         />
-        <CreateChallengeModal
+        {/* Invite, the weekly report and the invite code all sit below the
+          live content now. The old order led with Invite -- the rarest
+          action on the screen -- and put the only time-sensitive element,
+          an active challenge, last. These are the things you come here for
+          occasionally, so they read in that order.
+
+          Invite stays a real button rather than moving into the settings
+          sheet: GroupSettingsModal shows the invite code and can
+          regenerate it, but it has no share action, so InviteMembersSheet
+          is the only path to one. Demoted, not removed. */}
+      <Button
+        variant="outline"
+        className="w-full gap-2 rounded-xl h-11 border-primary/30 text-primary hover:bg-primary/5"
+        onClick={() => setShowInvite(true)}
+      >
+        <Share2 className="w-4 h-4" />
+        Invite Members
+      </Button>
+
+      {!isAdmin && group.invite_code && (
+        <div className="flex items-center gap-2 bg-muted/60 rounded-xl px-3 py-2">
+          <span className="text-xs text-muted-foreground flex-1 font-mono truncate">{group.invite_code}</span>
+          <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => handleCopy(group.invite_code, "code")} aria-label={copied === "code" ? "Copied!" : "Copy invite code"}>
+            {copied === "code" ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
+          </Button>
+        </div>
+      )}
+
+      <Button
+        variant="outline"
+        className="w-full gap-2 rounded-xl h-11"
+        onClick={() => setShowWeeklyReport(true)}
+      >
+        📊 Last week's report
+      </Button>
+
+      <CreateChallengeModal
           open={showCreateChallenge}
           onOpenChange={setShowCreateChallenge}
           group={group}
@@ -489,25 +554,24 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         </Button>
       </div>
 
-      {/* Invite Members Button */}
+      {/* The screen's one primary action, and the only filled button on it.
+          PRODUCT.md names synchronised sessions as the mechanism the whole
+          app is organised around, and this was the one surface listing
+          your friends by name where you could not start one with them --
+          Social's groups LIST offered it, and it disappeared the moment
+          you opened a group. It is also what generates the activity this
+          screen now records. */}
       <Button
-        variant="outline"
-        className="w-full gap-2 rounded-xl h-11 border-primary/30 text-primary hover:bg-primary/5"
-        onClick={() => setShowInvite(true)}
+        className="w-full gap-2 rounded-xl h-11 font-semibold"
+        onClick={handleSitWithUs}
+        disabled={startingSession}
       >
-        <Share2 className="w-4 h-4" />
-        Invite Members
+        <Users className="w-4 h-4" />
+        {startingSession ? "Starting…" : "Sit with us now"}
       </Button>
-
-      {/* Admin panel */}
-      {!isAdmin && group.invite_code && (
-        <div className="flex items-center gap-2 bg-muted/60 rounded-xl px-3 py-2">
-          <span className="text-xs text-muted-foreground flex-1 font-mono truncate">{group.invite_code}</span>
-          <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => handleCopy(group.invite_code, "code")} aria-label={copied === "code" ? "Copied!" : "Copy invite code"}>
-            {copied === "code" ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
-          </Button>
-        </div>
-      )}
+      <p className="text-xs text-muted-foreground text-center -mt-2">
+        Starts a 25-minute session · everyone here gets a nudge to join
+      </p>
 
       {/* Leaderboard */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-2">
@@ -706,19 +770,6 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
           wanted back, it needs a get_group_habit_categories(p_group_id)
           SECURITY DEFINER RPC alongside get_group_freeze_candidates
           (20260915090003), returning distinct-member counts per category. */}
-      {/* Last week's report */}
-      {/* h-11 only: full-width already, so height was the failing axis.
-          Not in the brief's list of four -- it has no explicit size, so it
-          inherits the Button default of h-9 and reads as compliant until
-          you resolve the variant. */}
-      <Button
-        variant="outline"
-        className="w-full gap-2 rounded-xl h-11"
-        onClick={() => setShowWeeklyReport(true)}
-      >
-        📊 Last week's report
-      </Button>
-
       {/* Group Challenge */}
       {activeChallenge ? (
         <button
