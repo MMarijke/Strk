@@ -54,10 +54,24 @@ export default function ReactionButton({ recipientEmail, groupId, onSend, sentTo
 
   return (
     <div className="relative shrink-0" ref={ref}>
-      {/* Trigger button -- p-2 -m-2 grows the real hit area to 44px (28px
-          visual + 2*8px) without changing the button's visible footprint,
-          same padding-trick pattern already used on HabitCard.jsx's
-          reminder-bell button. */}
+      {/* The comment that used to sit here claimed `p-2 -m-2` grew the hit
+          area to 44px ("28px visual + 2*8px"). It did not. Tailwind
+          preflight sets `box-sizing: border-box` and nothing in this
+          project overrides it (no box-sizing, corePlugins or preflight
+          key in index.css, tailwind.config.js or postcss.config.js), so
+          with `w-7 h-7` the 28px IS the whole box and the padding lives
+          inside it. The negative margin then shrank the layout footprint
+          rather than enlarging the target. Real hit area: 28x28.
+
+          It also cited HabitCard's reminder-bell as precedent. That one is
+          genuinely fine, and the difference is exactly the part that
+          matters: it sets `p-4 -m-4` with NO width or height, so the
+          padding really does expand an auto-sized box. The trick works
+          until you combine it with an explicit size -- which is the one
+          thing that made this instance look safe while silently failing.
+
+          Sized honestly now. The glyph stays small; the box is 44px, the
+          same as every other control in this row. */}
       <button
         onClick={() => !limited && setOpen((v) => !v)}
         title={
@@ -76,7 +90,7 @@ export default function ReactionButton({ recipientEmail, groupId, onSend, sentTo
         }
         aria-expanded={open}
         className={cn(
-          "w-7 h-7 p-2 -m-2 rounded-full flex items-center justify-center text-base transition-all",
+          "h-11 w-11 rounded-full flex items-center justify-center text-base transition-all",
           limited
             ? "opacity-30 cursor-not-allowed"
             : "hover:bg-muted hover:scale-110 active:scale-95"
@@ -90,15 +104,18 @@ export default function ReactionButton({ recipientEmail, groupId, onSend, sentTo
 
       {/* Picker */}
       {open && (
-        <div className="absolute right-0 bottom-full mb-1 z-50 flex gap-1 bg-card border border-border rounded-2xl shadow-lg px-2 py-1.5">
+        <div className="absolute right-0 bottom-full mb-1 z-50 flex gap-0.5 bg-card border border-border rounded-2xl shadow-lg px-2 py-1.5">
           {QUICK_REACTIONS.map(({ emoji, label }) => (
             <button
               key={emoji}
               onClick={() => handleReact(emoji)}
               aria-label={`React with ${label}`}
-              // Same padding-trick as the trigger above: 32px visual
-              // (w-8 h-8) + 2*6px (p-1.5 -m-1.5) = 44px real hit area.
-              className="w-8 h-8 p-1.5 -m-1.5 flex items-center justify-center text-xl hover:scale-125 active:scale-90 transition-transform rounded-xl hover:bg-muted"
+              // Same correction as the trigger: `w-8 h-8 p-1.5 -m-1.5`
+              // was a 32x32 hit area, not the 44px its comment claimed.
+              // Five 44px targets plus gaps come to ~244px inside a
+              // right-aligned popover, which still clears the 272px a
+              // 320px viewport leaves after the page gutter.
+              className="h-11 w-11 flex items-center justify-center text-xl hover:scale-125 active:scale-90 transition-transform rounded-xl hover:bg-muted"
             >
               <span aria-hidden="true">{emoji}</span>
             </button>
