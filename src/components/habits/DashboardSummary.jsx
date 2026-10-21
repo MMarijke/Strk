@@ -1,7 +1,7 @@
 import React from "react";
 import { format } from "date-fns";
 import { Flame, Target, CalendarCheck, CheckCheck } from "lucide-react";
-import { calculateStreak } from "./StreakWidget";
+import { bestActiveStreak } from "./StreakWidget";
 import { getRank } from "@/lib/utils";
 import { getNextRefreshDateStr } from "@/lib/freezeService";
 
@@ -22,7 +22,7 @@ const RANK_STYLES = {
   gold: { border: "border-yellow-400/60", tint: "from-yellow-400/20", bar: "bg-gradient-to-r from-yellow-400 to-amber-500" },
 };
 
-export default function DashboardSummary({ habits, score, isPro, freezesRemaining, onCompleteAll }) {
+export default function DashboardSummary({ habits, score, isPro, freezesRemaining, frozenHabits = {}, onCompleteAll }) {
   const rank = getRank(score);
   const { nextRank } = rank;
   const style = RANK_STYLES[rank.color] ?? RANK_STYLES.green;
@@ -35,10 +35,17 @@ export default function DashboardSummary({ habits, score, isPro, freezesRemainin
   const today = format(new Date(), "yyyy-MM-dd");
   const completedToday = habits.filter((h) => (h.completions || []).includes(today)).length;
   const totalHabits = habits.length;
-  const longestStreak = habits.reduce((max, h) => {
-    const streak = calculateStreak(h.completions || []);
-    return streak > max ? streak : max;
-  }, 0);
+  // Was an inline reduce that called calculateStreak without each habit's
+  // frozen date, so a streak held together by a streak freeze broke at the
+  // frozen day: the same habit read 23 days on its own card, which has
+  // always passed frozenDate, and 18 here. Same completions, one argument
+  // apart. The card was right.
+  //
+  // Also renamed from longestStreak, which this never was: calculateStreak
+  // returns the CURRENT active run. The label below said "best", claiming a
+  // record it had not measured -- anyone whose best-ever run exceeded their
+  // current one was shown a smaller number and told it was their best.
+  const streak = bestActiveStreak(habits, frozenHabits);
   const allDone = totalHabits > 0 && completedToday === totalHabits;
 
   return (
@@ -74,7 +81,7 @@ export default function DashboardSummary({ habits, score, isPro, freezesRemainin
         </span>
         <span className="flex items-center gap-1.5">
           <Flame className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
-          {longestStreak}-day best
+          {streak}-day streak
         </span>
         {freezesRemaining !== null && (
           <span className="flex items-center gap-1.5">

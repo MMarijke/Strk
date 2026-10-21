@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { format, subDays } from "date-fns";
-import { calculateStreak } from "./StreakWidget";
+import { calculateStreak, bestActiveStreak } from "./StreakWidget";
 
 // calculateStreak's whole behavior is relative to "now", so every date here
 // is built the same way the function itself builds "today"/"yesterday" --
@@ -60,5 +60,48 @@ describe("calculateStreak", () => {
       // has nothing.
       expect(calculateStreak([daysAgo(3), daysAgo(4)], daysAgo(5))).toBe(0);
     });
+  });
+});
+
+describe("bestActiveStreak", () => {
+  it("returns 0 with no habits", () => {
+    expect(bestActiveStreak([])).toBe(0);
+    expect(bestActiveStreak(undefined, undefined)).toBe(0);
+  });
+
+  it("takes the highest current streak across habits", () => {
+    const habits = [
+      { id: "a", completions: [daysAgo(0), daysAgo(1)] },
+      { id: "b", completions: [daysAgo(0), daysAgo(1), daysAgo(2), daysAgo(3)] },
+    ];
+    expect(bestActiveStreak(habits)).toBe(4);
+  });
+
+  it("counts a frozen day, so it agrees with the habit's own card", () => {
+    // The bug this guards: DashboardSummary computed this without each
+    // habit's frozen date, while HabitCard has always passed it -- so one
+    // habit reported two different streaks on two surfaces of the same
+    // screen. 18 real days, a frozen gap, then 4 more behind it: 23.
+    const completions = [];
+    for (let i = 0; i < 18; i++) completions.push(daysAgo(i));
+    for (let i = 19; i < 23; i++) completions.push(daysAgo(i));
+    const habits = [{ id: "a", completions }];
+    const frozen = { a: daysAgo(18) };
+
+    expect(bestActiveStreak(habits, frozen)).toBe(23);
+    // And the number the summary used to show, for the same data.
+    expect(bestActiveStreak(habits)).toBe(18);
+    // The card's own call, which was always correct.
+    expect(calculateStreak(completions, daysAgo(18))).toBe(23);
+  });
+
+  it("ignores a frozen date belonging to a different habit", () => {
+    const habits = [{ id: "a", completions: [daysAgo(0), daysAgo(2)] }];
+    expect(bestActiveStreak(habits, { b: daysAgo(1) })).toBe(1);
+  });
+
+  it("skips habits with no completions rather than throwing", () => {
+    const habits = [{ id: "a" }, { id: "b", completions: [daysAgo(0)] }];
+    expect(bestActiveStreak(habits)).toBe(1);
   });
 });

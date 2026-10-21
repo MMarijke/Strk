@@ -43,6 +43,25 @@ function calculateStreak(completions, frozenDate = null) {
   return streak;
 }
 
+// The highest streak currently running across a set of habits.
+//
+// Extracted from DashboardSummary, where it was an inline reduce that
+// called calculateStreak WITHOUT each habit's frozen date -- so a streak
+// held together by a streak freeze broke at the frozen day and the summary
+// disagreed with the habit's own card, which has always passed it. The
+// per-habit behaviour was covered by tests; the aggregate that got it
+// wrong was not reachable by any, because it lived inside a component.
+// It lives here, beside calculateStreak and exported, so it can be.
+//
+// frozenHabits is keyed by habit id, matching the map Dashboard already
+// holds and passes to HabitCard.
+export function bestActiveStreak(habits = [], frozenHabits = {}) {
+  return habits.reduce((max, h) => {
+    const streak = calculateStreak(h.completions || [], frozenHabits[h.id] || null);
+    return streak > max ? streak : max;
+  }, 0);
+}
+
 export default function StreakWidget({ completions = [], color = "hsl(var(--primary))", frozenDate = null, streak: precomputedStreak }) {
   // HabitCard already computes this exact value (same completions +
   // frozenDate) for its own freeze-eligibility logic and passes it down --
