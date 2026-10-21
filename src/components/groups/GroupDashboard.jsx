@@ -24,6 +24,7 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { supabase } from "@/api/supabaseClient";
 import { getGroupFreezeCandidates, assistFreeze } from "@/lib/freezeService";
 import { startFocusSession, DEFAULT_DURATION_MINUTES } from "@/lib/focusSessionStart";
+import GroupActivityFeed from "./GroupActivityFeed";
 
 function calcConsistency(completions) {
   if (!completions?.length) return 0;
@@ -228,7 +229,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
   const freezeCandidateByEmail = new Map(freezeCandidates.map((c) => [c.member_email, c]));
 
   const assistFreezeMutation = useMutation({
-    mutationFn: ({ targetEmail, habitId, missedDate }) => assistFreeze(targetEmail, habitId, missedDate),
+    mutationFn: ({ targetEmail, habitId, missedDate }) => assistFreeze(targetEmail, habitId, missedDate, group.id),
     onSuccess: (result, vars) => {
       if (!result.success) {
         toast.error(result.reason || "Couldn't save that streak. Please try again.", { duration: 3500 });
@@ -236,6 +237,8 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       }
       trackEvent("freeze_assist_used");
       queryClient.invalidateQueries({ queryKey: ["group-freeze-candidates", group.id] });
+      // The assist is now a feed event too.
+      queryClient.invalidateQueries({ queryKey: ["group-activity", group.id] });
       toast.success(`Streak saved! ${vars.targetName} will see it was you. 🔥`, { duration: 3000 });
     },
     onError: () => {
@@ -573,6 +576,19 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         Starts a 25-minute session · everyone here gets a nudge to join
       </p>
 
+      <GroupActivityFeed
+        groupId={group.id}
+        userEmail={userEmail}
+        profiles={profiles}
+        memberCount={memberEmails.length}
+        isSolo={memberEmails.length <= 1}
+      />
+
+      {/* Leaderboard, now below the feed rather than being the screen's
+          whole point. Unchanged otherwise: the score feeds Social's own
+          leaderboard and the badge definitions, and ranking is a real
+          draw for part of the audience. The screen gains a purpose rather
+          than trading one away. */}
       {/* Leaderboard */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-2">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Leaderboard</p>
