@@ -383,7 +383,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setViewingChallenge(false)} aria-label="Back to group">
+          <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full" onClick={() => setViewingChallenge(false)} aria-label="Back to group">
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
@@ -416,14 +416,14 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="rounded-full shrink-0" onClick={onBack} aria-label="Back to groups">
+        <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full shrink-0" onClick={onBack} aria-label="Back to groups">
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div className="flex-1 min-w-0">
           <h2 className="font-bold text-lg truncate">{group.name}</h2>
           <p className="text-xs text-muted-foreground">{memberEmails.length} member{memberEmails.length !== 1 ? "s" : ""}</p>
         </div>
-        <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setShowSettings(true)} aria-label="Group settings">
+        <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full" onClick={() => setShowSettings(true)} aria-label="Group settings">
           <Settings className="w-4 h-4" />
         </Button>
       </div>
@@ -574,12 +574,18 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
             )}
             {isAdmin && !row.isMe && (
               confirmRemove === row.email ? (
+                // h-11 without w-11: these two carry text labels, and a
+                // fixed 44px width would clamp "Remove" and "Cancel" into
+                // a square and clip them. Height is the axis that was
+                // failing anyway -- at h-7 this was a 28px target, the
+                // smallest in the file, on the one action here that cannot
+                // be undone.
                 <div className="flex gap-1 shrink-0">
-                  <Button size="sm" variant="destructive" className="h-7 text-xs"
+                  <Button size="sm" variant="destructive" className="h-11 text-xs"
                     onClick={() => { onRemoveMember(row.email); setConfirmRemove(null); }}>
                     Remove
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmRemove(null)}>
+                  <Button size="sm" variant="ghost" className="h-11 text-xs" onClick={() => setConfirmRemove(null)}>
                     Cancel
                   </Button>
                 </div>
@@ -608,9 +614,13 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
       )}
 
       {/* Last week's report */}
+      {/* h-11 only: full-width already, so height was the failing axis.
+          Not in the brief's list of four -- it has no explicit size, so it
+          inherits the Button default of h-9 and reads as compliant until
+          you resolve the variant. */}
       <Button
         variant="outline"
-        className="w-full gap-2 rounded-xl"
+        className="w-full gap-2 rounded-xl h-11"
         onClick={() => setShowWeeklyReport(true)}
       >
         📊 Last week's report
