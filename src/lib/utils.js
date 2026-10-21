@@ -44,6 +44,23 @@ export function calculateScore(habits) {
   return bestStreak * 2 + consistency;
 }
 
+// Whether this viewer has asked the OS for less motion.
+//
+// index.css's reduced-motion block only reaches CSS animations and
+// transitions; a canvas-confetti burst is JavaScript drawing to a canvas, so
+// nothing in the stylesheet can quiet it. This project fires four of them
+// (RankUpModal, BadgeCelebrationModal, ChallengeCompleteScreen and the focus
+// room) and the focus room's 180 particles is the largest. Lives here rather
+// than inline so the other three can adopt it without each re-deriving the
+// query.
+//
+// Guarded for the absent-matchMedia case so a test environment or an old
+// browser gets the celebration rather than a crash.
+export function prefersReducedMotion() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 export function cn(...inputs) {
   return twMerge(clsx(inputs))
 }
