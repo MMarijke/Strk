@@ -9,6 +9,7 @@ import { AccountabilityPartnership } from "@/api/entities";
 import {
   requestPartner, respondToPartnerRequest, endPartnership, getPartnerDashboard, sendNudge,
 } from "@/lib/accountabilityService";
+import { isPartnerNoticeDismissed, dismissPartnerNotice } from "@/lib/partnerNotice";
 import { getDisplayName } from "@/lib/displayName";
 import { trackEvent } from "@/lib/analytics";
 import InvitePartnerModal from "./InvitePartnerModal";
@@ -25,6 +26,7 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   const queryClient = useQueryClient();
   const [showInvite, setShowInvite] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [dismissedId, setDismissedId] = useState(null);
 
   const {
     data: partnerships = [],
@@ -55,6 +57,34 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
     staleTime: 60 * 1000,
   });
 
+  // The most recent partnership that is over, if the user has not already
+  // dismissed the notice for it.
+  //
+  // Ordered by created_at rather than responded_at, deliberately:
+  // end_accountability_partnership writes
+  // `responded_at = coalesce(responded_at, now())`, so ending a partnership
+  // that was already active KEEPS the accept timestamp and never records
+  // when it ended. created_at is sound here anyway, because
+  // enforce_single_active_partnership permits at most one pending-or-active
+  // row at a time -- so the newest row IS the user's latest relationship,
+  // and if it is terminal that is the one worth reporting.
+  const lastTerminal = [...partnerships]
+    .filter((p) => p.status === "declined" || p.status === "ended")
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+  // dismissedId covers this render pass; isPartnerNoticeDismissed covers
+  // previous visits. Both, because the state resets on remount and the
+  // storage read cannot see a dismissal that just happened in this session
+  // before its setState lands.
+  const noticeDismissed = !!lastTerminal
+    && (dismissedId === lastTerminal.id || isPartnerNoticeDismissed(lastTerminal.id));
+  // Only when there is nothing live to show instead -- a new invite or
+  // partnership supersedes the news that the last one ended.
+  const showTerminalNotice = !!lastTerminal
+    && !activePartnership
+    && !pendingIncoming
+    && !pendingOutgoing
+    && !noticeDismissed;
+
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["accountability-partnerships", userEmail] });
     queryClient.invalidateQueries({ queryKey: ["partner-dashboard"] });
@@ -72,7 +102,7 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   const respondMutation = useMutation({
     mutationFn: ({ id, accept }) => respondToPartnerRequest(id, accept),
     onSuccess: (_, { accept }) => {
-      if (accept) trackEvent("accountability_partner_accepted");
+      trackEvent(accept ? "accountability_partner_accepted" : "accountability_partner_declined");
       invalidateAll();
       toast.success(accept ? "You're paired up! 🤝" : "Invite declined", { duration: 3000 });
     },
@@ -330,9 +360,43 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
     );
   }
 
-  // No relationship at all
+  // No relationship at all -- but possibly one that just ended, which used
+  // to be rendered as though it had never happened.
+  //
+  // The notice sits ABOVE the empty state rather than replacing it: the
+  // useful next move after being declined is to invite somebody else, so the
+  // CTA stays in view. Dismissable, because this is news, not a task.
+  const terminalName = lastTerminal
+    ? getDisplayName(
+        lastTerminal.requester_email === userEmail
+          ? lastTerminal.partner_email
+          : lastTerminal.requester_email,
+        profiles
+      )
+    : "";
+
   return (
     <div className="flex flex-col items-center text-center py-16 px-4 space-y-4">
+      {showTerminalNotice && (
+        <div className="w-full max-w-xs flex items-start gap-2 rounded-xl bg-muted/60 px-3 py-2.5 text-left" role="status">
+          <p className="text-xs text-muted-foreground flex-1">
+            {lastTerminal.status === "declined"
+              ? `${terminalName} declined your invite.`
+              : `Your partnership with ${terminalName} ended.`}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              dismissPartnerNotice(lastTerminal.id);
+              setDismissedId(lastTerminal.id);
+            }}
+            className="h-11 w-11 -my-2.5 -mr-2 flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0 rounded-full outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      )}
       <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center mb-2">
         <Handshake className="w-9 h-9 text-primary" />
       </div>
