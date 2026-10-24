@@ -8,26 +8,32 @@ import { toast } from "sonner";
 import { AccountabilityPartnership, AccountabilityNudge } from "@/api/entities";
 import {
   requestPartner, respondToPartnerRequest, endPartnership, getPartnerDashboard, sendNudge,
+  getPartnerInvitePreview, setSharedHabits,
 } from "@/lib/accountabilityService";
-import { isPartnerNoticeDismissed, dismissPartnerNotice } from "@/lib/partnerNotice";
+import { groupPartnerColumns, describeToday } from "@/lib/partnerColumns";
+import {
+  isPartnerNoticeDismissed, dismissPartnerNotice,
+  isScopeNoticeDismissed, dismissScopeNotice,
+} from "@/lib/partnerNotice";
 import { format } from "date-fns";
 import { getDisplayName } from "@/lib/displayName";
 import { trackEvent } from "@/lib/analytics";
 import InvitePartnerModal from "./InvitePartnerModal";
-
-// Real per-habit rows always carry a habit_id; a partner with zero habits
-// still returns exactly one row (get_partner_dashboard left-joins habits)
-// so partner_name/avatar are available, with habit_id null as the only
-// signal to skip it when rendering the habit list itself.
-function habitRows(partnerHabits) {
-  return partnerHabits.filter((h) => h.habit_id);
-}
+import HabitSharePicker from "./HabitSharePicker";
+import ShareScopeModal from "./ShareScopeModal";
 
 export default function AccountabilityPartnerPanel({ userEmail, profiles = [], groupmateEmails = [], isPro, onUpgradeClick }) {
   const queryClient = useQueryClient();
   const [showInvite, setShowInvite] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [dismissedId, setDismissedId] = useState(null);
+  // Nothing pre-selected on the accept screen: a pre-ticked list is
+  // consent the user never gave. The button's own label carries the
+  // consequence instead.
+  const [acceptSelection, setAcceptSelection] = useState([]);
+  const [shareEditorOpen, setShareEditorOpen] = useState(false);
+  const [shareEditorInitial, setShareEditorInitial] = useState([]);
+  const [scopeNoticeDismissed, setScopeNoticeDismissed] = useState(false);
   // Swapping the "End partnership" trigger for the confirm pair unmounts the
   // focused element, which drops focus to <body> -- a keyboard user lands
   // nowhere and hears nothing. Focus moves to the confirm group's safe
@@ -55,6 +61,20 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   const activePartnership = partnerships.find((p) => p.status === "active");
   const pendingIncoming = partnerships.find((p) => p.status === "pending" && p.partner_email === userEmail);
   const pendingOutgoing = partnerships.find((p) => p.status === "pending" && p.requester_email === userEmail);
+
+  // What the consent screen discloses. A separate RPC because
+  // get_partner_dashboard requires an ACTIVE partnership, which is the
+  // very thing being decided here.
+  const {
+    data: invitePreview = [],
+    isLoading: previewLoading,
+    isError: previewError,
+  } = useQuery({
+    queryKey: ["partner-invite-preview", pendingIncoming?.id],
+    queryFn: getPartnerInvitePreview,
+    enabled: !!pendingIncoming,
+    staleTime: 60 * 1000,
+  });
 
   const {
     data: partnerHabits = [],
@@ -116,9 +136,32 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
       : [],
     enabled: !!userEmail && !!activePartnership,
   });
-  const nudgedToday = nudgesSent.some(
+  const nudgesToday = nudgesSent.filter(
     (n) => n.partnership_id === activePartnership?.id && n.created_date?.slice(0, 10) === todayStr
   );
+  const nudgedToday = nudgesToday.length > 0;
+  // Which habit today's one nudge was spent on, so that row can say so
+  // rather than every row going uniformly dead. Null when the nudge
+  // predates per-habit nudging, or when its habit has since been deleted
+  // (habit_id is ON DELETE SET NULL so the nudge still counts).
+  const nudgedHabitId = nudgesToday[0]?.habit_id || null;
+
+  // A partnership created before habit scoping existed had its scope
+  // BACKFILLED by 20261024090001 from whatever that partner could already
+  // see -- so neither side ever chose it, and they are told once. One
+  // created after went through the consent screen and must not be told
+  // anything, or the notice would undercut the choice they just made.
+  //
+  // The date is the migration's own, which is the earliest it can have
+  // applied. If the deploy lands later, a partnership created in between
+  // is backfilled but shows no notice -- the safe direction, since the
+  // scope it was given is exactly what that partner could already see.
+  const scopedFrom = new Date("2026-10-24T00:00:00Z").getTime();
+  const scopeWasBackfilled = !!activePartnership
+    && new Date(activePartnership.created_at).getTime() < scopedFrom;
+  const showScopeNotice = scopeWasBackfilled
+    && !scopeNoticeDismissed
+    && !isScopeNoticeDismissed(activePartnership?.id);
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["accountability-partnerships", userEmail] });
@@ -126,18 +169,27 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   };
 
   const requestMutation = useMutation({
-    mutationFn: (email) => requestPartner(email),
-    onSuccess: (_, email) => {
-      trackEvent("accountability_partner_requested");
+    mutationFn: (/** @type {{ email: string, habitIds: string[] }} */ { email, habitIds }) =>
+      requestPartner(email, habitIds),
+    onSuccess: (_, { email, habitIds }) => {
+      trackEvent("accountability_partner_requested", { shared_habit_count: habitIds.length });
       invalidateAll();
       toast.success(`Invite sent to ${email}`, { duration: 3000 });
     },
   });
 
   const respondMutation = useMutation({
-    mutationFn: ({ id, accept }) => respondToPartnerRequest(id, accept),
-    onSuccess: (_, { accept }) => {
-      trackEvent(accept ? "accountability_partner_accepted" : "accountability_partner_declined");
+    mutationFn: (/** @type {{ id: string, accept: boolean, habitIds: string[] }} */ { id, accept, habitIds }) =>
+      respondToPartnerRequest(id, accept, habitIds),
+    onSuccess: (_, { accept, habitIds }) => {
+      // shared_habit_count on accept is what makes the reciprocity
+      // question answerable: whether disclosing the scope makes people
+      // share more or less is not something to guess at.
+      trackEvent(
+        accept ? "accountability_partner_accepted" : "accountability_partner_declined",
+        accept ? { shared_habit_count: habitIds.length } : undefined
+      );
+      setAcceptSelection([]);
       invalidateAll();
       toast.success(accept ? "You're paired up! 🤝" : "Invite declined", { duration: 3000 });
     },
@@ -145,7 +197,7 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   });
 
   const endMutation = useMutation({
-    mutationFn: (id) => endPartnership(id),
+    mutationFn: (/** @type {string} */ id) => endPartnership(id),
     onSuccess: () => {
       invalidateAll();
       setConfirmEnd(false);
@@ -155,7 +207,7 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   });
 
   const nudgeMutation = useMutation({
-    mutationFn: sendNudge,
+    mutationFn: (/** @type {string} */ habitId) => sendNudge(habitId),
     onSuccess: () => {
       trackEvent("accountability_nudge_sent");
       // Flips the button to "Nudged today" without waiting for a refetch
@@ -175,6 +227,32 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
       }
     },
   });
+
+  const shareMutation = useMutation({
+    mutationFn: (/** @type {string[]} */ habitIds) => setSharedHabits(habitIds),
+    onSuccess: (count) => {
+      trackEvent("accountability_share_scope_changed", { shared_habit_count: count });
+      setShareEditorOpen(false);
+      // The partner's view of me changes too, so the dashboard that
+      // renders both columns has to be refetched, not just this card.
+      queryClient.invalidateQueries({ queryKey: ["partner-dashboard"] });
+      toast.success(
+        count === 0 ? "You're not sharing any habits now." : `Sharing ${count} habit${count === 1 ? "" : "s"}.`,
+        { duration: 2500 }
+      );
+    },
+    onError: () => toast.error("Couldn't save what you share. Please try again.", { duration: 3000 }),
+  });
+
+  // Seeded from the "you" column rather than a separate read of the scope
+  // table: that column IS the caller's current scope, minus any habit
+  // that has since been archived -- which is correct to drop, because the
+  // dashboard filters archived habits out and the partner cannot see them
+  // either way.
+  const openShareEditor = (you) => {
+    setShareEditorInitial((you?.habits || []).map((h) => h.id));
+    setShareEditorOpen(true);
+  };
 
   const handleOpenInvite = () => {
     if (!isPro) {
@@ -209,9 +287,12 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   }
 
   // Zero rows from get_partner_dashboard proves the partnership is no longer
-  // active (it filters on status = 'active' and returns early; it left-joins
-  // habits, so an active partnership always yields at least one row). That
-  // invalidates the whole active view, not just the habits card inside it --
+  // active: it filters on status = 'active' and returns early, and it builds
+  // one row per side from a `sides` CTE and left-joins the share scope onto
+  // that -- so an active partnership yields at least TWO rows (an identity
+  // row each) however little either side shares. Sharing nothing therefore
+  // can never be mistaken for having ended. That invalidates the whole
+  // active view, not just one card inside it --
   // rendering "this ended" under a live partner header and an enabled Nudge
   // button would be its own contradiction. accountability_partnerships is not
   // in the realtime publication, so a partner ending it reaches this client
@@ -244,106 +325,184 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
     const partnerEmail = activePartnership.requester_email === userEmail
       ? activePartnership.partner_email
       : activePartnership.requester_email;
+    const columns = groupPartnerColumns(partnerHabits);
+    const you = columns?.you;
+    const partner = columns?.partner;
     // Sourced from get_partner_dashboard's own narrow projection, not the
     // wider `profiles` list -- a private partner's profile row is never
     // fetched by the generic profiles query, only this specific RPC.
-    const partnerName = partnerHabits[0]?.partner_name || partnerEmail.split("@")[0];
-    const rows = habitRows(partnerHabits);
+    const partnerName = partner?.name || partnerEmail.split("@")[0];
 
     return (
       <div className="space-y-4">
-        <Card className="border-0 shadow-sm p-4">
-          <div className="flex items-center justify-between gap-3 mb-1">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
-                <Handshake className="w-4 h-4 text-primary" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold truncate">{partnerName}</p>
-                <p className="text-xs text-muted-foreground">Your accountability partner</p>
-              </div>
+        {showScopeNotice && (
+          <div className="flex items-start gap-2 rounded-xl bg-muted/60 px-3 py-2.5" role="status">
+            <div className="flex-1 min-w-0 space-y-1.5">
+              <p className="text-xs text-muted-foreground">
+                You and {partnerName} can see each other&apos;s habits — the same ones as before. You can now choose
+                which.
+              </p>
+              <button
+                type="button"
+                onClick={() => openShareEditor(you)}
+                className="h-11 -my-2 text-xs font-semibold text-primary rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                Choose what to share
+              </button>
             </div>
-            {/* Says which state it is in rather than letting the cap be
-                discovered by failing. h-11 to match the project's touch
-                target, which this file did not previously meet anywhere. */}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 shrink-0 h-11"
-              onClick={() => nudgeMutation.mutate()}
-              disabled={nudgeMutation.isPending || nudgedToday}
-              aria-label={nudgedToday
-                ? `Already nudged ${partnerName} today. One nudge a day.`
-                : `Nudge ${partnerName}`}
+            <button
+              type="button"
+              onClick={() => {
+                dismissScopeNotice(activePartnership.id);
+                setScopeNoticeDismissed(true);
+              }}
+              className="h-11 w-11 -my-2.5 -mr-2 flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0 rounded-full outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              aria-label="Dismiss"
             >
-              {nudgedToday
-                ? <><Check className="w-3.5 h-3.5" aria-hidden="true" /> Nudged today</>
-                : <><Bell className="w-3.5 h-3.5" aria-hidden="true" /> Nudge</>}
-            </Button>
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {/* The summary row is the one place the comparison is literal, so
+            it stays horizontal at every width. The two habit lists below
+            stack on a phone -- they are lists of different things, not
+            rows of one table, so nothing is lost by stacking them -- but
+            stacking THIS would remove the comparison entirely, which is
+            the whole reason both sides are on screen. */}
+        <Card className="border-0 shadow-sm p-4">
+          <div className="flex items-stretch gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground mb-0.5">You</p>
+              <p className="text-sm font-semibold tabular-nums">{describeToday(you)}</p>
+            </div>
+            <div className="w-px bg-border shrink-0" aria-hidden="true" />
+            <div className="flex-1 min-w-0 text-right">
+              <p className="text-xs text-muted-foreground mb-0.5 truncate">{partnerName}</p>
+              <p className="text-sm font-semibold tabular-nums">{describeToday(partner)}</p>
+            </div>
           </div>
         </Card>
 
-        <Card className="border-0 shadow-sm p-4">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-            {partnerName}'s habits
-          </p>
-          {/* Three outcomes that used to collapse into one sentence, and the
-              distinction is load-bearing:
-
-                * dashboardError -- the fetch failed. Said so, with a Retry.
-                * partnerHabits.length === 0 -- the PARTNERSHIP is gone.
-                  get_partner_dashboard filters on status = 'active' and
-                  returns early, so zero rows is only reachable once the
-                  partnership is no longer active. It left-joins habits, so an
-                  active partnership always yields at least one row. Zero rows
-                  therefore PROVES the partnership ended -- it cannot mean
-                  "no habits".
-                * rows.length === 0 with rows present -- that one row has a
-                  null habit_id, which is exactly the left join reporting a
-                  partner who genuinely tracks nothing. Here "No active habits
-                  yet." is true.
-
-              Before this, all three rendered the third message, so an ended
-              partnership and a failed request both read as your partner having
-              given up on every habit they had -- attributed to them by name in
-              the heading directly above. */}
-          {dashboardLoading ? (
-            <div className="space-y-2" role="status" aria-label="Loading your partner's habits">
-              {[1, 2].map((i) => <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />)}
-            </div>
-          ) : dashboardError ? (
-            <LoadErrorStrip
-              message="Couldn't load their habits."
-              onRetry={() => refetchDashboard()}
-            />
-          ) : rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No active habits yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {rows.map((h) => (
-                <div key={h.habit_id} className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 px-3 py-2.5">
-                  <span className="text-sm font-medium text-foreground truncate">{h.habit_name}</span>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="flex items-center gap-1 text-sm font-bold tabular-nums">
-                      <Flame
-                        className={h.current_streak > 0 ? "w-3.5 h-3.5 text-accent" : "w-3.5 h-3.5 text-muted-foreground/40"}
-                        aria-hidden="true"
-                      />
-                      {h.current_streak}
-                    </span>
-                    <span className={
-                      h.completed_today
-                        ? "text-[10px] font-bold text-primary"
-                        : "text-[10px] text-muted-foreground"
-                    }>
-                      {h.completed_today ? "Done today" : "Not yet"}
-                    </span>
-                  </div>
+        {dashboardLoading ? (
+          <div className="space-y-2" role="status" aria-label="Loading both sets of habits">
+            {[1, 2, 3].map((i) => <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />)}
+          </div>
+        ) : dashboardError ? (
+          <LoadErrorStrip
+            message="Couldn't load your habits."
+            onRetry={() => refetchDashboard()}
+          />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Yours first: the column you can act on. */}
+            <Card className="border-0 shadow-sm p-4">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  You share
+                </p>
+                <button
+                  type="button"
+                  onClick={() => openShareEditor(you)}
+                  className="h-11 -my-2 px-2 text-xs font-semibold text-primary rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  Change
+                </button>
+              </div>
+              {/* Not an empty state: sharing nothing is a valid choice, so
+                  this is a way back to the picker rather than a scolding. */}
+              {!you || you.total === 0 ? (
+                <div className="py-3 text-center space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    You haven&apos;t shared any habits with {partnerName}.
+                  </p>
+                  <Button size="sm" variant="outline" className="h-11" onClick={() => openShareEditor(you)}>
+                    Choose what to share
+                  </Button>
                 </div>
-              ))}
-            </div>
-          )}
-        </Card>
+              ) : (
+                <div className="space-y-2">
+                  {you.habits.map((h) => (
+                    <div key={h.id} className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 px-3 py-2.5">
+                      <span className="text-sm font-medium text-foreground truncate">{h.name}</span>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="flex items-center gap-1 text-sm font-bold tabular-nums">
+                          <Flame
+                            className={h.streak > 0 ? "w-3.5 h-3.5 text-accent" : "w-3.5 h-3.5 text-muted-foreground/40"}
+                            aria-hidden="true"
+                          />
+                          {h.streak}
+                        </span>
+                        <span className={h.completedToday ? "text-[10px] font-bold text-primary" : "text-[10px] text-muted-foreground"}>
+                          {h.completedToday ? "Done today" : "Not yet"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            <Card className="border-0 shadow-sm p-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                {partnerName} shares
+              </p>
+              {/* Three outcomes that used to collapse into one sentence:
+                  a failed fetch (handled above), a partnership that has
+                  ended (proved by zero rows and handled before this
+                  branch), and a partner who has genuinely shared nothing
+                  -- which is this, and is now a statement about SHARING
+                  rather than a claim that they track no habits. */}
+              {!partner || partner.total === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  {partnerName} hasn&apos;t shared any habits yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {partner.habits.map((h) => (
+                    <div key={h.id} className="flex items-center justify-between gap-2 rounded-xl bg-muted/50 px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground truncate">{h.name}</p>
+                        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Flame
+                            className={h.streak > 0 ? "w-3 h-3 text-accent" : "w-3 h-3 text-muted-foreground/40"}
+                            aria-hidden="true"
+                          />
+                          <span className="tabular-nums">{h.streak}</span>
+                          <span aria-hidden="true">·</span>
+                          {h.completedToday ? "Done today" : "Not yet"}
+                        </p>
+                      </div>
+                      {/* One nudge a day for the whole partnership, not per
+                          habit -- so choosing a habit is choosing where to
+                          spend it. Every row therefore disables together,
+                          and the one that was used says so. */}
+                      <Button
+                        size="sm"
+                        variant={nudgedHabitId === h.id ? "secondary" : "outline"}
+                        className="h-11 shrink-0 gap-1.5"
+                        onClick={() => nudgeMutation.mutate(h.id)}
+                        disabled={nudgeMutation.isPending || nudgedToday}
+                        aria-label={nudgedToday
+                          ? `Already nudged ${partnerName} today. One nudge a day.`
+                          : `Nudge ${partnerName} about ${h.name}`}
+                      >
+                        {nudgedHabitId === h.id
+                          ? <><Check className="w-3.5 h-3.5" aria-hidden="true" /> Nudged</>
+                          : <Bell className="w-3.5 h-3.5" aria-hidden="true" />}
+                      </Button>
+                    </div>
+                  ))}
+                  {nudgedToday && (
+                    <p className="text-xs text-muted-foreground text-center pt-1">
+                      One nudge a day &mdash; you&apos;ve used today&apos;s.
+                    </p>
+                  )}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
 
         {confirmEnd ? (
           // role="group" + the named question, so a screen reader reaching
@@ -392,37 +551,103 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
             End partnership
           </button>
         )}
+
+        <ShareScopeModal
+          open={shareEditorOpen}
+          onOpenChange={setShareEditorOpen}
+          userEmail={userEmail}
+          partnerName={partnerName}
+          initialSelected={shareEditorInitial}
+          saving={shareMutation.isPending}
+          onSave={(ids) => shareMutation.mutate(ids)}
+        />
       </div>
     );
   }
 
-  // Pending incoming invite: someone wants to pair with me
+  // Pending incoming invite: someone wants to pair with me. This is also
+  // the only moment the user can decide what they share, so the
+  // disclosure and the reciprocal choice are the same screen -- they are
+  // the same question asked from two ends.
   if (pendingIncoming) {
-    const requesterName = getDisplayName(pendingIncoming.requester_email, profiles);
+    const requesterName = invitePreview[0]?.requester_name
+      || getDisplayName(pendingIncoming.requester_email, profiles);
+    const offered = invitePreview.filter((r) => r.habit_name);
+
     return (
       <Card className="border-0 shadow-sm p-5 bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20">
         <div className="flex items-center gap-2 mb-2">
           <Handshake className="w-4 h-4 text-primary" aria-hidden="true" />
           <p className="text-sm font-semibold text-foreground">Partner invite</p>
         </div>
-        <p className="text-sm text-foreground mb-4">
+        <p className="text-sm text-foreground mb-3">
           <span className="font-semibold">{requesterName}</span> wants to be your Accountability Partner.
         </p>
+
+        {/* What they are offering, before the decision rather than after
+            it. Accepting used to grant a standing read of every habit you
+            had, with nothing stated anywhere. */}
+        <div className="rounded-xl bg-background/60 px-3 py-2.5 mb-4">
+          {previewLoading ? (
+            <div className="h-4 rounded bg-muted animate-pulse" role="status" aria-label="Loading what they share" />
+          ) : previewError ? (
+            <p className="text-xs text-muted-foreground">
+              Couldn&apos;t load what {requesterName} shares. You&apos;ll see it once you pair.
+            </p>
+          ) : offered.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {requesterName} hasn&apos;t shared any habits yet.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground mb-1">You&apos;ll see:</p>
+              <p className="text-xs font-medium text-foreground">
+                {offered.map((r) => r.habit_name).join(" · ")}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="space-y-1.5 mb-4">
+          <p className="text-xs font-medium text-foreground" id="accept-share-label">
+            What will {requesterName} see of yours?
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Only the habits you pick &mdash; name, streak and whether you checked in today. Never your past days.
+          </p>
+          <HabitSharePicker
+            userEmail={userEmail}
+            selected={acceptSelection}
+            onChange={setAcceptSelection}
+            disabled={respondMutation.isPending}
+          />
+        </div>
+
         <div className="flex gap-2">
+          {/* The label states what accepting will do. No pre-ticked list
+              deciding it, and no disabled button implying that pairing
+              without sharing is not allowed -- it is, it just says so. */}
           <Button
             size="sm"
             className="flex-1 gap-1.5 h-11"
-            onClick={() => respondMutation.mutate({ id: pendingIncoming.id, accept: true })}
+            onClick={() => respondMutation.mutate({
+              id: pendingIncoming.id,
+              accept: true,
+              habitIds: acceptSelection,
+            })}
             disabled={respondMutation.isPending}
-            aria-label={`Accept ${requesterName}'s partner invite`}
+            aria-label={acceptSelection.length > 0
+              ? `Accept ${requesterName}'s invite and share ${acceptSelection.length} habits`
+              : `Accept ${requesterName}'s invite without sharing any habits`}
           >
-            <Check className="w-3.5 h-3.5" aria-hidden="true" /> Accept
+            <Check className="w-3.5 h-3.5" aria-hidden="true" />
+            {acceptSelection.length > 0 ? `Accept & share ${acceptSelection.length}` : "Accept without sharing"}
           </Button>
           <Button
             size="sm"
             variant="outline"
-            className="flex-1 gap-1.5 h-11"
-            onClick={() => respondMutation.mutate({ id: pendingIncoming.id, accept: false })}
+            className="gap-1.5 h-11"
+            onClick={() => respondMutation.mutate({ id: pendingIncoming.id, accept: false, habitIds: [] })}
             disabled={respondMutation.isPending}
             aria-label={`Decline ${requesterName}'s partner invite`}
           >
@@ -503,9 +728,10 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
       <InvitePartnerModal
         open={showInvite}
         onOpenChange={setShowInvite}
+        userEmail={userEmail}
         groupmateEmails={groupmateEmails}
         profiles={profiles}
-        onInvite={(email) => requestMutation.mutateAsync(email)}
+        onInvite={(email, habitIds) => requestMutation.mutateAsync({ email, habitIds })}
       />
     </div>
   );

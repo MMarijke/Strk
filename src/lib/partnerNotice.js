@@ -42,3 +42,37 @@ export function dismissPartnerNotice(partnershipId) {
     // visit. Mildly annoying, and strictly better than a crash.
   }
 }
+
+// ---------------------------------------------------------------------
+// Dismissal of the one-time "you are already sharing these" notice.
+//
+// 20261024090001 backfilled every existing active partnership with the
+// habits that partnership could already see. That was the right call --
+// starting empty would have blanked live partnerships until each side
+// happened to open the app and pick, which reads as a partner having
+// abandoned every habit they had. But it means two people are now
+// sharing a set neither of them explicitly chose, so they are told once,
+// with a way straight to the picker.
+//
+// Keyed by partnership id for the same reason as above: a NEW partnership
+// collects its scope through the consent screen and must never show this
+// notice, while the backfilled one shows it exactly once per device.
+const SCOPE_NOTICE_KEY = "accountabilityScopeNoticeDismissed";
+
+export function isScopeNoticeDismissed(partnershipId) {
+  if (!partnershipId) return false;
+  try {
+    return localStorage.getItem(SCOPE_NOTICE_KEY) === partnershipId;
+  } catch {
+    return false;
+  }
+}
+
+export function dismissScopeNotice(partnershipId) {
+  if (!partnershipId) return;
+  try {
+    localStorage.setItem(SCOPE_NOTICE_KEY, partnershipId);
+  } catch {
+    // Same trade as above: seen again next visit rather than a crash.
+  }
+}

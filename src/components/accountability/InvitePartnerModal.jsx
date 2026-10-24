@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Handshake } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getDisplayName } from "@/lib/displayName";
+import HabitSharePicker from "./HabitSharePicker";
 
 // Not react-hook-form + zodResolver -- this is a single plain controlled
 // input, and wiring up a form library for one field would be more
@@ -15,14 +16,18 @@ import { getDisplayName } from "@/lib/displayName";
 // that actually validates email shape instead of just checking for an "@".
 const emailSchema = z.string().trim().min(1, "Enter their email.").email("Enter a valid email address.");
 
-export default function InvitePartnerModal({ open, onOpenChange, groupmateEmails = [], profiles = [], onInvite }) {
+export default function InvitePartnerModal({ open, onOpenChange, userEmail, groupmateEmails = [], profiles = [], onInvite }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  // Nothing pre-selected. The invite carries an offer, and an offer the
+  // sender did not actually make is not one.
+  const [selected, setSelected] = useState([]);
 
   const handleClose = () => {
     setEmail("");
     setError("");
+    setSelected([]);
     onOpenChange(false);
   };
 
@@ -37,7 +42,7 @@ export default function InvitePartnerModal({ open, onOpenChange, groupmateEmails
     setSending(true);
     setError("");
     try {
-      await onInvite(trimmed);
+      await onInvite(trimmed, selected);
       handleClose();
     } catch (err) {
       setError(err.message || "Couldn't send that invite.");
@@ -112,9 +117,35 @@ export default function InvitePartnerModal({ open, onOpenChange, groupmateEmails
             )}
           </div>
 
+          <div className="space-y-1.5 pt-1 border-t border-border">
+            <Label className="text-xs font-medium pt-2 block" id="partner-share-label">
+              What should they see?
+            </Label>
+            {/* Stated here rather than in a tooltip, because this is the
+                only point at which the user can act on it. Before this
+                change, accepting or sending an invite granted a standing
+                read of every habit you had, disclosed nowhere. */}
+            <p className="text-xs text-muted-foreground">
+              Only the habits you pick, and only their name, streak and whether you checked in today. Never your past days. You can change this later.
+            </p>
+            <HabitSharePicker
+              userEmail={userEmail}
+              selected={selected}
+              onChange={setSelected}
+              disabled={sending}
+            />
+          </div>
+
+          {/* The label states what the button will do rather than a
+              pre-ticked list deciding it. Sharing nothing stays possible
+              and visible -- it is just not the default wording. */}
           <Button className="w-full gap-2 h-11" onClick={handleSend} disabled={!email.trim() || sending}>
             <Handshake className="w-4 h-4" aria-hidden="true" />
-            {sending ? "Sending…" : "Send Invite"}
+            {sending
+              ? "Sending…"
+              : selected.length > 0
+                ? `Send invite · sharing ${selected.length}`
+                : "Send invite without sharing"}
           </Button>
         </div>
       </DialogContent>
