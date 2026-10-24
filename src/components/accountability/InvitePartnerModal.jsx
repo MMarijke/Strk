@@ -27,6 +27,7 @@ export default function InvitePartnerModal({ open, onOpenChange, groupmateEmails
   };
 
   const handleSend = async () => {
+    if (sending) return;
     const result = emailSchema.safeParse(email);
     if (!result.success) {
       setError(result.error.issues[0].message);
@@ -50,7 +51,7 @@ export default function InvitePartnerModal({ open, onOpenChange, groupmateEmails
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Handshake className="w-4 h-4 text-primary" />
+            <Handshake className="w-4 h-4 text-primary" aria-hidden="true" />
             Invite an Accountability Partner
           </DialogTitle>
         </DialogHeader>
@@ -58,14 +59,19 @@ export default function InvitePartnerModal({ open, onOpenChange, groupmateEmails
         <div className="space-y-4 pt-1">
           {groupmateEmails.length > 0 && (
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">From one of your groups</Label>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              <Label className="text-xs font-medium" id="partner-groupmates-label">
+                From one of your groups
+              </Label>
+              <div className="space-y-1.5 max-h-40 overflow-y-auto" role="group" aria-labelledby="partner-groupmates-label">
                 {groupmateEmails.map((gEmail) => (
                   <button
                     key={gEmail}
+                    type="button"
                     onClick={() => { setEmail(gEmail); setError(""); }}
+                    aria-pressed={email === gEmail}
                     className={cn(
-                      "w-full flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-left transition-all",
+                      "w-full min-h-11 flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-left transition-all",
+                      "outline-none focus-visible:ring-1 focus-visible:ring-ring",
                       email === gEmail
                         ? "border-primary bg-primary/5"
                         : "border-transparent bg-muted hover:bg-muted/80"
@@ -79,21 +85,35 @@ export default function InvitePartnerModal({ open, onOpenChange, groupmateEmails
           )}
 
           <div className="space-y-1.5">
-            <Label className="text-xs font-medium">
+            <Label htmlFor="partner-email" className="text-xs font-medium">
               {groupmateEmails.length > 0 ? "Or enter their email" : "Their email"}
             </Label>
             <Input
+              id="partner-email"
               type="email"
+              inputMode="email"
+              autoComplete="email"
+              maxLength={254}
               placeholder="friend@example.com"
               value={email}
               onChange={(e) => { setEmail(e.target.value); setError(""); }}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "partner-email-error" : undefined}
             />
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {/* role="alert" because this is the only feedback for a failed
+                invite, and it appears below a field the user has already
+                left. text-destructive-text, not text-destructive, at
+                body size -- see the note in src/index.css. */}
+            {error && (
+              <p id="partner-email-error" role="alert" className="text-xs text-destructive-text">
+                {error}
+              </p>
+            )}
           </div>
 
-          <Button className="w-full gap-2" onClick={handleSend} disabled={!email.trim() || sending}>
-            <Handshake className="w-4 h-4" />
+          <Button className="w-full gap-2 h-11" onClick={handleSend} disabled={!email.trim() || sending}>
+            <Handshake className="w-4 h-4" aria-hidden="true" />
             {sending ? "Sending…" : "Send Invite"}
           </Button>
         </div>
