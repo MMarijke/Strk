@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, subDays, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
 import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, Plus, Sparkles, Users, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import LoadErrorStrip from "@/components/ui/load-error-strip";
 import { cn } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
 import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
@@ -96,25 +97,6 @@ function describeMemberActivity(lastCompletionDate) {
 // Same change as Social.jsx's RankIcon, for the same reasons: the icons
 // carry no text, so the place -- the single most important fact in a
 // leaderboard row -- was announced as nothing at all for the top three.
-// Same inline strip ChallengeLeaderboard already uses for this exact job
-// (a failed fetch inside an otherwise-usable card), so a load failure looks
-// the same wherever it happens in this feature rather than inventing a
-// second error language one folder over.
-function LoadErrorStrip({ message, onRetry }) {
-  return (
-    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive-text text-xs">
-      <span>{message}</span>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="font-semibold underline underline-offset-2 shrink-0 h-11 px-1"
-      >
-        Retry
-      </button>
-    </div>
-  );
-}
-
 function RankIcon({ rank, isTied }) {
   const label = isTied ? `Tied for ${ordinal(rank)}` : ordinal(rank);
   const icon =

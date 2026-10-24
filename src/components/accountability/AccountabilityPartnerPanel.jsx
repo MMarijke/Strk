@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Handshake, Flame, Bell, X, Check, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import LoadErrorStrip from "@/components/ui/load-error-strip";
 import { toast } from "sonner";
 import { AccountabilityPartnership } from "@/api/entities";
 import {
@@ -25,7 +26,12 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   const [showInvite, setShowInvite] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
 
-  const { data: partnerships = [], isLoading } = useQuery({
+  const {
+    data: partnerships = [],
+    isLoading,
+    isError: partnershipsError,
+    refetch: refetchPartnerships,
+  } = useQuery({
     queryKey: ["accountability-partnerships", userEmail],
     queryFn: () => userEmail
       ? AccountabilityPartnership.filter({ $or: [{ requester_email: userEmail }, { partner_email: userEmail }] })
@@ -37,7 +43,12 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   const pendingIncoming = partnerships.find((p) => p.status === "pending" && p.partner_email === userEmail);
   const pendingOutgoing = partnerships.find((p) => p.status === "pending" && p.requester_email === userEmail);
 
-  const { data: partnerHabits = [], isLoading: dashboardLoading } = useQuery({
+  const {
+    data: partnerHabits = [],
+    isLoading: dashboardLoading,
+    isError: dashboardError,
+    refetch: refetchDashboard,
+  } = useQuery({
     queryKey: ["partner-dashboard", activePartnership?.id],
     queryFn: getPartnerDashboard,
     enabled: !!activePartnership,
@@ -106,6 +117,51 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   }
 
   // Active partnership: the side-by-side dashboard
+  // A failed partnerships read used to fall through to the first-run "Pair up
+  // for real accountability" CTA -- so someone WITH a partner was shown the
+  // invite flow, and clicking through got them a Postgres rejection. The read
+  // failing and having no partner are different facts and now look different.
+  if (partnershipsError) {
+    return (
+      <LoadErrorStrip
+        message="Couldn't load your partner."
+        onRetry={() => refetchPartnerships()}
+      />
+    );
+  }
+
+  // Zero rows from get_partner_dashboard proves the partnership is no longer
+  // active (it filters on status = 'active' and returns early; it left-joins
+  // habits, so an active partnership always yields at least one row). That
+  // invalidates the whole active view, not just the habits card inside it --
+  // rendering "this ended" under a live partner header and an enabled Nudge
+  // button would be its own contradiction. accountability_partnerships is not
+  // in the realtime publication, so a partner ending it reaches this client
+  // only via a refetch; until then the cached row still says "active" and
+  // this zero-row signal is the only evidence available.
+  const partnershipEndedElsewhere = !!activePartnership
+    && !dashboardLoading
+    && !dashboardError
+    && partnerHabits.length === 0;
+
+  if (partnershipEndedElsewhere) {
+    return (
+      <Card className="border-0 shadow-sm p-5 text-center space-y-3">
+        <p className="text-sm font-semibold text-foreground">This partnership has ended</p>
+        <p className="text-xs text-muted-foreground">
+          Your partner ended it, or it ended on another device.
+        </p>
+        <Button
+          variant="outline"
+          className="h-11"
+          onClick={() => { refetchPartnerships(); refetchDashboard(); }}
+        >
+          Refresh
+        </Button>
+      </Card>
+    );
+  }
+
   if (activePartnership) {
     const partnerEmail = activePartnership.requester_email === userEmail
       ? activePartnership.partner_email
@@ -145,10 +201,35 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
             {partnerName}'s habits
           </p>
+          {/* Three outcomes that used to collapse into one sentence, and the
+              distinction is load-bearing:
+
+                * dashboardError -- the fetch failed. Said so, with a Retry.
+                * partnerHabits.length === 0 -- the PARTNERSHIP is gone.
+                  get_partner_dashboard filters on status = 'active' and
+                  returns early, so zero rows is only reachable once the
+                  partnership is no longer active. It left-joins habits, so an
+                  active partnership always yields at least one row. Zero rows
+                  therefore PROVES the partnership ended -- it cannot mean
+                  "no habits".
+                * rows.length === 0 with rows present -- that one row has a
+                  null habit_id, which is exactly the left join reporting a
+                  partner who genuinely tracks nothing. Here "No active habits
+                  yet." is true.
+
+              Before this, all three rendered the third message, so an ended
+              partnership and a failed request both read as your partner having
+              given up on every habit they had -- attributed to them by name in
+              the heading directly above. */}
           {dashboardLoading ? (
-            <div className="space-y-2">
+            <div className="space-y-2" role="status" aria-label="Loading your partner's habits">
               {[1, 2].map((i) => <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />)}
             </div>
+          ) : dashboardError ? (
+            <LoadErrorStrip
+              message="Couldn't load their habits."
+              onRetry={() => refetchDashboard()}
+            />
           ) : rows.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">No active habits yet.</p>
           ) : (
