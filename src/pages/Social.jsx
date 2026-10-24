@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotification, AccountabilityPartnership, AccountabilityNudge } from "@/api/entities";
+import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotification, AccountabilityPartnership } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { format, subDays } from "date-fns";
@@ -387,24 +387,12 @@ export default function Social() {
     return unsubscribe;
   }, [user?.email, groups]);
 
-  // Real-time: a nudge is a one-tap poke, not a persistent dismissable
-  // banner -- a toast is enough, mirrors the challenge-notification toast
-  // above but with no "view" action since there's nowhere else to go.
-  const shownNudgeIds = useRef(new Set());
-  useEffect(() => {
-    if (!user?.email) return;
-    const unsubscribe = AccountabilityNudge.subscribe((event) => {
-      if (event.type !== "create") return;
-      const nudge = event.data;
-      if (nudge.recipient_email !== user.email) return;
-      if (shownNudgeIds.current.has(event.id)) return;
-      shownNudgeIds.current.add(event.id);
-
-      const senderName = getDisplayName(nudge.sender_email, profiles);
-      toast(`👋 ${senderName} nudged you to keep your streak going!`, { duration: 4000 });
-    });
-    return unsubscribe;
-  }, [user?.email, profiles]);
+  // The nudge listener used to live here, which was the bug: it was the only
+  // subscriber in the app, so a nudge only ever reached a recipient who
+  // happened to be on this page at that second. It is now
+  // AccountabilityNudgeListener, mounted app-wide from AppLayout.jsx and
+  // backed by the row's `read` flag, so one sent while the recipient is
+  // anywhere else -- or has the app closed -- still arrives.
 
   return (
     <div className="min-h-screen bg-background">

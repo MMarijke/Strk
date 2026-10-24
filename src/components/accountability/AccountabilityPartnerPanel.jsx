@@ -5,11 +5,12 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import LoadErrorStrip from "@/components/ui/load-error-strip";
 import { toast } from "sonner";
-import { AccountabilityPartnership } from "@/api/entities";
+import { AccountabilityPartnership, AccountabilityNudge } from "@/api/entities";
 import {
   requestPartner, respondToPartnerRequest, endPartnership, getPartnerDashboard, sendNudge,
 } from "@/lib/accountabilityService";
 import { isPartnerNoticeDismissed, dismissPartnerNotice } from "@/lib/partnerNotice";
+import { format } from "date-fns";
 import { getDisplayName } from "@/lib/displayName";
 import { trackEvent } from "@/lib/analytics";
 import InvitePartnerModal from "./InvitePartnerModal";
@@ -94,6 +95,30 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
     && !pendingIncoming
     && !pendingOutgoing
     && !noticeDismissed;
+  // Whether this user has already nudged today.
+  //
+  // The cap is one per day per partnership per sender, enforced in
+  // send_accountability_nudge -- but the client never read it, so the
+  // button looked identical before and after sending and the second tap of
+  // the day was a guaranteed error. Every user who used the feature as
+  // presented got a red toast for it.
+  //
+  // date_trunc('day', now()) is the server's day, and this compares against
+  // the client's local one. They can disagree either side of midnight, so
+  // the button can read "Nudged today" slightly early or late -- which is
+  // the safe direction to be wrong: the server is still the authority, and
+  // the NUDGE_LIMIT_REACHED branch below still catches the disagreement.
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const { data: nudgesSent = [] } = useQuery({
+    queryKey: ["accountability-nudges-sent", userEmail, todayStr],
+    queryFn: () => userEmail
+      ? AccountabilityNudge.filter({ sender_email: userEmail }, "-created_date")
+      : [],
+    enabled: !!userEmail && !!activePartnership,
+  });
+  const nudgedToday = nudgesSent.some(
+    (n) => n.partnership_id === activePartnership?.id && n.created_date?.slice(0, 10) === todayStr
+  );
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["accountability-partnerships", userEmail] });
@@ -133,10 +158,17 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
     mutationFn: sendNudge,
     onSuccess: () => {
       trackEvent("accountability_nudge_sent");
+      // Flips the button to "Nudged today" without waiting for a refetch
+      // window, so the state the user just created is the state they see.
+      queryClient.invalidateQueries({ queryKey: ["accountability-nudges-sent", userEmail] });
       toast.success("Nudge sent! 👋", { duration: 2500 });
     },
     onError: (error) => {
       if (error?.message?.includes("NUDGE_LIMIT_REACHED")) {
+        // Reachable despite the disabled button when the client's local day
+        // and the server's disagree across midnight. Refetch so the button
+        // catches up with the server rather than staying wrong.
+        queryClient.invalidateQueries({ queryKey: ["accountability-nudges-sent", userEmail] });
         toast.error("You've already nudged your partner today.", { duration: 3000 });
       } else {
         toast.error("Couldn't send that nudge. Please try again.", { duration: 3000 });
@@ -231,15 +263,22 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
                 <p className="text-xs text-muted-foreground">Your accountability partner</p>
               </div>
             </div>
+            {/* Says which state it is in rather than letting the cap be
+                discovered by failing. h-11 to match the project's touch
+                target, which this file did not previously meet anywhere. */}
             <Button
               size="sm"
               variant="outline"
               className="gap-1.5 shrink-0 h-11"
               onClick={() => nudgeMutation.mutate()}
-              disabled={nudgeMutation.isPending}
-              aria-label={`Nudge ${partnerName}`}
+              disabled={nudgeMutation.isPending || nudgedToday}
+              aria-label={nudgedToday
+                ? `Already nudged ${partnerName} today. One nudge a day.`
+                : `Nudge ${partnerName}`}
             >
-              <Bell className="w-3.5 h-3.5" aria-hidden="true" /> Nudge
+              {nudgedToday
+                ? <><Check className="w-3.5 h-3.5" aria-hidden="true" /> Nudged today</>
+                : <><Bell className="w-3.5 h-3.5" aria-hidden="true" /> Nudge</>}
             </Button>
           </div>
         </Card>
