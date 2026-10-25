@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
-import { GroupChallenge, Group } from "@/api/entities";
+import { GroupChallenge, Group, ChallengeHabitLink } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter } from "date-fns";
 import { Trophy, Flame } from "lucide-react";
@@ -21,6 +21,15 @@ export default function ChallengeBanner({ userEmail, habits }) {
     queryKey: ["groups"],
     queryFn: () => Group.list("-created_date"),
     staleTime: 5 * 60 * 1000,
+  });
+
+  // Which of my habits counts for each challenge (20261026090001). One
+  // query for all of them rather than one per card; RLS is select-own so
+  // list() is already scoped to this user.
+  const { data: myLinks = [] } = useQuery({
+    queryKey: ["challenge-habit-links-mine"],
+    queryFn: () => ChallengeHabitLink.list(),
+    staleTime: 30_000,
   });
 
   // One-time orphan cleanup: delete challenges whose group no longer exists
@@ -110,13 +119,14 @@ export default function ChallengeBanner({ userEmail, habits }) {
           userEmail={userEmail}
           today={today}
           memberProgress={progressQueries[i]?.data || []}
+          myLink={myLinks.find((l) => l.challenge_id === challenge.id) || null}
         />
       ))}
     </div>
   );
 }
 
-function ChallengeCard({ challenge, habits, userEmail, today, memberProgress }) {
+function ChallengeCard({ challenge, habits, userEmail, today, memberProgress, myLink }) {
   const startDate = parseISO(challenge.start_date);
   const endDate = parseISO(challenge.end_date);
   const effectiveEnd = isAfter(today, endDate) ? endDate : today;
@@ -125,14 +135,14 @@ function ChallengeCard({ challenge, habits, userEmail, today, memberProgress }) 
   const elapsedDates = allDays.slice(0, elapsedDayCount);
 
   const daysRemaining = differenceInDays(endDate, today) + 1;
-  const myStats = getChallengeStats(challenge, habits, elapsedDates);
+  const myStats = getChallengeStats(challenge, habits, elapsedDates, myLink);
 
   const members = challenge.member_emails || [];
   const progressByEmail = new Map(memberProgress.map((row) => [row.email, row]));
   const rows = members.map((email) => {
     if (email === userEmail) return { email, pct: myStats.pct, streak: myStats.streak };
     const row = progressByEmail.get(email);
-    if (!row || row.no_matching_habit) return { email, pct: 0, streak: 0 };
+    if (!row || row.link_state !== "linked") return { email, pct: 0, streak: 0 };
     const pct = elapsedDates.length > 0 ? Math.round((row.completed_days / elapsedDates.length) * 100) : 0;
     return { email, pct, streak: row.streak };
   }).sort((a, b) => b.pct - a.pct || b.streak - a.streak);
