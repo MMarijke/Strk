@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText, ShieldCheck } from "lucide-react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText, ShieldCheck, Check } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -58,6 +58,10 @@ export default function Settings() {
   // setTimeout for the "Saved" confirmation, cleared on unmount so it
   // cannot set state on an unmounted component.
   const nameSavedTimer = useRef(null);
+  // Drives both the hint and the aria-describedby that names why Save is
+  // disabled -- previously the 2-character minimum was discoverable only by
+  // inferring it from a greyed-out button.
+  const tooShort = displayName.trim().length > 0 && displayName.trim().length < 2;
   useEffect(() => () => clearTimeout(nameSavedTimer.current), []);
 
   // Informational only -- no server-side blocking on this. Deletion still
@@ -168,6 +172,37 @@ export default function Settings() {
     }
   };
 
+  // Theme picker keyboard model. A radiogroup is one tab stop with arrows
+  // moving between options, not seven separate stops -- and in a radiogroup
+  // arrowing also selects, which here means the theme previews as you move.
+  const themeOrder = useMemo(
+    () => [
+      ...COLOR_THEMES.filter((t) => t.id === "strk").map((t) => t.id),
+      ...COLOR_THEMES.filter((t) => t.id !== "strk").map((t) => t.id),
+    ],
+    []
+  );
+  const themeRefs = useRef({});
+
+  const handleThemeKeyDown = (e, id) => {
+    const i = themeOrder.indexOf(id);
+    if (i === -1) return;
+    let next;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      next = themeOrder[(i + 1) % themeOrder.length];
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      next = themeOrder[(i - 1 + themeOrder.length) % themeOrder.length];
+    } else if (e.key === "Home") {
+      next = themeOrder[0];
+    } else if (e.key === "End") {
+      next = themeOrder[themeOrder.length - 1];
+    }
+    if (!next) return;
+    e.preventDefault();
+    setThemeId(next);
+    themeRefs.current[next]?.focus();
+  };
+
   // Synchronous: localStorage only, and the only input to
   // scheduleWeeklySummaryNotif(). Nothing to fail, nothing to roll back.
   const handlePushNotifToggle = (val) => {
@@ -250,7 +285,7 @@ export default function Settings() {
           {/* Profile / Display Name */}
           <Card className="border-0 shadow-sm p-5">
             <div className="flex items-center gap-3 mb-1">
-              <User className="w-4 h-4 text-primary" />
+              <User className="w-4 h-4 text-primary" aria-hidden="true" />
               <h2 className="font-semibold text-sm">Profile</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">This name appears on leaderboards and group views</p>
@@ -278,13 +313,15 @@ export default function Settings() {
                       onChange={(e) => { setDisplayName(e.target.value.slice(0, 20)); setNameSaved(false); }}
                       placeholder="Your display name"
                       maxLength={20}
-                      className="flex-1"
+                      className="flex-1 h-11"
+                      aria-describedby={tooShort ? "display-name-hint" : "display-name-counter"}
                     />
                     <Button
                       onClick={handleSaveName}
                       disabled={savingName || displayName.trim().length < 2}
                       size="sm"
-                      className="shrink-0"
+                      className="shrink-0 h-11"
+                      aria-describedby={tooShort ? "display-name-hint" : undefined}
                     >
                       {savingName ? "Saving…" : "Save"}
                     </Button>
@@ -294,11 +331,18 @@ export default function Settings() {
                       remain there, and the checkmark glyph reads literally or
                       is dropped entirely. */}
                   <div className="flex items-center justify-between gap-2 mt-1">
-                    <p className="text-xs text-muted-foreground">{displayName.trim().length}/20 characters</p>
+                    <p id="display-name-counter" className="text-xs text-muted-foreground">
+                      {displayName.trim().length}/20 characters
+                    </p>
                     <p className="text-xs font-medium text-primary" role="status">
                       {nameSaved ? "Saved" : ""}
                     </p>
                   </div>
+                  {tooShort && (
+                    <p id="display-name-hint" className="text-xs text-muted-foreground mt-1">
+                      Needs at least 2 characters.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -310,7 +354,7 @@ export default function Settings() {
             isPro && "bg-gradient-to-br from-primary/10 to-accent/10"
           )}>
             <div className="flex items-center gap-3 mb-1">
-              <Sparkles className="w-4 h-4 text-primary" />
+              <Sparkles className="w-4 h-4 text-primary" aria-hidden="true" />
               <h2 className="font-semibold text-sm">Subscription</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">
@@ -320,10 +364,10 @@ export default function Settings() {
             </p>
             <div className="flex items-center justify-between">
               <span className={cn(
-                "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full",
-                isPro ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                "inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full text-foreground",
+                isPro ? "bg-primary/20" : "bg-muted"
               )}>
-                {isPro && <Sparkles className="w-3 h-3" />}
+                {isPro && <Sparkles className="w-3 h-3 text-primary" aria-hidden="true" />}
                 {isPro ? "Pro Plan" : "Free Plan"}
               </span>
               {isPro ? (
@@ -333,12 +377,15 @@ export default function Settings() {
                 // edge function. It also handles the "no subscription found"
                 // case internally, so this link no longer needs to branch on
                 // whether profile.paddle_update_payment_method_url exists.
-                <Link to="/Subscription" className="text-xs font-medium text-primary hover:underline">
+                <Link
+                  to="/Subscription"
+                  className="inline-flex items-center h-11 px-1 text-xs font-medium text-primary hover:underline rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
                   Manage Subscription
                 </Link>
               ) : (
-                <Button size="sm" onClick={() => setShowUpgrade(true)} className="gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" />
+                <Button size="sm" onClick={() => setShowUpgrade(true)} className="gap-1.5 h-11">
+                  <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
                   Upgrade to Pro
                 </Button>
               )}
@@ -348,7 +395,7 @@ export default function Settings() {
           {/* Dark Mode Toggle */}
           <Card className="border-0 shadow-sm p-5">
             <div className="flex items-center gap-3 mb-1">
-              {isDark ? <Moon className="w-4 h-4 text-primary" /> : <Sun className="w-4 h-4 text-accent" />}
+              {isDark ? <Moon className="w-4 h-4 text-primary" aria-hidden="true" /> : <Sun className="w-4 h-4 text-accent" aria-hidden="true" />}
               <h2 className="font-semibold text-sm">Appearance</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">Choose your preferred display mode</p>
@@ -360,6 +407,7 @@ export default function Settings() {
                 </p>
               </div>
               <Switch
+                className="relative before:absolute before:content-[''] before:-inset-y-3 before:-inset-x-1"
                 id="dark-mode"
                 checked={isDark}
                 onCheckedChange={setIsDark}
@@ -370,8 +418,8 @@ export default function Settings() {
           {/* Color Theme Picker */}
           <Card className="border-0 shadow-sm p-5">
             <div className="flex items-center gap-3 mb-1">
-              <Palette className="w-4 h-4 text-primary" />
-              <h2 className="font-semibold text-sm">Color Theme</h2>
+              <Palette className="w-4 h-4 text-primary" aria-hidden="true" />
+              <h2 id="color-theme-heading" className="font-semibold text-sm">Color Theme</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">Pick a color palette for your app</p>
 
@@ -379,20 +427,27 @@ export default function Settings() {
               const defaultTheme = COLOR_THEMES.find(t => t.id === "strk");
               const otherThemes = COLOR_THEMES.filter(t => t.id !== "strk");
               return (
-                <>
+                <div role="radiogroup" aria-labelledby="color-theme-heading">
                   {defaultTheme && (() => {
                     const isActive = themeId === defaultTheme.id;
                     return (
                       <button
+                        type="button"
+                        role="radio"
+                        aria-checked={isActive}
+                        tabIndex={themeId === defaultTheme.id ? 0 : -1}
+                        ref={(el) => { themeRefs.current[defaultTheme.id] = el; }}
+                        onKeyDown={(e) => handleThemeKeyDown(e, defaultTheme.id)}
                         onClick={() => setThemeId(defaultTheme.id)}
                         className={cn(
                           "relative w-full rounded-xl p-3 border-2 transition-all duration-200 text-left mb-3",
+                          "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                           isActive ? "shadow-md scale-[1.01]" : "border-transparent bg-muted/50 hover:bg-muted"
                         )}
                         style={isActive ? { borderColor: `hsl(${defaultTheme.primary})` } : {}}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="flex gap-1.5">
+                          <div className="flex gap-1.5" aria-hidden="true">
                             <div className="w-6 h-6 rounded-full" style={{ backgroundColor: `hsl(${defaultTheme.primary})` }} />
                             <div className="w-6 h-6 rounded-full" style={{ backgroundColor: `hsl(${defaultTheme.accent})` }} />
                           </div>
@@ -402,37 +457,44 @@ export default function Settings() {
                           </div>
                         </div>
                         {isActive && (
-                          <div className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `hsl(${defaultTheme.primary})` }} />
+                          <Check className="absolute top-3 right-3 w-4 h-4 text-foreground" aria-hidden="true" />
                         )}
                       </button>
                     );
                   })()}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-3" role="none">
                     {otherThemes.map((theme) => {
                       const isActive = themeId === theme.id;
                       return (
                         <button
                           key={theme.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={isActive}
+                          tabIndex={themeId === theme.id ? 0 : -1}
+                          ref={(el) => { themeRefs.current[theme.id] = el; }}
+                          onKeyDown={(e) => handleThemeKeyDown(e, theme.id)}
                           onClick={() => setThemeId(theme.id)}
                           className={cn(
                             "relative rounded-xl p-3 border-2 transition-all duration-200 text-left",
+                            "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                             isActive ? "shadow-md scale-[1.02]" : "border-transparent bg-muted/50 hover:bg-muted"
                           )}
                           style={isActive ? { borderColor: `hsl(${theme.primary})` } : {}}
                         >
-                          <div className="flex gap-1.5 mb-2">
+                          <div className="flex gap-1.5 mb-2" aria-hidden="true">
                             <div className="w-5 h-5 rounded-full" style={{ backgroundColor: `hsl(${theme.primary})` }} />
                             <div className="w-5 h-5 rounded-full" style={{ backgroundColor: `hsl(${theme.accent})` }} />
                           </div>
-                          <p className="text-xs font-semibold text-foreground">{theme.label}</p>
+                          <p className="text-xs font-semibold text-foreground pr-5">{theme.label}</p>
                           {isActive && (
-                            <div className="absolute top-2 right-2 w-2 h-2 rounded-full" style={{ backgroundColor: `hsl(${theme.primary})` }} />
+                            <Check className="absolute top-2 right-2 w-3.5 h-3.5 text-foreground" aria-hidden="true" />
                           )}
                         </button>
                       );
                     })}
                   </div>
-                </>
+                </div>
               );
             })()}
           </Card>
@@ -440,7 +502,7 @@ export default function Settings() {
           {/* Weekly Summary */}
           <Card className="border-0 shadow-sm p-5">
             <div className="flex items-center gap-3 mb-1">
-              <BarChart2 className="w-4 h-4 text-primary" />
+              <BarChart2 className="w-4 h-4 text-primary" aria-hidden="true" />
               <h2 className="font-semibold text-sm">Weekly Summary</h2>
             </div>
             {/* No longer Monday-specific -- isSummaryVisible() now surfaces
@@ -466,6 +528,7 @@ export default function Settings() {
                   </p>
                 </div>
                 <Switch
+                  className="relative before:absolute before:content-[''] before:-inset-y-3 before:-inset-x-1"
                   id="weekly-email"
                   checked={emailDigest}
                   disabled={!profile?.id || savingEmailDigest}
@@ -490,6 +553,7 @@ export default function Settings() {
                   </p>
                 </div>
                 <Switch
+                  className="relative before:absolute before:content-[''] before:-inset-y-3 before:-inset-x-1"
                   id="weekly-push"
                   checked={pushNotif && notifSupported}
                   disabled={!notifSupported}
@@ -504,14 +568,14 @@ export default function Settings() {
           <Card className="border-0 shadow-sm p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Medal className="w-4 h-4 text-primary" />
+                <Medal className="w-4 h-4 text-primary" aria-hidden="true" />
                 <div>
                   <h2 className="font-semibold text-sm">Badge Guide</h2>
                   <p className="text-xs text-muted-foreground">Learn what each badge means</p>
                 </div>
               </div>
               <Link to="/Badges">
-                <Button variant="outline" size="sm">View</Button>
+                <Button variant="outline" size="sm" className="h-11">View</Button>
               </Link>
             </div>
           </Card>
@@ -519,7 +583,7 @@ export default function Settings() {
           {/* Analytics Consent */}
           <Card className="border-0 shadow-sm p-5">
             <div className="flex items-center gap-3 mb-1">
-              <ShieldCheck className="w-4 h-4 text-primary" />
+              <ShieldCheck className="w-4 h-4 text-primary" aria-hidden="true" />
               <h2 className="font-semibold text-sm">Analytics</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">
@@ -533,6 +597,7 @@ export default function Settings() {
                 </p>
               </div>
               <Switch
+                className="relative before:absolute before:content-[''] before:-inset-y-3 before:-inset-x-1"
                 id="analytics-consent"
                 checked={analyticsConsent}
                 onCheckedChange={handleAnalyticsConsentToggle}
@@ -543,15 +608,15 @@ export default function Settings() {
           {/* Legal */}
           <Card className="border-0 shadow-sm p-5">
             <div className="flex items-center gap-3 mb-1">
-              <FileText className="w-4 h-4 text-primary" />
+              <FileText className="w-4 h-4 text-primary" aria-hidden="true" />
               <h2 className="font-semibold text-sm">Legal</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">Terms, privacy, and how your data is handled</p>
             <div className="flex gap-4">
-              <Link to="/terms" className="text-sm font-medium text-primary hover:underline">
+              <Link to="/terms" className="inline-flex items-center h-11 text-sm font-medium text-primary hover:underline rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring">
                 Terms of Service
               </Link>
-              <Link to="/privacy" className="text-sm font-medium text-primary hover:underline">
+              <Link to="/privacy" className="inline-flex items-center h-11 text-sm font-medium text-primary hover:underline rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring">
                 Privacy Policy
               </Link>
             </div>
@@ -561,13 +626,13 @@ export default function Settings() {
           <Card className="border-0 shadow-sm p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <LogOut className="w-4 h-4 text-primary" />
+                <LogOut className="w-4 h-4 text-primary" aria-hidden="true" />
                 <div>
                   <h2 className="font-semibold text-sm">Sign Out</h2>
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
               </div>
-              <Button variant="outline" size="sm" onClick={handleSignOut} disabled={signingOut}>
+              <Button variant="outline" size="sm" className="h-11" onClick={handleSignOut} disabled={signingOut}>
                 {signingOut ? "Signing out…" : "Sign Out"}
               </Button>
             </div>
@@ -576,8 +641,8 @@ export default function Settings() {
           {/* Account Deletion */}
           <Card className="border-0 shadow-sm p-5 border border-destructive/20">
             <div className="flex items-center gap-3 mb-1">
-              <Trash2 className="w-4 h-4 text-destructive" />
-              <h2 className="font-semibold text-sm text-destructive">Danger Zone</h2>
+              <Trash2 className="w-4 h-4 text-destructive" aria-hidden="true" />
+              <h2 className="font-semibold text-sm text-destructive-text">Danger Zone</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">
               Permanently delete your account and all your data. This cannot be undone.
@@ -588,8 +653,8 @@ export default function Settings() {
                 created since load is accounted for. */}
             <AlertDialog onOpenChange={(open) => { if (open) setGroupsNonce((n) => n + 1); }}>
               <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm" className="gap-2">
-                  <Trash2 className="w-3.5 h-3.5" />
+                <Button variant="destructive" size="sm" className="gap-2 h-11">
+                  <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   Delete Account
                 </Button>
               </AlertDialogTrigger>
@@ -620,9 +685,9 @@ export default function Settings() {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel className="h-11">Cancel</AlertDialogCancel>
                   <AlertDialogAction
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    className="h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={handleDeleteAccount}
                     disabled={deletingAccount || groupsStatus === "loading"}
                   >
