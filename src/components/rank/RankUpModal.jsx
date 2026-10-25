@@ -1,14 +1,28 @@
 import React, { useEffect, useRef } from "react";
 import confetti from "canvas-confetti";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { prefersReducedMotion } from "@/lib/utils";
 
 export default function RankUpModal({ rank, onClose }) {
   const timerRef = useRef(null);
 
   useEffect(() => {
     if (!rank) return;
-    // Confetti burst
-    confetti({ particleCount: 160, spread: 90, origin: { y: 0.5 } });
+    // src/index.css's reduced-motion block only reaches CSS animations
+    // and transitions -- a canvas-confetti burst is JavaScript drawing
+    // to a canvas, which is exactly why utils.js exports
+    // prefersReducedMotion(). SessionRoom has used it since the focus
+    // session work; these surfaces never did.
+    //
+    // The screen still celebrates -- the copy, the icon and the layout
+    // carry the moment -- so skipping the burst costs it nothing it
+    // needed.
+    if (!prefersReducedMotion()) {
+      confetti({ particleCount: 160, spread: 90, origin: { y: 0.5 } });
+    }
+    // The auto-close timer is deliberately OUTSIDE the guard: it is how the
+    // modal dismisses itself, not decoration, so skipping it would leave a
+    // reduced-motion user stuck on the modal until they close it by hand.
     timerRef.current = setTimeout(onClose, 5000);
     return () => clearTimeout(timerRef.current);
   }, [rank]);
