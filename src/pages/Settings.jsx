@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import LoadErrorStrip from "@/components/ui/load-error-strip";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -30,7 +31,10 @@ export default function Settings() {
   const { isPro } = useSubscription();
   const navigate = useNavigate();
   const notifSupported = "Notification" in window && Notification.permission === "granted";
-  const [weeklySummaryNotif, setWeeklySummaryNotif] = useState(getWeeklySummaryNotifEnabled);
+  // Push notification: localStorage only, and the only thing
+  // scheduleWeeklySummaryNotif() reads. Separate from the email below --
+  // see the comment on the Weekly Summary card.
+  const [pushNotif, setPushNotif] = useState(getWeeklySummaryNotifEnabled);
   const [analyticsConsent, setAnalyticsConsentState] = useState(() => getAnalyticsConsent() === "granted");
   const [profile, setProfile] = useState(null);
   const [displayName, setDisplayName] = useState("");
@@ -40,44 +44,135 @@ export default function Settings() {
   const [signingOut, setSigningOut] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [ownedGroupsWithOthers, setOwnedGroupsWithOthers] = useState([]);
+  // Email digest: server-side, read from and written to user_profiles.
+  const [emailDigest, setEmailDigest] = useState(false);
+  const [savingEmailDigest, setSavingEmailDigest] = useState(false);
+  // Both reads now carry an explicit status, because "it failed" and "there
+  // is nothing" used to render identically -- and for the group check that
+  // difference decides whether a destructive confirmation tells the truth.
+  // The nonce is what a Retry increments.
+  const [profileStatus, setProfileStatus] = useState("loading");
+  const [profileNonce, setProfileNonce] = useState(0);
+  const [groupsStatus, setGroupsStatus] = useState("loading");
+  const [groupsNonce, setGroupsNonce] = useState(0);
+  // setTimeout for the "Saved" confirmation, cleared on unmount so it
+  // cannot set state on an unmounted component.
+  const nameSavedTimer = useRef(null);
+  useEffect(() => () => clearTimeout(nameSavedTimer.current), []);
 
   // Informational only -- no server-side blocking on this. Deletion still
   // proceeds and cascade-deletes owned groups regardless (see
   // delete-account edge function); this just makes sure the person knows
   // that in advance, since it affects other real people's data.
+  //
+  // Which is exactly why the failure has to be visible. With no catch, a
+  // rejected request left this at [] and the dialog silently dropped the
+  // whole "this also deletes groups for other people" disclosure -- a
+  // strictly less informed consent screen, indistinguishable from owning
+  // no shared groups, in front of an irreversible multi-party action.
   useEffect(() => {
     if (!user?.email) return;
-    Group.filter({ created_by: user.email }).then((groups) => {
-      setOwnedGroupsWithOthers(
-        groups.filter((g) => (g.member_emails || []).some((e) => e !== user.email))
-      );
-    });
-  }, [user?.email]);
+    let cancelled = false;
+    setGroupsStatus("loading");
+    Group.filter({ created_by: user.email })
+      .then((groups) => {
+        if (cancelled) return;
+        setOwnedGroupsWithOthers(
+          groups.filter((g) => (g.member_emails || []).some((e) => e !== user.email))
+        );
+        setGroupsStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setGroupsStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, [user?.email, groupsNonce]);
 
   useEffect(() => {
     if (!user?.email) return;
-    getMyProfile(user.email).then((p) => {
-      setProfile(p);
-      setDisplayName(p?.display_name || user.email.split("@")[0]);
-    });
-  }, [user?.email]);
+    let cancelled = false;
+    setProfileStatus("loading");
+    getMyProfile(user.email)
+      .then((p) => {
+        if (cancelled) return;
+        setProfile(p);
+        setDisplayName(p?.display_name || user.email.split("@")[0]);
+        // No row means this user is not in send-weekly-digest's query at
+        // all, so no email is being sent -- `false` is the honest reading,
+        // not the column default.
+        setEmailDigest(p ? p.email_weekly_digest !== false : false);
+        setProfileStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setProfileStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, [user?.email, profileNonce]);
 
+  // try/finally, not a bare await: a rejection used to skip
+  // setSavingName(false) entirely, leaving the button reading "Saving..."
+  // and disabled permanently with no way back but a reload.
   const handleSaveName = async () => {
     const trimmed = displayName.trim();
     if (!trimmed || trimmed.length < 2 || !user) return;
     setSavingName(true);
-    await saveMyDisplayName(user.email, trimmed);
-    setSavingName(false);
-    setNameSaved(true);
-    setTimeout(() => setNameSaved(false), 2000);
+    try {
+      const saved = await saveMyDisplayName(user.email, trimmed);
+      // Keep the local profile in step, so the email toggle below is not
+      // left pointing at a stale row after a first-time profile creation.
+      if (saved) setProfile(saved);
+      setNameSaved(true);
+      clearTimeout(nameSavedTimer.current);
+      nameSavedTimer.current = setTimeout(() => setNameSaved(false), 2000);
+    } catch {
+      toast.error("Couldn't save your display name. Please try again.", { duration: 4000 });
+    } finally {
+      setSavingName(false);
+    }
   };
 
-  const handleWeeklySummaryToggle = (val) => {
-    setWeeklySummaryNotif(val);
-    setWeeklySummaryNotifEnabled(val);
-    if (profile?.id) {
-      UserProfile.update(profile.id, { email_weekly_digest: val }).then((updated) => setProfile(updated));
+  // The weekly summary is TWO channels and used to be one switch.
+  //
+  // The old handler wrote localStorage (browser notification) and
+  // email_weekly_digest (a real Resend send, see
+  // supabase/functions/send-weekly-digest) from the same control -- and
+  // that control was disabled unless Notification.permission === "granted".
+  // email_weekly_digest defaults to true, so anyone who had not granted
+  // notification permission (every iOS Safari user, anyone who dismissed
+  // the prompt) was receiving a recurring email with the only off-switch
+  // greyed out. Worse, `checked` was ANDed with the permission, so the
+  // control rendered "off" while the server flag was on: it stated the
+  // opposite of the truth.
+  //
+  // Optimistic with rollback rather than pending-then-commit: the switch
+  // should feel immediate, but it must never be left showing a state the
+  // server disagrees with.
+  const handleEmailDigestToggle = async (val) => {
+    if (!profile?.id) return;
+    const previous = emailDigest;
+    setEmailDigest(val);
+    setSavingEmailDigest(true);
+    try {
+      const updated = await UserProfile.update(profile.id, { email_weekly_digest: val });
+      if (updated) setProfile(updated);
+    } catch {
+      setEmailDigest(previous);
+      toast.error(
+        val
+          ? "Couldn't turn the weekly email on. Please try again."
+          : "Couldn't turn the weekly email off. Please try again.",
+        { duration: 4000 }
+      );
+    } finally {
+      setSavingEmailDigest(false);
     }
+  };
+
+  // Synchronous: localStorage only, and the only input to
+  // scheduleWeeklySummaryNotif(). Nothing to fail, nothing to roll back.
+  const handlePushNotifToggle = (val) => {
+    setPushNotif(val);
+    setWeeklySummaryNotifEnabled(val);
   };
 
   // Lets someone revisit the AnalyticsConsentBanner decision anytime --
@@ -97,21 +192,47 @@ export default function Settings() {
     // groups/challenges/sessions/reactions, then calls the Auth Admin API
     // to delete auth.users -- which cascades to remove every row the user
     // owns in one step. See supabase/functions/delete-account/index.ts.
-    const { error } = await supabase.functions.invoke("delete-account");
+    let error;
+    try {
+      ({ error } = await supabase.functions.invoke("delete-account"));
+    } catch {
+      // invoke() itself throws on a network failure, which previously
+      // escaped as an unhandled rejection and left the button on
+      // "Deleting..." forever.
+      setDeletingAccount(false);
+      toast.error("Couldn't reach the server. Your account was not deleted.", { duration: 4000 });
+      return;
+    }
     if (error) {
       const message = await error.context?.json?.().then((b) => b?.error).catch(() => null);
       setDeletingAccount(false);
       toast.error(message || "Failed to delete account. Please try again.", { duration: 4000 });
       return;
     }
-    await logout();
+    // Past this point the account is gone server-side. A failed logout must
+    // not strand the user on an authenticated-looking page for an account
+    // that no longer exists, so the redirect happens either way.
+    try {
+      await logout();
+    } catch {
+      // Intentionally swallowed -- the navigation below is the recovery.
+    }
     navigate("/");
   };
 
+  // Same stuck-forever shape as handleSaveName had: setSigningOut(false) was
+  // never reachable on a rejection, so a failed sign-out left the button
+  // reading "Signing out..." for good. Reset only in catch -- on success the
+  // component unmounts and setting state after that is the warning.
   const handleSignOut = async () => {
     setSigningOut(true);
-    await logout();
-    navigate("/");
+    try {
+      await logout();
+      navigate("/");
+    } catch {
+      setSigningOut(false);
+      toast.error("Couldn't sign you out. Please try again.", { duration: 4000 });
+    }
   };
 
   return (
@@ -133,30 +254,54 @@ export default function Settings() {
               <h2 className="font-semibold text-sm">Profile</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">This name appears on leaderboards and group views</p>
-            <div className="space-y-3">
-              <div>
-                <Label htmlFor="display-name" className="text-sm font-medium">Display name</Label>
-                <div className="flex gap-2 mt-1.5">
-                  <Input
-                    id="display-name"
-                    value={displayName}
-                    onChange={(e) => { setDisplayName(e.target.value.slice(0, 20)); setNameSaved(false); }}
-                    placeholder="Your display name"
-                    maxLength={20}
-                    className="flex-1"
-                  />
-                  <Button
-                    onClick={handleSaveName}
-                    disabled={savingName || displayName.trim().length < 2}
-                    size="sm"
-                    className="shrink-0"
-                  >
-                    {nameSaved ? "Saved ✓" : savingName ? "Saving…" : "Save"}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">{displayName.trim().length}/20 characters</p>
+            {/* Three outcomes that used to look identical. An empty field was
+                indistinguishable from a cleared one, and a failed read left
+                Save permanently disabled with nothing to explain why. */}
+            {profileStatus === "loading" ? (
+              <div className="space-y-2" role="status" aria-label="Loading your profile">
+                <div className="h-4 w-24 rounded bg-muted animate-pulse" />
+                <div className="h-9 rounded-md bg-muted animate-pulse" />
               </div>
-            </div>
+            ) : profileStatus === "error" ? (
+              <LoadErrorStrip
+                message="Couldn't load your profile."
+                onRetry={() => setProfileNonce((n) => n + 1)}
+              />
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="display-name" className="text-sm font-medium">Display name</Label>
+                  <div className="flex gap-2 mt-1.5">
+                    <Input
+                      id="display-name"
+                      value={displayName}
+                      onChange={(e) => { setDisplayName(e.target.value.slice(0, 20)); setNameSaved(false); }}
+                      placeholder="Your display name"
+                      maxLength={20}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={handleSaveName}
+                      disabled={savingName || displayName.trim().length < 2}
+                      size="sm"
+                      className="shrink-0"
+                    >
+                      {savingName ? "Saving…" : "Save"}
+                    </Button>
+                  </div>
+                  {/* "Saved" moved out of the button and into a live region.
+                      In the button it was announced only if focus happened to
+                      remain there, and the checkmark glyph reads literally or
+                      is dropped entirely. */}
+                  <div className="flex items-center justify-between gap-2 mt-1">
+                    <p className="text-xs text-muted-foreground">{displayName.trim().length}/20 characters</p>
+                    <p className="text-xs font-medium text-primary" role="status">
+                      {nameSaved ? "Saved" : ""}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* Subscription */}
@@ -302,21 +447,56 @@ export default function Settings() {
                 the card on the first open of the week, whichever day that
                 is, not only if that happens to be Monday itself. */}
             <p className="text-xs text-muted-foreground mb-4">Get a recap of last week's progress</p>
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="weekly-notif" className="text-sm font-medium">Monday Notification</Label>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {notifSupported
-                    ? "Send a reminder at 9:00 AM every Monday"
-                    : "Enable browser notifications to use this"}
-                </p>
+
+            {/* Two channels, two controls. One switch used to write both the
+                browser notification and the Resend email, under a label
+                naming neither, and it was disabled unless notification
+                permission had been granted -- so the email had no reachable
+                off-switch for anyone who had not granted it. */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <Label htmlFor="weekly-email" className="text-sm font-medium">Weekly email summary</Label>
+                  <p id="weekly-email-hint" className="text-xs text-muted-foreground mt-0.5">
+                    {!profile?.id
+                      ? "Save a display name first to choose this."
+                      : emailDigest
+                        ? `Sent to ${user?.email} every Monday`
+                        : "You won't get the weekly email"}
+                  </p>
+                </div>
+                <Switch
+                  id="weekly-email"
+                  checked={emailDigest}
+                  disabled={!profile?.id || savingEmailDigest}
+                  onCheckedChange={handleEmailDigestToggle}
+                  aria-describedby="weekly-email-hint"
+                />
               </div>
-              <Switch
-                id="weekly-notif"
-                checked={weeklySummaryNotif && notifSupported}
-                disabled={!notifSupported}
-                onCheckedChange={handleWeeklySummaryToggle}
-              />
+
+              <div className="h-px bg-border" aria-hidden="true" />
+
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <Label htmlFor="weekly-push" className="text-sm font-medium">Monday push notification</Label>
+                  {/* Names the actual blocker rather than instructing the
+                      user to do something they may already have refused.
+                      notifSupported collapses granted/default/denied into one
+                      boolean, so this copy deliberately does not claim which. */}
+                  <p id="weekly-push-hint" className="text-xs text-muted-foreground mt-0.5">
+                    {notifSupported
+                      ? "A reminder at 9:00 AM every Monday"
+                      : "Your browser hasn't allowed notifications for Strk"}
+                  </p>
+                </div>
+                <Switch
+                  id="weekly-push"
+                  checked={pushNotif && notifSupported}
+                  disabled={!notifSupported}
+                  onCheckedChange={handlePushNotifToggle}
+                  aria-describedby="weekly-push-hint"
+                />
+              </div>
             </div>
           </Card>
 
@@ -402,7 +582,11 @@ export default function Settings() {
             <p className="text-xs text-muted-foreground mb-4">
               Permanently delete your account and all your data. This cannot be undone.
             </p>
-            <AlertDialog>
+            {/* Re-check on open rather than trusting the page-load result:
+                it is the freshest it can be at the moment it matters, a
+                transient failure earlier self-heals here, and a group
+                created since load is accounted for. */}
+            <AlertDialog onOpenChange={(open) => { if (open) setGroupsNonce((n) => n + 1); }}>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm" className="gap-2">
                   <Trash2 className="w-3.5 h-3.5" />
@@ -414,7 +598,19 @@ export default function Settings() {
                   <AlertDialogTitle>Delete your account?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This will permanently delete all your habits, streaks, and progress. You will be logged out immediately.
-                    {ownedGroupsWithOthers.length > 0 && (
+                    {groupsStatus === "loading" && (
+                      <>{" "}Checking whether you own groups with other members…</>
+                    )}
+                    {/* Says so rather than omitting the disclosure. The
+                        server cascade happens either way, so a failed check
+                        must not read as "you own no shared groups". */}
+                    {groupsStatus === "error" && (
+                      <>
+                        {" "}We couldn&apos;t check whether you own groups with other members. If you do,
+                        deleting your account will also delete those groups for everyone in them.
+                      </>
+                    )}
+                    {groupsStatus === "ready" && ownedGroupsWithOthers.length > 0 && (
                       <>
                         {" "}You own {ownedGroupsWithOthers.length} group{ownedGroupsWithOthers.length !== 1 ? "s" : ""} with other members.
                         Deleting your account will also delete {ownedGroupsWithOthers.length !== 1 ? "those groups" : "that group"} for everyone in {ownedGroupsWithOthers.length !== 1 ? "them" : "it"}.
@@ -428,7 +624,7 @@ export default function Settings() {
                   <AlertDialogAction
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={handleDeleteAccount}
-                    disabled={deletingAccount}
+                    disabled={deletingAccount || groupsStatus === "loading"}
                   >
                     {deletingAccount ? "Deleting…" : "Yes, delete everything"}
                   </AlertDialogAction>
