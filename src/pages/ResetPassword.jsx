@@ -29,8 +29,23 @@ const passwordSchema = z
  * main app before they've set a new password.
  */
 export default function ResetPassword() {
-  // checking | ready | invalid
+  // checking | ready | invalid | error
+  //
+  // `error` is its own state rather than reusing `invalid`, which is the
+  // point of this change. getSession() had no .catch, so a rejection left
+  // sessionState on "checking" forever -- a spinner with no error and no
+  // way out, on a screen the user reached from an email link and has no
+  // other route into.
+  //
+  // Falling back to `invalid` would have been the one-line fix and it
+  // would have lied: that branch says "This link is invalid or has
+  // expired" and offers a new link. A network failure means the link is
+  // probably fine, so that copy would send someone to request a
+  // replacement that fails the same way, and leave them believing the
+  // first one was broken.
   const [sessionState, setSessionState] = useState("checking");
+  // Incremented by Retry to re-run the check.
+  const [sessionNonce, setSessionNonce] = useState(0);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -53,16 +68,24 @@ export default function ResetPassword() {
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!active) return;
-      setSessionState((prev) => (prev === "ready" ? prev : session ? "ready" : "invalid"));
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (!active) return;
+        setSessionState((prev) => (prev === "ready" ? prev : session ? "ready" : "invalid"));
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("ResetPassword: failed to check the reset session", err);
+        // Never downgrade a session we already proved good -- the
+        // onAuthStateChange listener above may have set "ready" first.
+        setSessionState((prev) => (prev === "ready" ? prev : "error"));
+      });
 
     return () => {
       active = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [sessionNonce]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -118,6 +141,27 @@ export default function ResetPassword() {
           <div className="flex justify-center py-8" role="status">
             <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" aria-hidden="true" />
             <span className="sr-only">Checking your reset link…</span>
+          </div>
+        )}
+
+        {sessionState === "error" && (
+          <div className="space-y-4 text-center">
+            <p className="text-foreground font-medium">We couldn&apos;t check your reset link</p>
+            <p className="text-muted-foreground text-sm">
+              That usually means a connection problem, not a problem with the link itself.
+            </p>
+            <Button
+              className="w-full h-11"
+              onClick={() => {
+                setSessionState("checking");
+                setSessionNonce((n) => n + 1);
+              }}
+            >
+              Try again
+            </Button>
+            <Link to="/forgot-password" className="block text-sm text-muted-foreground underline underline-offset-2">
+              Or request a new link
+            </Link>
           </div>
         )}
 

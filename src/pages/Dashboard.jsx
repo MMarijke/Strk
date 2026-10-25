@@ -57,11 +57,19 @@ export default function Dashboard() {
 
   const refreshFreezeState = useCallback(() => {
     if (!user?.email) return;
-    getFreezeMonthState(user.email, isPro).then(({ freezesRemaining: remaining, frozenHabits: frozen, usedCount }) => {
-      setFreezesUsed(usedCount);
-      setFreezesRemaining(remaining);
-      setFrozenHabits(frozen);
-    });
+    getFreezeMonthState(user.email, isPro)
+      .then(({ freezesRemaining: remaining, frozenHabits: frozen, usedCount }) => {
+        setFreezesUsed(usedCount);
+        setFreezesRemaining(remaining);
+        setFrozenHabits(frozen);
+      })
+      .catch((err) => {
+        // freezesRemaining stays null, and DashboardSummary only renders
+        // the freeze chip when it is non-null -- so a failure shows nothing
+        // rather than a wrong count, which is the right outcome. All this
+        // adds is handling the rejection instead of leaving it unhandled.
+        console.error("Dashboard: failed to load freeze state", err);
+      });
   }, [user?.email, isPro]);
 
   useEffect(() => {
@@ -83,11 +91,19 @@ export default function Dashboard() {
   // Load user's profile (display name, highest rank) — plan/isPro comes from useSubscription
   useEffect(() => {
     if (!user?.email) return;
-    UserProfile.filter({ created_by: user.email }).then((profiles) => {
-      if (profiles.length > 0) {
-        setUserProfile(profiles[0]);
-      }
-    });
+    UserProfile.filter({ created_by: user.email })
+      .then((profiles) => {
+        if (profiles.length > 0) {
+          setUserProfile(profiles[0]);
+        }
+      })
+      .catch((err) => {
+        // userProfile stays null, which every consumer already handles as
+        // "not loaded" (the greeting falls back to the email prefix, and
+        // the rank-up check below no-ops without it). Same as above: the
+        // rendering was already honest, the rejection was not handled.
+        console.error("Dashboard: failed to load profile", err);
+      });
   }, [user?.email]);
 
   const { data: allHabits = [], isLoading } = useQuery({
