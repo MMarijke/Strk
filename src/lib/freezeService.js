@@ -49,12 +49,19 @@ export async function loadMonthRecord(userEmail) {
  * HabitCard twice more -- 2 + 2N requests for N habits, all hitting the
  * identical row).
  * isPro = true → freezesRemaining is unlimited (999).
+ *
+ * usedCount comes along because freezesRemaining alone cannot explain
+ * itself after a downgrade. Pro is unlimited, so someone can legitimately
+ * use ten freezes in a month and then cancel -- max(0, 2 - 10) is 0, and a
+ * "2 per month" allowance showing 0 with no further information is a
+ * number the user cannot account for on a billing-adjacent surface.
  */
 export async function getFreezeMonthState(userEmail, isPro = false) {
   const record = await loadMonthRecord(userEmail);
   const frozenHabits = record.frozen_habits || {};
-  const freezesRemaining = isPro ? 999 : Math.max(0, FREE_FREEZES_PER_MONTH - (record.used_count || 0));
-  return { freezesRemaining, frozenHabits };
+  const usedCount = record.used_count || 0;
+  const freezesRemaining = isPro ? 999 : Math.max(0, FREE_FREEZES_PER_MONTH - usedCount);
+  return { freezesRemaining, frozenHabits, usedCount };
 }
 
 /**

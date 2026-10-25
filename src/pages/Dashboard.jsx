@@ -45,6 +45,7 @@ export default function Dashboard() {
   // null behaves identically to 0 in every `> 0`/`<= 0` comparison
   // elsewhere, so nothing downstream needed to change for this.
   const [freezesRemaining, setFreezesRemaining] = useState(null);
+  const [freezesUsed, setFreezesUsed] = useState(0);
   const [frozenHabits, setFrozenHabits] = useState({});
   const [highlightedHabitId, setHighlightedHabitId] = useState(null);
   // Which cards Complete All just toggled -- separate from
@@ -56,7 +57,8 @@ export default function Dashboard() {
 
   const refreshFreezeState = useCallback(() => {
     if (!user?.email) return;
-    getFreezeMonthState(user.email, isPro).then(({ freezesRemaining: remaining, frozenHabits: frozen }) => {
+    getFreezeMonthState(user.email, isPro).then(({ freezesRemaining: remaining, frozenHabits: frozen, usedCount }) => {
+      setFreezesUsed(usedCount);
       setFreezesRemaining(remaining);
       setFrozenHabits(frozen);
     });
@@ -410,6 +412,7 @@ export default function Dashboard() {
               habits={habits}
               score={calculateScore(allHabits)}
               isPro={isPro}
+              freezesUsed={freezesUsed}
               freezesRemaining={freezesRemaining}
               // Same frozenHabits map HabitCard already receives below.
               // Without it the summary's streak ignored freezes and
@@ -439,6 +442,12 @@ export default function Dashboard() {
             ChallengeStartBanner never had one (a brand-new user with no
             habits yet can still get a focus/challenge invite). */}
         {user?.email && (
+          /* freezesUsedThisMonth is used_count, not the frozen_habits key
+             count it used to be. apply_streak_freeze increments used_count
+             once per freeze but merges frozen_habits keyed by habit_id, so
+             freezing the same habit on two different missed days leaves ONE
+             key and a count of TWO -- WeeklySummaryCard was under-reporting,
+             and disagreeing with the allowance that number explains. */
           <TodayTray
             habits={habits}
             userEmail={user.email}
@@ -453,7 +462,7 @@ export default function Dashboard() {
             onDismissSummary={() => setShowSummary(false)}
             groups={groupsForDigest}
             profiles={profiles}
-            freezesUsedThisMonth={Object.keys(frozenHabits).length}
+            freezesUsedThisMonth={freezesUsed}
           />
         )}
 
