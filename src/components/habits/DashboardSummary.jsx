@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { Flame, Target, CalendarCheck, CheckCheck } from "lucide-react";
 import { bestActiveStreak } from "./StreakWidget";
 import { getRank } from "@/lib/utils";
-import { getNextRefreshDateStr } from "@/lib/freezeService";
+import { getNextRefreshDateStr, FREE_FREEZES_PER_MONTH } from "@/lib/freezeService";
 
 // Merges StatsBar + RankCard + FreezeIndicator (formerly three separate
 // stacked blocks) into one compact card -- part of the fix for the
@@ -22,7 +22,7 @@ const RANK_STYLES = {
   gold: { border: "border-yellow-400/60", tint: "from-yellow-400/20", bar: "bg-gradient-to-r from-yellow-400 to-amber-500" },
 };
 
-export default function DashboardSummary({ habits, score, isPro, freezesRemaining, frozenHabits = {}, onCompleteAll }) {
+export default function DashboardSummary({ habits, score, isPro, freezesRemaining, freezesUsed = 0, frozenHabits = {}, onCompleteAll }) {
   const rank = getRank(score);
   const { nextRank } = rank;
   const style = RANK_STYLES[rank.color] ?? RANK_STYLES.green;
@@ -86,10 +86,18 @@ export default function DashboardSummary({ habits, score, isPro, freezesRemainin
         {freezesRemaining !== null && (
           <span className="flex items-center gap-1.5">
             <span aria-hidden="true">❄️</span>
+            {/* A free user who used more than the free allowance did it
+                on Pro -- unlimited while subscribed, then cancelled. The
+                old copy said only "resets <date>", which is true but
+                leaves a "2 per month" allowance unable to account for a
+                month with ten freezes in it. Saying the number explains
+                the zero. */}
             {isPro
               ? "Unlimited freezes"
               : freezesRemaining > 0
               ? `${freezesRemaining} freeze${freezesRemaining !== 1 ? "s" : ""}`
+              : freezesUsed > FREE_FREEZES_PER_MONTH
+              ? `${freezesUsed} used this month · resets ${getNextRefreshDateStr()}`
               : `resets ${getNextRefreshDateStr()}`}
           </span>
         )}
