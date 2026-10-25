@@ -113,6 +113,10 @@ export const AccountabilityPartnership = createEntity('accountability_partnershi
 // through set_shared_habits / the invite + accept RPCs, so this is read-only
 // in practice -- used by the requester to review their own pending offer.
 export const AccountabilitySharedHabit = createEntity('accountability_shared_habits');
+// Owner-only select (20261026090001); writes have no policy at all and go
+// through link_challenge_habit, so this is read-only in practice -- used to
+// show the viewer which of their own habits counts for a challenge.
+export const ChallengeHabitLink = createEntity('challenge_habit_links');
 
 export const ChallengeNotification = {
   ...createEntity('challenge_notifications'),
