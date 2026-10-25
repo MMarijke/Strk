@@ -133,6 +133,7 @@ export default function InvitePartnerModal({ open, onOpenChange, userEmail, grou
               selected={selected}
               onChange={setSelected}
               disabled={sending}
+              labelledBy="partner-share-label"
             />
           </div>
 

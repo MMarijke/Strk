@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  * Rows are their own label element at 44px, so the whole row is the
  * target rather than the checkbox alone.
  */
-export default function HabitSharePicker({ userEmail, selected = [], onChange, disabled = false }) {
+export default function HabitSharePicker({ userEmail, selected = [], onChange, disabled = false, labelledBy }) {
   const { data: habits = [], isLoading, isError } = useQuery({
     queryKey: ["habits", userEmail],
     queryFn: () => (userEmail ? Habit.filter({ created_by: userEmail }, "-created_date") : []),
@@ -63,8 +63,17 @@ export default function HabitSharePicker({ userEmail, selected = [], onChange, d
     );
   }
 
+  // The visible heading above each instance names the group, so it is
+  // referenced rather than restated -- an aria-label here would override
+  // that heading with a duplicate of it. The fallback only covers a caller
+  // that has no heading to point at.
   return (
-    <div className="space-y-1.5 max-h-52 overflow-y-auto" role="group" aria-label="Habits to share">
+    <div
+      className="space-y-1.5 max-h-52 overflow-y-auto"
+      role="group"
+      aria-labelledby={labelledBy}
+      aria-label={labelledBy ? undefined : "Habits to share"}
+    >
       {active.map((h) => {
         const checked = selected.includes(h.id);
         return (

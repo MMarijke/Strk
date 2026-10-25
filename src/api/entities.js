@@ -109,6 +109,10 @@ export const Reaction = createEntity('reactions');
 export const StreakFreeze = createEntity('streak_freezes');
 export const UserBadge = createEntity('user_badges');
 export const AccountabilityPartnership = createEntity('accountability_partnerships');
+// Owner-only select (20261024090001). Writes have no policy at all and go
+// through set_shared_habits / the invite + accept RPCs, so this is read-only
+// in practice -- used by the requester to review their own pending offer.
+export const AccountabilitySharedHabit = createEntity('accountability_shared_habits');
 
 export const ChallengeNotification = {
   ...createEntity('challenge_notifications'),
