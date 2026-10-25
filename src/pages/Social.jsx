@@ -162,11 +162,18 @@ export default function Social() {
   const myReactions = reactions;
   const unreadCount = reactions.filter((r) => !r.read).length;
 
+  // One write per unread reaction, each fire-and-forget: a failure leaves
+  // that reaction unread so it is counted again next time, which is the
+  // honest outcome. Caught per-promise rather than around the forEach --
+  // the loop has already returned by the time any of them settle, so a
+  // try/catch there would catch nothing.
   const markReactionsRead = () => {
     reactions.filter((r) => !r.read).forEach((r) => {
-      Reaction.update(r.id, { read: true }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ["reactions", user?.email] });
-      });
+      Reaction.update(r.id, { read: true })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["reactions", user?.email] });
+        })
+        .catch((err) => console.error("Failed to mark reaction read:", err));
     });
   };
 
@@ -385,9 +392,14 @@ export default function Social() {
             onClick={() => {
               if (groupForChallenge) setSelectedGroup(groupForChallenge.id);
               setActiveTab("groups");
-              ChallengeNotification.update(event.id, { dismissed: true }).then(() => {
-                queryClient.invalidateQueries({ queryKey: ["challenge-notifications", user.email] });
-              });
+              // The navigation above has already happened, so a failed
+              // dismiss just means the banner is still there when they come
+              // back -- not worth interrupting the journey for.
+              ChallengeNotification.update(event.id, { dismissed: true })
+                .then(() => {
+                  queryClient.invalidateQueries({ queryKey: ["challenge-notifications", user.email] });
+                })
+                .catch((err) => console.error("Failed to dismiss challenge notification:", err));
             }}>
             
             View Challenge →

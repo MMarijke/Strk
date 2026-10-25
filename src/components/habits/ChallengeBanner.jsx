@@ -41,7 +41,25 @@ export default function ChallengeBanner({ userEmail, habits }) {
     const orphans = challenges.filter((c) => !groupIds.has(c.group_id));
     if (!orphans.length) return;
 
-    Promise.all(orphans.map((c) => GroupChallenge.delete(c.id))).then(() => {
+    // allSettled, not all. Promise.all rejects on the FIRST failure, so a
+    // single undeletable orphan abandoned the invalidation even when the
+    // others had been deleted successfully -- the list then kept showing
+    // challenges that were already gone from the database until something
+    // else refetched. And the rejection was unhandled on top of that.
+    //
+    // cleanupRan is already true by this point, so this does not retry
+    // within the session; it runs again on the next mount, which is the
+    // right cadence for a cleanup nobody is waiting on.
+    Promise.allSettled(orphans.map((c) => GroupChallenge.delete(c.id))).then((results) => {
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length) {
+        console.error(
+          `Failed to delete ${failed.length} of ${orphans.length} orphaned challenges:`,
+          failed.map((r) => r.reason)
+        );
+      }
+      // Invalidated regardless: any orphan that WAS deleted should leave
+      // the list, and a partial success is still a change worth showing.
       queryClient.invalidateQueries({ queryKey: ["group-challenges"] });
     });
   }, [challenges, groups, queryClient]);
