@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { ArrowLeft, Medal } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -214,10 +215,41 @@ export default function Badges() {
       // only drives the UI (progress bars, locked/earned display).
       newIds.forEach((badgeId) => {
         if (!persistedMap[badgeId]) {
-          supabase.rpc("award_badge", { p_badge_id: badgeId, p_today: today }).then(({ data, error }) => {
-            if (error || !data?.success) return;
-            queryClient.invalidateQueries({ queryKey: ["user-badges", user.email] });
-          });
+          // The celebration above (setNewlyEarnedIds / setCelebrationBadge)
+          // has already fired by the time this runs, so a silent failure
+          // here means the user is congratulated for a badge that never
+          // persists -- and persistedBadges is the source of truth for
+          // "earned", so on the next load it quietly goes back to locked.
+          //
+          // The old handler was `if (error || !data?.success) return;` with
+          // no .catch at all: a server rejection AND a network rejection
+          // both vanished.
+          //
+          // The retry claim in the toast is real, not reassurance: this
+          // effect re-runs on [habits, allMyGroups, persistedBadges] and
+          // only skips ids already in persistedMap, so an unpersisted badge
+          // is attempted again on the next pass.
+          supabase.rpc("award_badge", { p_badge_id: badgeId, p_today: today })
+            .then(({ data, error }) => {
+              if (error || !data?.success) {
+                console.error("Badges: award_badge did not persist", badgeId, error || data);
+                toast.error("Couldn't save that badge yet — we'll try again.", { duration: 3500 });
+                return;
+              }
+              queryClient.invalidateQueries({ queryKey: ["user-badges", user.email] });
+            })
+            // typecheck flags this .catch as missing from PromiseLike --
+            // PostgrestBuilder declares `implements PromiseLike` and types
+            // then() as returning PromiseLike. It works: then() delegates to
+            // a real Promise (PostgrestBuilder.ts:465), so .catch here is
+            // called on a native Promise. Kept as a trailing .catch rather
+            // than a two-arg then(ok, err), which would be type-clean but
+            // would NOT catch a throw inside the success handler. Same
+            // typing artifact already present at GroupDashboard.jsx:297.
+            .catch((err) => {
+              console.error("Badges: award_badge request failed", badgeId, err);
+              toast.error("Couldn't save that badge yet — we'll try again.", { duration: 3500 });
+            });
         }
       });
     }
