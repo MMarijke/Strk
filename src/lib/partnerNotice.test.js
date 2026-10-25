@@ -1,5 +1,8 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
-import { isPartnerNoticeDismissed, dismissPartnerNotice } from "./partnerNotice";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+import {
+  isPartnerNoticeDismissed, dismissPartnerNotice,
+  isScopeNoticeDismissed, dismissScopeNotice,
+} from "./partnerNotice";
 
 // The RPC wrappers in accountabilityService.js are not covered here: they
 // are one-line passthroughs whose behaviour lives in
@@ -58,5 +61,53 @@ describe("partner notice dismissal", () => {
       throw new Error("QuotaExceededError");
     });
     expect(() => dismissPartnerNotice("abc")).not.toThrow();
+  });
+});
+
+describe("scope notice dismissal", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("is not dismissed until it is", () => {
+    expect(isScopeNoticeDismissed("p1")).toBe(false);
+    dismissScopeNotice("p1");
+    expect(isScopeNoticeDismissed("p1")).toBe(true);
+  });
+
+  // Keyed by id, not a boolean: a different partnership is a different
+  // relationship, and its scope notice is its own decision.
+  it("does not carry a dismissal across partnerships", () => {
+    dismissScopeNotice("p1");
+    expect(isScopeNoticeDismissed("p2")).toBe(false);
+  });
+
+  // The two notices share a module but must not share a key -- dismissing
+  // "Jordan declined" must not silently suppress "you're already sharing".
+  it("is independent of the declined/ended notice", () => {
+    dismissPartnerNotice("p1");
+    expect(isScopeNoticeDismissed("p1")).toBe(false);
+    dismissScopeNotice("p1");
+    expect(isPartnerNoticeDismissed("p1")).toBe(true);
+  });
+
+  it("treats a missing id as not dismissed and ignores a write for one", () => {
+    expect(isScopeNoticeDismissed(null)).toBe(false);
+    expect(isScopeNoticeDismissed(undefined)).toBe(false);
+    expect(() => dismissScopeNotice(null)).not.toThrow();
+  });
+
+  it("degrades to not-dismissed when storage throws, as in a private window", () => {
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(isScopeNoticeDismissed("p1")).toBe(false);
+    getItem.mockRestore();
+
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(() => dismissScopeNotice("p1")).not.toThrow();
+    setItem.mockRestore();
   });
 });

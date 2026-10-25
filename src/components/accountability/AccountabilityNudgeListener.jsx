@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AccountabilityNudge, UserProfile } from "@/api/entities";
+import { AccountabilityNudge, UserProfile, Habit } from "@/api/entities";
 import { getDisplayName } from "@/lib/displayName";
 
 // Global counterpart to the listener that used to live inside Social.jsx.
@@ -38,6 +38,17 @@ export default function AccountabilityNudgeListener({ userEmail }) {
     enabled: !!userEmail,
   });
 
+  // The nudged habit belongs to THIS user, so its name is resolved from
+  // their own habits. Nothing new crosses the partnership boundary to make
+  // the toast specific -- which is the property that made per-habit nudges
+  // cheap to add. Same query key as everywhere else, so it shares the cache.
+  const { data: habits = [] } = useQuery({
+    queryKey: ["habits", userEmail],
+    queryFn: () => (userEmail ? Habit.filter({ created_by: userEmail }, "-created_date") : []),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!userEmail,
+  });
+
   // The nudges this user was sent and has not been shown yet. The entity
   // shim's filter only does equality, so `read` is filtered client-side --
   // the same shape AppLayout already uses to count unread reactions.
@@ -54,7 +65,16 @@ export default function AccountabilityNudgeListener({ userEmail }) {
     shownNudgeIds.current.add(nudge.id);
 
     const senderName = getDisplayName(nudge.sender_email, profiles);
-    toast(`👋 ${senderName} nudged you to keep your streak going!`, {
+    // habit_id is null for nudges sent before per-habit nudging existed,
+    // and for ones whose habit has since been deleted -- the column is ON
+    // DELETE SET NULL so the nudge still counts against the daily cap. The
+    // generic line covers both rather than naming a habit that is gone.
+    const habitName = nudge.habit_id
+      ? habits.find((h) => h.id === nudge.habit_id)?.name
+      : null;
+    toast(habitName
+      ? `👋 ${senderName} nudged you about ${habitName}`
+      : `👋 ${senderName} nudged you to keep your streak going!`, {
       id: nudge.id,
       duration: 6000,
       dismissible: true,
@@ -77,7 +97,7 @@ export default function AccountabilityNudgeListener({ userEmail }) {
     if (!userEmail) return;
     [...nudges]
       .filter((n) => !n.read)
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
       .forEach(show);
     // `show` is recreated each render and is deliberately not a dependency:
     // the ref guard makes a repeat call a no-op, and depending on it would
