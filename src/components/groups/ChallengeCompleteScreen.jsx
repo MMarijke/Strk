@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import confetti from "canvas-confetti";
 import { Crown, Medal, RotateCcw, List, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, prefersReducedMotion } from "@/lib/utils";
 
 function RankIcon({ rank }) {
   if (rank === 1) return <Crown className="w-4 h-4 text-yellow-500" />;
@@ -21,6 +21,23 @@ export default function ChallengeCompleteScreen({ challenge, rows, groupCompleti
   useEffect(() => {
     if (fired.current) return;
     fired.current = true;
+
+    // src/index.css's reduced-motion block only reaches CSS animations
+    // and transitions -- a canvas-confetti burst is JavaScript drawing
+    // to a canvas, which is exactly why utils.js exports
+    // prefersReducedMotion(). SessionRoom has used it since the focus
+    // session work; these surfaces never did.
+    //
+    // The screen still celebrates -- the copy, the icon and the layout
+    // carry the moment -- so skipping the burst costs it nothing it
+    // needed.
+    //
+    // Returned BEFORE the loop rather than guarding the calls inside it:
+    // this is a 3-second requestAnimationFrame loop firing two bursts per
+    // frame, so around 360 confetti calls and a couple of thousand
+    // particles -- the most aggressive animation in the app, and the one
+    // most worth not scheduling at all.
+    if (prefersReducedMotion()) return;
 
     const duration = 3000;
     const end = Date.now() + duration;

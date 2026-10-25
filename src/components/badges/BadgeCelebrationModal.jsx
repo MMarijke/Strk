@@ -3,12 +3,22 @@ import { motion } from "framer-motion";
 import { Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, prefersReducedMotion } from "@/lib/utils";
 import confetti from "canvas-confetti";
 
 export default function BadgeCelebrationModal({ badge, onClose }) {
   useEffect(() => {
     if (!badge) return;
+    // src/index.css's reduced-motion block only reaches CSS animations
+    // and transitions -- a canvas-confetti burst is JavaScript drawing
+    // to a canvas, which is exactly why utils.js exports
+    // prefersReducedMotion(). SessionRoom has used it since the focus
+    // session work; these surfaces never did.
+    //
+    // The screen still celebrates -- the copy, the icon and the layout
+    // carry the moment -- so skipping the burst costs it nothing it
+    // needed.
+    if (prefersReducedMotion()) return;
     confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 }, colors: ["#a78bfa", "#f59e0b", "#34d399", "#f472b6"] });
   }, [badge]);
 
