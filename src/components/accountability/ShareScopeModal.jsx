@@ -41,7 +41,7 @@ export default function ShareScopeModal({
     <Dialog open={open} onOpenChange={(v) => !saving && onOpenChange(v)}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>What {partnerName} can see</DialogTitle>
+          <DialogTitle id="share-scope-title">What {partnerName} can see</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 pt-1">
@@ -54,6 +54,7 @@ export default function ShareScopeModal({
             selected={selected}
             onChange={setSelected}
             disabled={saving}
+            labelledBy="share-scope-title"
           />
 
           {/* Stated before saving, not after. Un-sharing is silent to the

@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import LoadErrorStrip from "@/components/ui/load-error-strip";
 import { toast } from "sonner";
-import { AccountabilityPartnership, AccountabilityNudge } from "@/api/entities";
+import { AccountabilityPartnership, AccountabilityNudge, AccountabilitySharedHabit, Habit } from "@/api/entities";
 import {
   requestPartner, respondToPartnerRequest, endPartnership, getPartnerDashboard, sendNudge,
   getPartnerInvitePreview, setSharedHabits,
@@ -21,6 +21,18 @@ import { trackEvent } from "@/lib/analytics";
 import InvitePartnerModal from "./InvitePartnerModal";
 import HabitSharePicker from "./HabitSharePicker";
 import ShareScopeModal from "./ShareScopeModal";
+
+// A partnership created before habit scoping existed had its scope
+// BACKFILLED by 20261024090001 from whatever that partner could already
+// see -- so neither side ever chose it, and they are told once. One created
+// after went through the consent screen and must not be told anything, or
+// the notice would undercut the choice they just made.
+//
+// This is the migration's own date, which is the earliest it can have
+// applied. If the deploy lands later, a partnership created in between is
+// backfilled but shows no notice -- the safe direction, since the scope it
+// was given is exactly what that partner could already see.
+const SCOPING_SHIPPED_AT = new Date("2026-10-24T00:00:00Z").getTime();
 
 export default function AccountabilityPartnerPanel({ userEmail, profiles = [], groupmateEmails = [], isPro, onUpgradeClick }) {
   const queryClient = useQueryClient();
@@ -74,6 +86,23 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
     queryFn: getPartnerInvitePreview,
     enabled: !!pendingIncoming,
     staleTime: 60 * 1000,
+  });
+
+  // What the requester themselves offered, for the pending-invite view.
+  // No RPC needed: accountability_shared_habits is owner-selectable and the
+  // requester owns the habits in question, so the names resolve from their
+  // own list -- the same property that let the nudge toast name a habit
+  // without widening what crosses the partnership boundary.
+  const { data: myScope = [] } = useQuery({
+    queryKey: ["my-shared-habits", pendingOutgoing?.id],
+    queryFn: () => AccountabilitySharedHabit.filter({ partnership_id: pendingOutgoing.id }),
+    enabled: !!pendingOutgoing,
+  });
+  const { data: myHabits = [] } = useQuery({
+    queryKey: ["habits", userEmail],
+    queryFn: () => (userEmail ? Habit.filter({ created_by: userEmail }, "-created_date") : []),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!userEmail && !!pendingOutgoing,
   });
 
   const {
@@ -146,19 +175,8 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
   // (habit_id is ON DELETE SET NULL so the nudge still counts).
   const nudgedHabitId = nudgesToday[0]?.habit_id || null;
 
-  // A partnership created before habit scoping existed had its scope
-  // BACKFILLED by 20261024090001 from whatever that partner could already
-  // see -- so neither side ever chose it, and they are told once. One
-  // created after went through the consent screen and must not be told
-  // anything, or the notice would undercut the choice they just made.
-  //
-  // The date is the migration's own, which is the earliest it can have
-  // applied. If the deploy lands later, a partnership created in between
-  // is backfilled but shows no notice -- the safe direction, since the
-  // scope it was given is exactly what that partner could already see.
-  const scopedFrom = new Date("2026-10-24T00:00:00Z").getTime();
   const scopeWasBackfilled = !!activePartnership
-    && new Date(activePartnership.created_at).getTime() < scopedFrom;
+    && new Date(activePartnership.created_at).getTime() < SCOPING_SHIPPED_AT;
   const showScopeNotice = scopeWasBackfilled
     && !scopeNoticeDismissed
     && !isScopeNoticeDismissed(activePartnership?.id);
@@ -236,6 +254,7 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
       // The partner's view of me changes too, so the dashboard that
       // renders both columns has to be refetched, not just this card.
       queryClient.invalidateQueries({ queryKey: ["partner-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["my-shared-habits"] });
       toast.success(
         count === 0 ? "You're not sharing any habits now." : `Sharing ${count} habit${count === 1 ? "" : "s"}.`,
         { duration: 2500 }
@@ -401,13 +420,15 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   You share
                 </p>
-                <button
-                  type="button"
-                  onClick={() => openShareEditor(you)}
-                  className="h-11 -my-2 px-2 text-xs font-semibold text-primary rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  Change
-                </button>
+                {you && you.total > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => openShareEditor(you)}
+                    className="h-11 -my-2 px-2 text-xs font-semibold text-primary rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    Change
+                  </button>
+                )}
               </div>
               {/* Not an empty state: sharing nothing is a valid choice, so
                   this is a way back to the picker rather than a scolding. */}
@@ -480,7 +501,7 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
                       <Button
                         size="sm"
                         variant={nudgedHabitId === h.id ? "secondary" : "outline"}
-                        className="h-11 shrink-0 gap-1.5"
+                        className="h-11 min-w-11 shrink-0 gap-1.5"
                         onClick={() => nudgeMutation.mutate(h.id)}
                         disabled={nudgeMutation.isPending || nudgedToday}
                         aria-label={nudgedToday
@@ -620,6 +641,7 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
             selected={acceptSelection}
             onChange={setAcceptSelection}
             disabled={respondMutation.isPending}
+            labelledBy="accept-share-label"
           />
         </div>
 
@@ -658,8 +680,15 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
     );
   }
 
-  // Pending outgoing invite: waiting on someone else
+  // Pending outgoing invite: waiting on someone else -- and still able to
+  // change the offer, because an offer you cannot revise before it is
+  // accepted is not really an offer.
   if (pendingOutgoing) {
+    const offeredIds = myScope.map((r) => r.habit_id);
+    const offeredNames = offeredIds
+      .map((id) => myHabits.find((h) => h.id === id)?.name)
+      .filter(Boolean);
+
     return (
       <Card className="border-0 shadow-sm p-5">
         <div className="flex items-center gap-2 mb-2">
@@ -669,9 +698,42 @@ export default function AccountabilityPartnerPanel({ userEmail, profiles = [], g
         <p className="text-sm text-muted-foreground mb-4">
           Waiting for <span className="font-medium text-foreground">{pendingOutgoing.partner_email}</span> to accept.
         </p>
+
+        {/* Shown back rather than taken on trust: the offer was made on a
+            different screen, and this is the only place it can still be
+            changed for free. */}
+        <div className="rounded-xl bg-muted/50 px-3 py-2.5 mb-4">
+          <p className="text-xs text-muted-foreground mb-1">
+            {offeredNames.length > 0 ? "They'll see:" : "You're not sharing any habits yet."}
+          </p>
+          {offeredNames.length > 0 && (
+            <p className="text-xs font-medium text-foreground">{offeredNames.join(" · ")}</p>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setShareEditorInitial(offeredIds);
+              setShareEditorOpen(true);
+            }}
+            className="h-11 -mb-2 text-xs font-semibold text-primary rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {offeredNames.length > 0 ? "Change" : "Choose what to share"}
+          </button>
+        </div>
+
         <Button size="sm" variant="outline" className="h-11" onClick={() => endMutation.mutate(pendingOutgoing.id)} disabled={endMutation.isPending}>
           {endMutation.isPending ? "Cancelling…" : "Cancel invite"}
         </Button>
+
+        <ShareScopeModal
+          open={shareEditorOpen}
+          onOpenChange={setShareEditorOpen}
+          userEmail={userEmail}
+          partnerName={getDisplayName(pendingOutgoing.partner_email, profiles)}
+          initialSelected={shareEditorInitial}
+          saving={shareMutation.isPending}
+          onSave={(ids) => shareMutation.mutate(ids)}
+        />
       </Card>
     );
   }
