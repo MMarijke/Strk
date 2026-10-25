@@ -53,6 +53,18 @@ export default function Dashboard() {
   // case) since Complete All can highlight several cards at once.
   const [completeAllHighlightIds, setCompleteAllHighlightIds] = useState(() => new Set());
   const rankCheckTimeout = useRef(null);
+  // Which rank this session has already celebrated.
+  //
+  // setRankUpRank used to fire outside the persist promise, and the
+  // UserProfile.update that records highest_rank had no .catch. So a
+  // failed write left highest_rank stale, the condition
+  // `currentIdx > highestIdx` still true, and the rank-up modal fired
+  // AGAIN on the next run of this effect -- repeatedly congratulating
+  // someone for the same rank because the bookkeeping silently failed.
+  //
+  // The achievement is real either way, so the celebration is not
+  // suppressed on a failed write; it is just not repeated.
+  const celebratedRank = useRef(null);
   const queryClient = useQueryClient();
 
   const refreshFreezeState = useCallback(() => {
@@ -286,10 +298,20 @@ export default function Dashboard() {
       const highestIdx = highestKey ? RANK_ORDER.indexOf(highestKey) : -1;
 
       if (currentIdx > highestIdx) {
-        UserProfile.update(userProfile.id, {highest_rank: currentRank.key}).then(() => {
-          setUserProfile((p) => ({ ...p, highest_rank: currentRank.key }));
-        });
-        if (highestIdx >= 0) setRankUpRank(currentRank);
+        UserProfile.update(userProfile.id, { highest_rank: currentRank.key })
+          .then(() => {
+            setUserProfile((p) => ({ ...p, highest_rank: currentRank.key }));
+          })
+          .catch((err) => {
+            // Local state deliberately left alone: highest_rank is what
+            // other surfaces read, so claiming it saved when it did not
+            // would be the worse lie. It retries on the next pass.
+            console.error("Dashboard: failed to record highest rank", err);
+          });
+        if (highestIdx >= 0 && celebratedRank.current !== currentRank.key) {
+          celebratedRank.current = currentRank.key;
+          setRankUpRank(currentRank);
+        }
       }
     }, 2000);
 
