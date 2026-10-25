@@ -418,11 +418,13 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
               setHabitOutcome("failed");
               return;
             }
-            // The RPC returns the day it wrote, or null when there was
-            // nothing to do. Null is ambiguous between "already done
-            // today" and "you track no habit by that name", so the client
-            // distinguishes them from what it already knows.
-            setHabitOutcome(data ? "completed" : "already");
+            // The RPC now returns the outcome itself, so there is nothing
+            // to infer. It used to return a nullable date, and this line
+            // read `data ? "completed" : "already"` -- which told anyone
+            // who does not track the host's habit that it "was already
+            // done today". An unknown value falls through to the neutral
+            // pending copy rather than asserting anything.
+            setHabitOutcome(data || "unknown");
           }).catch((err) => {
             console.error("Failed to credit habit from focus session:", err);
             setHabitOutcome("failed");
@@ -668,9 +670,13 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                   plainly: an early end credits nothing because the session
                   did not happen, a network failure says so rather than
                   claiming the habit is untracked, and "already done today"
-                  is distinguished from "you track no habit by that name" --
-                  the RPC returns the day it wrote precisely so these can be
-                  told apart instead of guessed. */}
+                  is distinguished from "you track no habit by that name"
+                  because the RPC returns the outcome itself
+                  (20261025090001). It previously returned a nullable date
+                  and null meant four different things, so this comment
+                  described an intention the code did not implement: every
+                  participant without the host's habit was told it was
+                  already done today. */}
               {session.habit_name && (
                 <div className="pt-1">
                   {endedEarly ? (
@@ -682,9 +688,20 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                       <Flame className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                       {session.habit_name} marked done for today
                     </p>
-                  ) : habitOutcome === "already" ? (
+                  ) : habitOutcome === "already_done" ? (
                     <p className="text-xs text-muted-foreground">
                       {session.habit_name} was already done today.
+                    </p>
+                  ) : habitOutcome === "no_habit" ? (
+                    // The branch that was missing, and the reason the bug
+                    // existed. The host attaches THEIR habit; joining a
+                    // session does not give you one.
+                    <p className="text-xs text-muted-foreground">
+                      You don&apos;t track {session.habit_name}, so nothing was credited.
+                    </p>
+                  ) : habitOutcome === "archived" ? (
+                    <p className="text-xs text-muted-foreground">
+                      {session.habit_name} is archived, so nothing was credited.
                     </p>
                   ) : habitOutcome === "failed" ? (
                     <p className="text-xs text-muted-foreground">
