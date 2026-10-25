@@ -150,6 +150,44 @@ async function applyTransactionCompleted(data: Record<string, unknown>) {
   if (error) throw error;
 }
 
+// How long a logged-but-unprocessed row has to sit before a duplicate
+// delivery is allowed to pick it up. Short enough to recover quickly, long
+// enough that it cannot race an attempt that is still in flight.
+const STUCK_AFTER_MS = 2 * 60 * 1000;
+
+/**
+ * processEvent with bounded retries.
+ *
+ * Needed because of how the ack and the processing interact. We return 200
+ * to Paddle BEFORE processing (their 5-second rule), so Paddle will never
+ * retry -- and if it did, the unique constraint on event_id used to route
+ * it straight to the "duplicate" branch, which returned without processing.
+ * The two safeguards combined to guarantee that a single transient failure
+ * left the row `processed = false` forever, with nothing on any schedule
+ * looking at it. A paid upgrade or a cancellation could be lost outright.
+ *
+ * A transient database or network blip is the realistic cause, so retrying
+ * in place fixes the common case without new infrastructure.
+ */
+async function processEventWithRetry(
+  event: { event_type: string; data: Record<string, unknown> },
+  attempts = 3
+) {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await processEvent(event);
+      return;
+    } catch (err) {
+      lastErr = err;
+      // 400ms, 1200ms -- short enough to stay inside the background task's
+      // budget, long enough to clear a momentary blip.
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * Math.pow(3, i)));
+    }
+  }
+  throw lastErr;
+}
+
 async function processEvent(event: { event_type: string; data: Record<string, unknown> }) {
   if (event.event_type === "transaction.completed") {
     await applyTransactionCompleted(event.data);
@@ -158,6 +196,38 @@ async function processEvent(event: { event_type: string; data: Record<string, un
   }
   // customer.* events are logged to paddle_events for the audit trail but
   // don't need further handling.
+}
+
+/**
+ * Process an event, mark it processed, and report a final failure loudly.
+ *
+ * Shared by the first delivery and the stuck-row re-processing branch so
+ * there is one copy of "what happens after the row is logged".
+ */
+function runProcessing(event: { event_id: string; event_type: string; data: Record<string, unknown> }) {
+  return processEventWithRetry(event)
+    .then(() =>
+      supabase
+        .from("paddle_events")
+        .update({ processed: true, processed_at: new Date().toISOString() })
+        .eq("event_id", event.event_id)
+    )
+    .catch(async (err) => {
+      // Says what state this leaves behind, because the row is the only
+      // record that anything is wrong and nothing is scheduled to look at
+      // it. `select * from paddle_events where not processed` is the queue.
+      console.error(
+        "paddle-webhook: event remains UNPROCESSED after retries and needs reconciliation",
+        event.event_id,
+        err
+      );
+      await captureException(err, {
+        eventType: event.event_type,
+        eventId: event.event_id,
+        objectId: (event.data as Record<string, unknown> | undefined)?.id,
+        unprocessed: true,
+      });
+    });
 }
 
 Deno.serve(async (req) => {
@@ -188,7 +258,36 @@ Deno.serve(async (req) => {
 
     if (insertError) {
       if (insertError.code === "23505") {
-        return new Response("OK (duplicate)", { status: 200 });
+        // A duplicate is normally nothing to do -- but it is also the only
+        // second chance an event ever gets. If the first delivery logged
+        // the row and then failed to process it, returning OK here is what
+        // made the loss permanent.
+        //
+        // Re-processed only once the row has sat unprocessed for
+        // STUCK_AFTER_MS, so this cannot race an attempt still running in
+        // the original request's background task. Applying a subscription
+        // event twice is safe regardless: applySubscriptionEvent and
+        // applyTransactionCompleted both write absolute values from the
+        // payload rather than incrementing anything.
+        const { data: existing } = await supabase
+          .from("paddle_events")
+          .select("processed, received_at")
+          .eq("event_id", event.event_id)
+          .maybeSingle();
+
+        const stuck = existing
+          && existing.processed === false
+          && Date.now() - new Date(existing.received_at).getTime() > STUCK_AFTER_MS;
+
+        if (!stuck) {
+          return new Response("OK (duplicate)", { status: 200 });
+        }
+
+        console.warn("paddle-webhook: re-processing a stuck unprocessed event", event.event_id);
+        const retried = runProcessing(event);
+        // @ts-ignore -- EdgeRuntime is a platform global, not in the standard lib types.
+        if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(retried);
+        return new Response("OK (reprocessing)", { status: 200 });
       }
       console.error("paddle-webhook: failed to log event", insertError);
       // Backgrounded like the processing capture below — don't hold up
@@ -202,21 +301,7 @@ Deno.serve(async (req) => {
       return new Response("OK (log failed, not retrying)", { status: 200 });
     }
 
-    const processed = processEvent(event)
-      .then(() =>
-        supabase
-          .from("paddle_events")
-          .update({ processed: true, processed_at: new Date().toISOString() })
-          .eq("event_id", event.event_id)
-      )
-      .catch(async (err) => {
-        console.error("paddle-webhook: failed to process event", event.event_id, err);
-        await captureException(err, {
-          eventType: event.event_type,
-          eventId: event.event_id,
-          objectId: (event.data as Record<string, unknown> | undefined)?.id,
-        });
-      });
+    const processed = runProcessing(event);
 
     // Supabase/Deno Deploy's background-task hook: lets us respond immediately
     // (Paddle's 5-second rule) while finishing the DB update after the fact.

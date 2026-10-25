@@ -186,7 +186,40 @@ async function processProfile(
     await captureException(habitsError, { where: "load habits", profileId: profile.created_by_id });
     return { sent: false, statsUpdated: false };
   }
-  if (!habits?.length) return { sent: false, statsUpdated: false }; // nothing to report yet
+  // No active habits: CLEAR the weekly stat columns rather than returning
+  // early and leaving whatever was there.
+  //
+  // This used to be a bare `return`, which meant a user who archived or
+  // deleted every habit kept their last computed figures forever. Those
+  // columns are not private: groupDigestService.js builds the group weekly
+  // report from last_week_completion_rate / prev_week_completion_rate and
+  // last_week_top_habit_name/count, and its guard is `== null` -- which
+  // catches absence but passes a stale non-null value straight through. So
+  // the group kept being shown a frozen completion rate for somebody who
+  // had stopped tracking anything, week after week.
+  //
+  // Same leak 20261025090002 closed for last_completion_date, in a fourth
+  // place. Nulling them lets the existing `== null` guard do its job.
+  if (!habits?.length) {
+    const { error: clearError } = await supabase
+      .from("user_profiles")
+      .update({
+        last_week_completion_rate: null,
+        prev_week_completion_rate: null,
+        last_week_top_habit_name: null,
+        last_week_top_habit_count: null,
+      })
+      .eq("created_by_id", profile.created_by_id);
+
+    if (clearError) {
+      console.error("send-weekly-digest: failed to clear weekly stats for", profile.created_by_id, clearError);
+      await captureException(clearError, { where: "clear weekly stats", profileId: profile.created_by_id });
+      return { sent: false, statsUpdated: false };
+    }
+    // statsUpdated is true: clearing a stale figure IS a stats update, and
+    // counting it keeps the function's own return count honest.
+    return { sent: false, statsUpdated: true };
+  }
 
   const lastWeekRate = completionRate(habits, lastWeekDates);
   const prevWeekRate = completionRate(habits, prevWeekDates);
