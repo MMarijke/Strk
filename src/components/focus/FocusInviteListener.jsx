@@ -96,10 +96,17 @@ export default function FocusInviteListener({ userEmail }) {
       if (shownNotifIds.current.has(event.id)) return;
       shownNotifIds.current.add(event.id);
 
+      // Fire-and-forget, matching AccountabilityNudgeListener's pattern:
+      // a failed dismiss means this invite surfaces once more on the next
+      // open, which is a better failure than blocking the toast on a
+      // round-trip. shownNotifIds stops it repeating within this session
+      // regardless. Only the rejection handling was missing.
       const dismissInDb = () => {
-        FocusSessionNotification.update(notif.id, { dismissed: true }).then(() => {
-          queryClient.invalidateQueries({ queryKey: ["focus-session-notifications", userEmail] });
-        });
+        FocusSessionNotification.update(notif.id, { dismissed: true })
+          .then(() => {
+            queryClient.invalidateQueries({ queryKey: ["focus-session-notifications", userEmail] });
+          })
+          .catch((err) => console.error("Failed to dismiss focus invite:", err));
       };
 
       toast(
