@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { annualSavingsPct, assignCompetitionRanks, ordinal, prefersReducedMotion } from "./utils";
+import { format, subDays } from "date-fns";
+import {
+  annualSavingsPct, assignCompetitionRanks, ordinal, prefersReducedMotion,
+  calculateStats, calculateScore,
+} from "./utils";
 
 // Paddle price objects always look like { unit_price: { amount, currency_code } },
 // amount in cents as a string (matching Paddle's own API response shape).
@@ -158,5 +162,89 @@ describe("prefersReducedMotion", () => {
     // celebration, not a crash on the completion screen.
     window.matchMedia = undefined;
     expect(prefersReducedMotion()).toBe(false);
+  });
+});
+
+// calculateStats had no coverage at all before 20261025090002 changed its
+// semantics, which is part of how three divergent copies of it survived.
+// Dates are built relative to the actual run time, the same way the
+// function builds its own 30-day window, rather than hardcoded strings
+// that would drift stale.
+function daysAgo(n) {
+  return format(subDays(new Date(), n), "yyyy-MM-dd");
+}
+
+/** A habit with completions on each of the given day-offsets. */
+function habit(offsets, { archived = false } = {}) {
+  return { completions: offsets.map(daysAgo), archived };
+}
+
+describe("calculateStats", () => {
+  it("returns real zeros for no habits rather than NaN", () => {
+    expect(calculateStats([])).toEqual({ score: 0, bestStreak: 0, consistency: 0 });
+    expect(calculateStats(null)).toEqual({ score: 0, bestStreak: 0, consistency: 0 });
+    expect(calculateStats(undefined)).toEqual({ score: 0, bestStreak: 0, consistency: 0 });
+  });
+
+  // The all-time rule: archiving a habit must not erase a record somebody
+  // actually set.
+  it("counts archived habits toward bestStreak", () => {
+    const active = [habit([0, 1])];
+    const withArchived = [habit([0, 1]), habit([5, 6, 7, 8, 9], { archived: true })];
+    expect(calculateStats(active).bestStreak).toBe(2);
+    expect(calculateStats(withArchived).bestStreak).toBe(5);
+  });
+
+  // The forward-looking rule, and the actual bug: consistency averages a
+  // 30-day rate ACROSS habits, so an archived habit used to enter the
+  // average at 0% and drag the score down. Retiring a habit you had
+  // already stopped doing lowered your score.
+  it("excludes archived habits from consistency, so retiring one cannot lower it", () => {
+    const thirtyDays = Array.from({ length: 30 }, (_, i) => i);
+    const perfect = habit(thirtyDays);
+
+    const alone = calculateStats([perfect]);
+    const withRetired = calculateStats([perfect, habit([], { archived: true })]);
+
+    expect(alone.consistency).toBe(100);
+    expect(withRetired.consistency).toBe(100);
+  });
+
+  it("still counts an active habit with no recent completions against consistency", () => {
+    const thirtyDays = Array.from({ length: 30 }, (_, i) => i);
+    const stats = calculateStats([habit(thirtyDays), habit([])]);
+    expect(stats.consistency).toBe(50);
+  });
+
+  // A user who has archived everything has no current consistency, but
+  // their record stands.
+  it("keeps bestStreak but zeroes consistency when every habit is archived", () => {
+    const stats = calculateStats([habit([0, 1, 2], { archived: true })]);
+    expect(stats.bestStreak).toBe(3);
+    expect(stats.consistency).toBe(0);
+    expect(stats.score).toBe(6);
+  });
+
+  it("scores as bestStreak * 2 + consistency", () => {
+    const thirtyDays = Array.from({ length: 30 }, (_, i) => i);
+    const stats = calculateStats([habit(thirtyDays)]);
+    expect(stats.bestStreak).toBe(30);
+    expect(stats.consistency).toBe(100);
+    expect(stats.score).toBe(160);
+  });
+
+  it("treats a missing completions array as empty rather than throwing", () => {
+    expect(() => calculateStats([{ name: "no completions key" }])).not.toThrow();
+    expect(calculateStats([{ name: "no completions key" }])).toEqual({
+      score: 0, bestStreak: 0, consistency: 0,
+    });
+  });
+});
+
+describe("calculateScore", () => {
+  it("is calculateStats' score and nothing else", () => {
+    const thirtyDays = Array.from({ length: 30 }, (_, i) => i);
+    const habits = [habit(thirtyDays), habit([0, 1], { archived: true })];
+    expect(calculateScore(habits)).toBe(calculateStats(habits).score);
   });
 });

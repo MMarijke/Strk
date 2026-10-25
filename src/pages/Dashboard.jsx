@@ -258,7 +258,10 @@ export default function Dashboard() {
     if (!userProfile || !habits.length) return;
     if (rankCheckTimeout.current) clearTimeout(rankCheckTimeout.current);
     rankCheckTimeout.current = setTimeout(() => {
-      const score = calculateScore(habits);
+      // allHabits, not habits: calculateScore owns the archived rule now,
+      // and passing the pre-filtered list is what made this screen
+      // disagree with Badges for the same user.
+      const score = calculateScore(allHabits);
       const currentRank = getRank(score);
       const highestKey = userProfile.highest_rank;
       const currentIdx = RANK_ORDER.indexOf(currentRank.key);
@@ -405,7 +408,7 @@ export default function Dashboard() {
           <div className="mb-3">
             <DashboardSummary
               habits={habits}
-              score={calculateScore(habits)}
+              score={calculateScore(allHabits)}
               isPro={isPro}
               freezesRemaining={freezesRemaining}
               // Same frozenHabits map HabitCard already receives below.

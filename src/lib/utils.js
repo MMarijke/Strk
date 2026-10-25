@@ -23,25 +23,56 @@ export function getAllTimeBest(completions) {
   return best;
 }
 
-export function calculateScore(habits) {
-  if (!habits || !habits.length) return 0;
+/**
+ * The one definition of a user's score, matching
+ * sync_profile_stats_from_habits (20261025090002) field for field so a
+ * user's own numbers agree with the ones other people are shown.
+ *
+ * Archived habits are treated differently per stat, deliberately:
+ *
+ *   - bestStreak counts EVERY habit. It is the all-time best, and
+ *     excluding retired habits would retroactively erase a record
+ *     somebody actually set.
+ *   - consistency counts only habits still being tracked. It averages a
+ *     30-day rate across habits, so an archived habit contributes 0% and
+ *     drags the average down -- retiring a habit you had already stopped
+ *     doing used to lower your score.
+ *
+ * The filtering happens HERE rather than in callers. It used to be the
+ * caller's job and that is precisely how this drifted: Dashboard passed
+ * habits it had already filtered (src/pages/Dashboard.jsx), while Badges,
+ * Social and GroupDashboard passed everything -- so the same function gave
+ * one user two different scores on two screens, under a comment claiming
+ * it read the same everywhere. Pass the full list; this decides.
+ */
+export function calculateStats(habits) {
+  const all = habits || [];
+  if (!all.length) return { score: 0, bestStreak: 0, consistency: 0 };
+
+  const active = all.filter((h) => !h.archived);
   const last30 = Array.from({ length: 30 }, (_, i) =>
     format(subDays(new Date(), i), "yyyy-MM-dd")
   );
-  const consistency = Math.round(
-    habits.reduce((s, h) => {
-      const c = h.completions|| [];
-      return s + Math.round((last30.filter((d) => c.includes(d)).length / 30) * 100);
-    }, 0) / habits.length
-  );
-  // All-time-best, not current active streak -- matches the definition
-  // leaderboards (Social.jsx, GroupDashboard.jsx) and the server-synced
-  // user_profiles.best_streak column already use, so a user's own rank
-  // reads the same everywhere instead of disagreeing with itself.
+
+  const consistency = active.length
+    ? Math.round(
+      active.reduce((s, h) => {
+        const c = h.completions || [];
+        return s + Math.round((last30.filter((d) => c.includes(d)).length / 30) * 100);
+      }, 0) / active.length
+    )
+    : 0;
+
   const bestStreak = Math.max(
-    ...habits.map((h) => getAllTimeBest(h.completions || [])), 0
+    ...all.map((h) => getAllTimeBest(h.completions || [])), 0
   );
-  return bestStreak * 2 + consistency;
+
+  return { score: bestStreak * 2 + consistency, bestStreak, consistency };
+}
+
+/** Score only, for callers that need nothing else. */
+export function calculateScore(habits) {
+  return calculateStats(habits).score;
 }
 
 // Whether this viewer has asked the OS for less motion.

@@ -3,14 +3,13 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotification, AccountabilityPartnership } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
-import { format, subDays } from "date-fns";
 import { Users, Trophy, Plus, LogIn, Crown, Medal, Sparkles, Handshake } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getRank, assignCompetitionRanks, ordinal } from "@/lib/utils";
+import { getRank, assignCompetitionRanks, ordinal, calculateStats } from "@/lib/utils";
 import { getDisplayName } from "@/lib/displayName";
-import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
+import { removeGroupMember } from "@/lib/groupService";
 import { cn } from "@/lib/utils";
 import CreateGroupModal from "@/components/groups/CreateGroupModal";
 import JoinGroupModal from "@/components/groups/JoinGroupModal";
@@ -27,12 +26,6 @@ import { trackEvent } from "@/lib/analytics";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useSocialActivity } from "@/hooks/useSocialActivity";
-
-function calcConsistency(completions) {
-  if (!completions?.length) return 0;
-  const last30 = Array.from({ length: 30 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
-  return Math.round(last30.filter((d) => completions.includes(d)).length / 30 * 100);
-}
 
 // The icons carry no text, so a screen reader previously heard nothing at
 // all for the top three places and a bare "#4" for the rest. The place is
@@ -265,10 +258,8 @@ export default function Social() {
     getDisplayName(user?.email, profiles) :
     user?.full_name || getDisplayName(user?.email, profiles);
 
-    const myBestStreak = Math.max(...habits.map((h) => getAllTimeBest(h.completions || [])), 0);
-    const myConsistency = habits.length ?
-    Math.round(habits.reduce((s, h) => s + calcConsistency(h.completions || []), 0) / habits.length) :
-    0;
+    // Shared definition rather than a third copy of the same arithmetic.
+    const { bestStreak: myBestStreak, consistency: myConsistency } = calculateStats(habits);
 
     const sorted = [
     {
@@ -334,10 +325,34 @@ export default function Social() {
     queryClient.invalidateQueries({ queryKey: ["groups"] });
   };
 
-  const removeMember = (group, email) => {
-    const emails = (group.member_emails || []).filter((e) => e !== email);
-    return updateGroupMutation.mutateAsync({ id: group.id, data: { member_emails: emails } });
-  };
+  // Through the remove_group_member RPC (20261025090002), not a direct
+  // Group.update. Removing somebody has to reach the group's CHALLENGES
+  // too, and the client cannot do that reliably: group_challenges_update
+  // requires the challenge's own creator, while the remover is the group's
+  // admin. Where those differ a client write matches zero rows and
+  // silently succeeds, leaving the removed member on the challenge
+  // leaderboard of a group they have left -- which is the bug. Two
+  // sequential writes could also half-fail into the same state; the
+  // function is atomic.
+  const removeMemberMutation = useMutation({
+    // Annotated because TanStack infers TVariables from mutationFn, and a
+    // bare destructuring pattern in plain JS gives it nothing -- it falls
+    // back to `void` and every call site then fails to typecheck.
+    mutationFn: (/** @type {{ groupId: string, email: string }} */ { groupId, email }) =>
+      removeGroupMember(groupId, email),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+      // The challenge rows changed too, so their leaderboards must refetch.
+      queryClient.invalidateQueries({ queryKey: ["group-challenges"] });
+      queryClient.invalidateQueries({ queryKey: ["challenge-progress"] });
+    },
+    onError: (err) => {
+      toast.error(err?.message || "Couldn't remove that member. Please try again.", { duration: 3500 });
+    },
+  });
+
+  const removeMember = (group, email) =>
+    removeMemberMutation.mutateAsync({ groupId: group.id, email });
 
   const activeGroup = selectedGroup ? groups.find((g) => g.id === selectedGroup) : null;
 

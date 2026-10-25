@@ -1,13 +1,12 @@
 import React, { useState, useMemo } from "react";
 import { Reaction, Habit, GroupChallenge, ChallengeNotification } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format, subDays, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
+import { format, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
 import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, Plus, Sparkles, Users, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import LoadErrorStrip from "@/components/ui/load-error-strip";
-import { cn } from "@/lib/utils";
+import { cn, calculateStats } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
-import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
 import CreateChallengeModal from "./CreateChallengeModal";
 import InviteMembersSheet from "./InviteMembersSheet";
 import ChallengeLeaderboard from "./ChallengeLeaderboard";
@@ -26,25 +25,6 @@ import { supabase } from "@/api/supabaseClient";
 import { getGroupFreezeCandidates, assistFreeze } from "@/lib/freezeService";
 import { startFocusSession, DEFAULT_DURATION_MINUTES } from "@/lib/focusSessionStart";
 import GroupActivityFeed from "./GroupActivityFeed";
-
-function calcConsistency(completions) {
-  if (!completions?.length) return 0;
-  const last30 = Array.from({ length: 30 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
-  return Math.round((last30.filter((d) => completions.includes(d)).length / 30) * 100);
-}
-
-function calcScore(habits) {
-  // All-time best streak, not calculateStreak()'s "current active streak"
-  // -- matches what the habits_sync_profile_stats trigger computes into
-  // user_profiles.best_streak (and what Social.jsx's leaderboard tab
-  // already expects), so "me" and other members are scored on the same
-  // definition instead of two different metrics under the same label.
-  const bestStreak = habits.reduce((m, h) => Math.max(m, getAllTimeBest(h.completions || [])), 0);
-  const consistency = habits.length
-    ? Math.round(habits.reduce((s, h) => s + calcConsistency(h.completions || []), 0) / habits.length)
-    : 0;
-  return { score: bestStreak * 2 + consistency, bestStreak, consistency };
-}
 
 function getTopHabit(habits) {
   if (!habits.length) return null;
@@ -354,7 +334,12 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
   // activity feed resolving -- re-ran the whole derivation. It also gave
   // `rows` a fresh identity each time, which is what stops a leaderboard
   // row from ever being able to skip a re-render.
-  const myStats = useMemo(() => calcScore(habits), [habits]);
+  // calculateStats, not a local copy. This file had its own calcScore
+  // whose comment said it existed so "me" and other members are scored
+  // on the same definition -- which held only while the server used the
+  // same rule, and two other copies of the same arithmetic existed in
+  // utils.js and Social.jsx anyway.
+  const myStats = useMemo(() => calculateStats(habits), [habits]);
   const myTopHabit = useMemo(() => getTopHabit(habits), [habits]);
 
   const rows = useMemo(() => {
