@@ -123,13 +123,34 @@ alter function public.sync_profile_stats_from_habits() owner to profile_stats_sy
 -- an archived habit is exactly the case worth correcting, since they are
 -- the ones who will never trigger it.
 --
--- SET LOCAL ROLE, not a plain UPDATE: protect_user_profiles_stats_fields
--- guards both columns and its only escape hatches are service_role and
+-- protect_user_profiles_stats_fields guards both columns, and its only
+-- escape hatches are auth.role() = 'service_role' or
 -- current_user = 'profile_stats_sync_trusted'. A migration has neither by
--- default, so this write would be rejected. 20260914090004 granted that
--- role to the migration role and declared it NOINHERIT, which is precisely
--- the SET ROLE pattern. LOCAL so it reverts with the transaction.
-set local role profile_stats_sync_trusted;
+-- default, so a plain UPDATE is rejected.
+--
+-- This takes the service_role hatch rather than SET ROLE. An earlier
+-- version of this migration used `set local role
+-- profile_stats_sync_trusted` and CI caught it failing with "permission
+-- denied for table user_profiles" -- that role is granted only
+-- `select on habits` and `update on user_profiles` (20260914090004:40-41),
+-- and this statement also needs SELECT on user_profiles, both for the
+-- distinct subquery and for the WHERE that reads p.created_by_id.
+--
+-- Granting that SELECT would not have been enough either, and this is the
+-- part worth recording: the role is created plain `noinherit nologin`
+-- with no BYPASSRLS, so RLS applies to it. user_profiles_update_own
+-- requires created_by_id = auth.uid(), which is NULL in a migration, so
+-- the backfill would have matched ZERO rows and silently appeared to
+-- succeed. The loud permission error prevented a quiet no-op.
+--
+-- Setting the JWT claim instead leaves the statement running as the
+-- migration role, which owns these tables -- full privileges, and RLS
+-- does not apply to a table owner. auth.role() reads request.jwt.claims,
+-- so the guard sees service_role and stands down. SET LOCAL reverts at
+-- transaction end, which is also why this is safer than disabling the
+-- guard trigger: a disabled trigger can be left disabled, a local setting
+-- cannot.
+set local request.jwt.claims = '{"role": "service_role"}';
 
 update public.user_profiles p
 set consistency_score = coalesce(src.consistency, 0),
@@ -154,7 +175,7 @@ from (
 ) src
 where src.created_by_id = p.created_by_id;
 
-reset role;
+reset request.jwt.claims;
 
 -- ============================================================
 -- 2. remove_group_member: removal that reaches the group's challenges
