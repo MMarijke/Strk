@@ -6,6 +6,11 @@ name: CI
 # deploy-functions.yml's shape (this repo's only other workflow) but for
 # Node instead of Deno/Supabase.
 #
+# Runs lint, the test suite, and the production build. The job id stays
+# `lint-and-test` even though it now builds too: it is the status-check
+# name GitHub reports, so renaming it would silently stop satisfying any
+# branch-protection rule configured against the old name.
+#
 # Deliberately excludes `npm run typecheck`: it currently fails on ~10
 # pre-existing errors unrelated to any of this (JSX `children` prop typing
 # gaps in Trends.jsx, a `.md?raw` import in Terms.jsx) -- wiring it in now
@@ -40,3 +45,18 @@ jobs:
       - run: npm run lint
 
       - run: npm test
+
+      # Added after a broken import reached a Vercel deployment: #128's
+      # merge of main silently dropped an entity export that SessionRoom
+      # still imported, and this workflow went GREEN on that commit.
+      # Neither check could catch it -- eslint does not resolve
+      # cross-module exports, and no test imports SessionRoom. Only a
+      # bundler does, so the only gate was the Vercel build, which runs
+      # after review rather than on the PR.
+      #
+      # Unlike `npm run typecheck` (excluded above), this has no
+      # pre-existing-failure problem: it is green on main today, needs no
+      # env vars (supabaseClient only throws at runtime, not build time),
+      # and vite build is the one thing in the toolchain that resolves
+      # every import in the graph.
+      - run: npm run build
