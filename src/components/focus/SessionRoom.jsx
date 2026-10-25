@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { FocusSession, Reaction } from "@/api/entities";
+import { FocusSession, Reaction, Habit, FocusSessionHabitLink } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
 import { differenceInSeconds, differenceInMinutes, parseISO, format } from "date-fns";
 import { Copy, Check, ChevronDown, Share2, TimerOff, WifiOff, Flame } from "lucide-react";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn, prefersReducedMotion } from "@/lib/utils";
 import confetti from "canvas-confetti";
 import { showNotification } from "@/lib/showNotification";
+import { linkFocusSessionHabit } from "@/lib/habitLinkService";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import LobbyRing from "./LobbyRing";
@@ -212,8 +213,76 @@ function ParticipantList({ participants }) {
 
 export default function SessionRoom({ session: initialSession, userEmail, userName, onClose, onStartAnother }) {
   const [session, setSession] = useState(initialSession);
+  const [showHabitPicker, setShowHabitPicker] = useState(false);
   const [secsLeft, setSecsLeft] = useState(0);
   const [lobbySecsLeft, setLobbySecsLeft] = useState(0);
+  // Declared here rather than further down: the link mutation below is the
+  // first thing in this component to need it, and `const` is not hoisted.
+  const queryClient = useQueryClient();
+  // Queried rather than threaded through as a prop: both call sites
+  // (Dashboard and Social) already cache this exact key, so this shares
+  // their entry instead of adding a fetch.
+  const { data: myHabits = [] } = useQuery({
+    queryKey: ["habits", userEmail],
+    queryFn: () => (userEmail ? Habit.filter({ created_by: userEmail }, "-created_date") : []),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!userEmail,
+  });
+
+  // Which of my habits this session credits. RLS on
+  // focus_session_habit_links is select-own, so this is at most one row and
+  // never anyone else's -- every other participant's link is resolved
+  // inside complete_habit_from_focus_session, which is SECURITY DEFINER
+  // for that reason.
+  const { data: myLinks = [] } = useQuery({
+    queryKey: ["focus-session-habit-link", session.id],
+    queryFn: () => FocusSessionHabitLink.filter({ session_id: session.id }),
+    enabled: !!session.habit_name || !!session.habit_id,
+  });
+  const myLink = myLinks[0] || null;
+  const linkedHabit = myLink ? myHabits.find((h) => h.id === myLink.habit_id) : null;
+  const activeHabits = myHabits.filter((h) => !h.archived);
+
+  // The name match, demoted. It used to BE the mechanism -- the server
+  // credited whichever of your habits happened to share a name with the
+  // host's, so a participant with no same-named habit got nothing and, until
+  // 20261025090001, was told it "was already done today". Now it only picks
+  // a default, which is stored as an explicit link and can be changed.
+  const suggestedHabit = session.habit_name
+    ? activeHabits.find(
+      (h) => h.name.trim().toLowerCase() === session.habit_name.trim().toLowerCase()
+    )
+    : null;
+
+  const linkMutation = useMutation({
+    mutationFn: (/** @type {string | null} */ habitId) => linkFocusSessionHabit(session.id, habitId),
+    onSuccess: () => {
+      setShowHabitPicker(false);
+      queryClient.invalidateQueries({ queryKey: ["focus-session-habit-link", session.id] });
+    },
+    onError: (err) => {
+      toast.error(err?.message || "Couldn't set which habit this counts toward.", { duration: 3500 });
+    },
+  });
+
+  // Apply the suggestion once, in the lobby, when nothing is linked yet.
+  //
+  // A write on arrival rather than a prompt, deliberately: this reproduces
+  // what the old name matching did implicitly, and the difference that
+  // matters is that the result is now visible on screen and changeable
+  // rather than decided silently at completion. The host never reaches this
+  // -- link_host_habit_on_session_create already linked their habit when the
+  // session row was written.
+  const autoLinkedRef = useRef(false);
+  useEffect(() => {
+    if (autoLinkedRef.current) return;
+    if (session.status !== "waiting") return;
+    if (myLink || !suggestedHabit) return;
+    autoLinkedRef.current = true;
+    linkMutation.mutate(suggestedHabit.id);
+    // linkMutation is recreated each render and is deliberately not a
+    // dependency; the ref guard makes a repeat call impossible.
+  }, [session.status, myLink, suggestedHabit]);
   const [copied, setCopied] = useState(false);
   // Two-step inline confirms rather than modals, matching GroupDashboard's
   // member-removal pattern. "end" needs one because it stops three other
@@ -521,7 +590,6 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
   };
 
   const { isPro } = useSubscription();
-  const queryClient = useQueryClient();
   const todayStr = format(new Date(), "yyyy-MM-dd");
 
   // Same query key and client-side day filter GroupDashboard already uses
@@ -692,12 +760,13 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
                     <p className="text-xs text-muted-foreground">
                       {session.habit_name} was already done today.
                     </p>
-                  ) : habitOutcome === "no_habit" ? (
-                    // The branch that was missing, and the reason the bug
-                    // existed. The host attaches THEIR habit; joining a
-                    // session does not give you one.
+                  ) : habitOutcome === "not_linked" ? (
+                    // Was 'no_habit', when credit depended on owning a
+                    // same-named habit. It now depends on having picked
+                    // one, so the copy says that instead -- and the lobby
+                    // is where it could have been picked.
                     <p className="text-xs text-muted-foreground">
-                      You don&apos;t track {session.habit_name}, so nothing was credited.
+                      Nothing was credited — no habit was picked for this session.
                     </p>
                   ) : habitOutcome === "archived" ? (
                     <p className="text-xs text-muted-foreground">
@@ -902,6 +971,70 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
             <p className="text-sm font-medium text-foreground text-center" aria-live="polite">
               {describeRoster(participants, userEmail)}
             </p>
+
+            {/* What this session will credit, and for whom. Only shown when
+                the host attached something -- a session with no habit is
+                still the default and behaves exactly as before. */}
+            {(session.habit_name || session.habit_id) && (
+              <div className="w-full max-w-xs rounded-xl bg-muted/60 px-3 py-2.5">
+                {showHabitPicker ? (
+                  <div className="space-y-1.5" role="radiogroup" aria-label="Which habit this session counts toward">
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Counts toward one of your habits. The names don&apos;t have to match.
+                    </p>
+                    {activeHabits.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        You don&apos;t have any active habits yet.
+                      </p>
+                    ) : activeHabits.map((h) => (
+                      <button
+                        key={h.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={myLink?.habit_id === h.id}
+                        disabled={linkMutation.isPending}
+                        onClick={() => linkMutation.mutate(h.id)}
+                        className={cn(
+                          "w-full min-h-11 flex items-center justify-between gap-2 rounded-lg border-2 px-3 py-2 text-left text-sm transition-all",
+                          "outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                          myLink?.habit_id === h.id
+                            ? "border-primary bg-primary/5"
+                            : "border-transparent bg-background hover:bg-background/70"
+                        )}
+                      >
+                        <span className="truncate">{h.name}</span>
+                        {suggestedHabit?.id === h.id && (
+                          <span className="text-[10px] text-muted-foreground shrink-0">same name</span>
+                        )}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      disabled={linkMutation.isPending}
+                      onClick={() => linkMutation.mutate(null)}
+                      className="h-11 w-full text-xs text-muted-foreground hover:text-foreground rounded-lg outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      Don&apos;t credit anything
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground min-w-0">
+                      {linkedHabit
+                        ? <>Counts toward <span className="font-medium text-foreground">{linkedHabit.name}</span></>
+                        : "Not counting toward anything yet"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowHabitPicker(true)}
+                      className="h-11 -my-2.5 px-1 text-xs font-semibold text-primary shrink-0 rounded-lg outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      {linkedHabit ? "Change" : "Pick one"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex flex-col items-center gap-2 w-full max-w-xs">
               {/* Alone in the lobby, Invite is the only action that can
                   change anything, so it stops being a quiet outline button

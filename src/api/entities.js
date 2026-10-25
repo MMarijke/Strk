@@ -117,6 +117,16 @@ export const AccountabilitySharedHabit = createEntity('accountability_shared_hab
 // through link_challenge_habit, so this is read-only in practice -- used to
 // show the viewer which of their own habits counts for a challenge.
 export const ChallengeHabitLink = createEntity('challenge_habit_links');
+// The same, for focus sessions (20261026090001). Owner-only select; writes
+// go through link_focus_session_habit.
+//
+// Restored after the merge of main into this branch dropped it: #127 and
+// this branch each added a line anchored immediately after
+// AccountabilitySharedHabit, and git's auto-merge kept one side and
+// discarded the other. Nothing in lint or the test suite resolves a
+// cross-module export, so the only thing that caught it was the bundler --
+// "FocusSessionHabitLink is not exported by src/api/entities.js".
+export const FocusSessionHabitLink = createEntity('focus_session_habit_links');
 
 export const ChallengeNotification = {
   ...createEntity('challenge_notifications'),
