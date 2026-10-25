@@ -1,5 +1,5 @@
-import React from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/api/supabaseClient";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isAfter } from "date-fns";
 import { Crown, Medal, Flame, Trophy } from "lucide-react";
@@ -7,6 +7,10 @@ import { calculateStreak } from "@/components/habits/StreakWidget";
 import { cn } from "@/lib/utils";
 import { getDisplayName } from "@/lib/displayName";
 import ChallengeCompleteScreen from "./ChallengeCompleteScreen";
+import { ChallengeHabitLink } from "@/api/entities";
+import { linkChallengeHabit } from "@/lib/habitLinkService";
+import LinkChallengeHabitModal from "./LinkChallengeHabitModal";
+import { toast } from "sonner";
 
 function RankIcon({ rank }) {
   if (rank === 1) return <Crown className="w-4 h-4 text-yellow-500" />;
@@ -21,18 +25,28 @@ function RankIcon({ rank }) {
 // other member (computed server-side, via the RPC) are always evaluated
 // against the exact same date list, with no risk of the two disagreeing
 // at a day boundary.
-function getStatsForMember(challenge, habits, elapsedDates) {
+// "me", resolved from the viewer's own link rather than by matching the
+// challenge's habit_name against their habit names. The name match is gone
+// from every read path; it survives only as a pre-selection in the link
+// modal, where it is a suggestion the user can override rather than the
+// thing that decides whether their progress counts.
+function getStatsForMember(challenge, habits, elapsedDates, myLink) {
   const elapsedDays = elapsedDates.length;
 
-  const matchingHabit = habits.find(
-    (h) => h.name.toLowerCase() === challenge.habit_name.toLowerCase()
-  );
+  const linkedHabit = myLink ? habits.find((h) => h.id === myLink.habit_id) : null;
 
-  if (!matchingHabit) {
-    return { completedDays: 0, pct: 0, streak: 0, elapsedDays, noMatchingHabit: true };
+  if (!linkedHabit) {
+    // No link at all, or the linked habit is gone from the active list.
+    // `habits` here is the viewer's live habits prop; an archived habit is
+    // still in it, so the two cases stay distinguishable.
+    return { completedDays: 0, pct: 0, streak: 0, elapsedDays, linkState: "not_linked" };
   }
 
-  const completions = matchingHabit.completions || [];
+  if (linkedHabit.archived) {
+    return { completedDays: 0, pct: 0, streak: 0, elapsedDays, linkState: "archived" };
+  }
+
+  const completions = linkedHabit.completions || [];
   const challengeCompletions = completions.filter(
     (d) => d >= challenge.start_date && d <= challenge.end_date
   );
@@ -41,7 +55,7 @@ function getStatsForMember(challenge, habits, elapsedDates) {
   const pct = elapsedDays > 0 ? Math.round((completedDays / elapsedDays) * 100) : 0;
   const streak = calculateStreak(challengeCompletions);
 
-  return { completedDays, pct, streak, elapsedDays, noMatchingHabit: false };
+  return { completedDays, pct, streak, elapsedDays, linkState: "linked" };
 }
 
 // Same shape as getStatsForMember's return value, sourced from the RPC's
@@ -51,15 +65,27 @@ function getStatsForMember(challenge, habits, elapsedDates) {
 // arithmetic with no data dependency.
 function statsFromRpcRow(row, elapsedDates) {
   const elapsedDays = elapsedDates.length;
-  if (!row || row.no_matching_habit) {
-    return { completedDays: 0, pct: 0, streak: 0, elapsedDays, noMatchingHabit: true };
+  // link_state replaced a no_matching_habit boolean, for the reason
+  // 20261025090001 had to go and fix in the focus session: a boolean cannot
+  // carry three outcomes, and a client handed an ambiguous value guesses.
+  // A missing row is treated as not_linked -- the RPC returns one row per
+  // roster member, so this only happens if the roster and the result
+  // disagree, and claiming progress for a row that is not there would be
+  // worse than saying nothing.
+  if (!row) {
+    return { completedDays: 0, pct: 0, streak: 0, elapsedDays, linkState: "not_linked" };
+  }
+  if (row.link_state !== "linked") {
+    return { completedDays: 0, pct: 0, streak: 0, elapsedDays, linkState: row.link_state };
   }
   const completedDays = row.completed_days;
   const pct = elapsedDays > 0 ? Math.round((completedDays / elapsedDays) * 100) : 0;
-  return { completedDays, pct, streak: row.streak, elapsedDays, noMatchingHabit: false };
+  return { completedDays, pct, streak: row.streak, elapsedDays, linkState: "linked" };
 }
 
 export default function ChallengeLeaderboard({ challenge, habits: myHabits, userEmail, profiles = [], onStartNew, isAdmin }) {
+  const queryClient = useQueryClient();
+  const [showLinkModal, setShowLinkModal] = useState(false);
   const startDate = parseISO(challenge.start_date);
   const endDate = parseISO(challenge.end_date);
   const today = new Date();
@@ -94,6 +120,36 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
   // below, from the live myHabits prop -- same "me is always live-local,
   // others come from the trusted source" pattern as the group
   // leaderboard and weekly-report fixes.
+  // The viewer's own link. RLS on challenge_habit_links is select-own, so
+  // this returns at most one row and never anyone else's -- every other
+  // member's link is resolved inside the RPC below, which is SECURITY
+  // DEFINER for exactly that reason.
+  const { data: myLinks = [] } = useQuery({
+    queryKey: ["challenge-habit-link", challenge.id],
+    queryFn: () => ChallengeHabitLink.filter({ challenge_id: challenge.id }),
+    staleTime: 30_000,
+  });
+  const myLink = myLinks[0] || null;
+
+  const linkMutation = useMutation({
+    // Annotated because TanStack infers TVariables from mutationFn, and
+    // linkChallengeHabit returns void -- without this, habitId in
+    // onSuccess is typed `void` and cannot be tested for truthiness.
+    mutationFn: (/** @type {string | null} */ habitId) =>
+      linkChallengeHabit(challenge.id, habitId),
+    onSuccess: (_, habitId) => {
+      setShowLinkModal(false);
+      queryClient.invalidateQueries({ queryKey: ["challenge-habit-link", challenge.id] });
+      // Everyone else's rows come from the RPC, and my own link changes
+      // what it reports for me, so that has to refetch too.
+      queryClient.invalidateQueries({ queryKey: ["challenge-progress", challenge.id] });
+      toast.success(habitId ? "Linked — your check-ins now count." : "Unlinked.", { duration: 2500 });
+    },
+    onError: (err) => {
+      toast.error(err?.message || "Couldn't link that habit. Please try again.", { duration: 3500 });
+    },
+  });
+
   const { data: memberProgress = [], isLoading, isError, refetch } = useQuery({
     queryKey: ["challenge-progress", challenge.id, elapsedDates.length, todayStr],
     queryFn: async () => {
@@ -116,13 +172,13 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
   // is exactly what the RLS fix this leaderboard is built on eliminated
   // for the "can't see other members at all" case, so a fetch error gets
   // its own loadError state instead of silently falling through to
-  // statsFromRpcRow's noMatchingHabit default.
+  // statsFromRpcRow's not_linked default.
   const rows = members.map((email) => {
     const isMe = email === userEmail;
     const stats = isMe
-      ? getStatsForMember(challenge, myHabits, elapsedDates)
+      ? getStatsForMember(challenge, myHabits, elapsedDates, myLink)
       : isError
-        ? { completedDays: 0, pct: 0, streak: 0, elapsedDays: elapsedDates.length, noMatchingHabit: false, loadError: true }
+        ? { completedDays: 0, pct: 0, streak: 0, elapsedDays: elapsedDates.length, linkState: "linked", loadError: true }
         : statsFromRpcRow(progressByEmail.get(email), elapsedDates);
     return {
       email,
@@ -132,7 +188,7 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
     };
   }).sort((a, b) => b.pct - a.pct || b.streak - a.streak || b.completedDays - a.completedDays);
 
-  const myStats = getStatsForMember(challenge, myHabits, elapsedDates);
+  const myStats = getStatsForMember(challenge, myHabits, elapsedDates, myLink);
   const myRank = rows.findIndex((r) => r.isMe) + 1;
   const groupCompletionRate = Math.round(rows.reduce((s, r) => s + r.pct, 0) / Math.max(rows.length, 1));
 
@@ -250,14 +306,31 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
                   Couldn't load progress
                 </p>
               </div>
-            ) : row.noMatchingHabit ? (
+            ) : row.linkState !== "linked" ? (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold truncate">
                   {row.name} {row.isMe && <span className="text-xs text-primary font-normal">(you)</span>}
                 </p>
-                <p className="text-[11px] text-muted-foreground leading-tight">
-                  No matching habit. Add "{challenge.habit_name}" to join
-                </p>
+                {/* Was "No matching habit. Add \"X\" to join" -- an
+                    instruction with no affordance, which also required
+                    reproducing a string exactly. Now the viewer's own row
+                    carries the action, and nobody can link on anyone
+                    else's behalf. */}
+                {row.isMe ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkModal(true)}
+                    className="h-11 -my-2 text-[11px] font-semibold text-primary leading-tight rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    {row.linkState === "archived"
+                      ? "Your linked habit is archived \u2014 pick another"
+                      : "Pick which habit counts"}
+                  </button>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    {row.linkState === "archived" ? "Their linked habit is archived" : "Hasn't picked a habit yet"}
+                  </p>
+                )}
               </div>
             ) : (
               <>
@@ -284,6 +357,20 @@ export default function ChallengeLeaderboard({ challenge, habits: myHabits, user
           </div>
         ))}
       </div>
+
+      {/* Only mounted on the live view. An ended challenge cannot be
+          linked -- link_challenge_habit refuses one whose end_date has
+          passed, because progress is then historical and a member should
+          not be able to rewrite a finished leaderboard. */}
+      <LinkChallengeHabitModal
+        open={showLinkModal}
+        onOpenChange={setShowLinkModal}
+        habitName={challenge.habit_name}
+        habits={myHabits}
+        currentHabitId={myLink?.habit_id || null}
+        saving={linkMutation.isPending}
+        onSave={(habitId) => linkMutation.mutate(habitId)}
+      />
     </div>
   );
 }
