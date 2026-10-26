@@ -225,3 +225,20 @@ export function getRank(score) {
   const nextRank = RANKS[idx + 1] ?? null;
   return { ...rank, nextRank };
 }
+/**
+ * Filename for a user's data export, stamped with the date it was taken.
+ *
+ * Lives here rather than beside downloadMyData in exportMyData.js because
+ * that module imports supabaseClient, which throws at module scope without
+ * env vars -- so anything importing it is untestable. This is the pure
+ * half, split out for the same reason partnerNotice.js was.
+ *
+ * Local time, deliberately not toISOString(). The obvious one-liner
+ * (toISOString().slice(0, 10)) is UTC, so an export taken at 8pm in New
+ * York would be stamped with tomorrow's date. The file should carry the
+ * date the user's own calendar showed.
+ */
+export function exportFilename(now = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `strk-my-data-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.json`;
+}

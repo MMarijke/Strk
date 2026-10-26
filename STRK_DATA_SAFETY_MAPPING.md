@@ -94,6 +94,21 @@ forms.
   public.
 - **Third-party product-lookup API:** confirmed no equivalent to Sippd's
   Open Food Facts integration exists in Strk — nothing to add here.
+- **Self-service access/export, and progress visibility:** Strk now ships
+  in-app data export (Settings → Your data) and a sharing switch
+  (Settings → Progress sharing), disclosed in `PRIVACY_POLICY.md` §7.
+  Neither changes an answer on Play's Data Safety form: the form asks
+  whether users can *request deletion*, which was already true via
+  in-app "Delete Account", and it has no field for export at all. Noted
+  here so the mapping records that it was checked rather than missed.
+  Both do strengthen the "users can manage their data" position if it is
+  ever queried.
+- **Server-side consent record:** the analytics consent decision is now
+  also stored server-side with a timestamp and policy version
+  (`analytics_consent_log`, `PRIVACY_POLICY.md` §5, retention in §6). It
+  collects no new category of data — it records a choice the user already
+  made — so no mapping-table row changes. It is account-scoped and
+  cascades on account deletion.
 
 ## Notes
 
@@ -105,3 +120,12 @@ forms.
   document specifically to disclose Sentry as a processor and keep all
   three consistent. Re-check this mapping if either of those documents
   changes again.
+- `PRIVACY_POLICY.md` was updated again 2026-10-26, for the two
+  self-service controls and the consent record in the flags above. That
+  revision adds user rights and a record of an existing choice; it does
+  not change what we collect, how we use it, or who we share it with, so
+  no row in the mapping table above moved. `TERMS_OF_SERVICE.md` needed
+  no change. Note that `PRIVACY_POLICY.md`'s "Last updated" line is
+  pinned to `PRIVACY_POLICY_VERSION` in `src/lib/consentLog.js` by
+  `src/lib/consentLog.test.js` — editing the policy without bumping that
+  constant fails the test suite, deliberately.
