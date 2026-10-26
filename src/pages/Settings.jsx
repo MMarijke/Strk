@@ -16,6 +16,7 @@ import { useTheme, COLOR_THEMES } from "@/lib/ThemeContext";
 import { cn } from "@/lib/utils";
 import { getWeeklySummaryNotifEnabled, setWeeklySummaryNotifEnabled } from "@/lib/weeklySummaryService";
 import { getAnalyticsConsent, setAnalyticsConsent } from "@/lib/analyticsConsent";
+import { logAnalyticsConsent } from "@/lib/consentLog";
 import { initAnalytics, disableAnalyticsCapturing } from "@/lib/analytics";
 import { Group, UserProfile } from "@/api/entities";
 import { useAuth } from "@/lib/AuthContext";
@@ -213,10 +214,23 @@ export default function Settings() {
   // Lets someone revisit the AnalyticsConsentBanner decision anytime --
   // GDPR/POPIA requires withdrawing consent to be as easy as giving it.
   const handleAnalyticsConsentToggle = (val) => {
+    const decision = val ? "granted" : "denied";
     setAnalyticsConsentState(val);
-    setAnalyticsConsent(val ? "granted" : "denied");
+    // localStorage first, and the SDK immediately after: that pair is the
+    // enforcement gate and must not wait on, or be blocked by, the server
+    // record. GDPR/POPIA requires withdrawal to be as easy as consent, and
+    // a failed log must not make opting out fail.
+    setAnalyticsConsent(decision);
     if (val) initAnalytics();
     else disableAnalyticsCapturing();
+
+    // The evidence record (20261026090006). Fire-and-forget with the
+    // rejection handled, matching AccountabilityNudgeListener's pattern: a
+    // failed write is picked up by reconcileConsentLog on the next app
+    // open, because that compares the local decision against the latest
+    // logged one and appends when they differ.
+    logAnalyticsConsent(decision)
+      .catch((err) => console.error("Failed to log analytics consent:", err));
   };
 
   const handleDeleteAccount = async () => {
