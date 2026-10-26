@@ -1,7 +1,7 @@
 # Privacy Policy — Strk
 
 **Effective date:** 2026-08-16
-**Last updated:** 2026-09-25
+**Last updated:** 2026-10-26
 
 Strk ("Strk," "we," "us," or "our") is a social habit-tracking app operated by
 **Seedstack Studio (Pty) Ltd**, a company registered in South Africa
@@ -132,6 +132,15 @@ to keep you signed in, and PostHog sets its own identifiers (cookies or
 local storage, depending on browser support) to track usage as described in
 §4.
 
+Your analytics choice itself is stored in your browser's local storage —
+that copy is what actually switches analytics on or off, including before
+you sign in. Once you're signed in we also record the decision on our
+server, with the time and the version of this policy it was made against,
+so that there is a durable record of what you chose. That record is
+append-only: we can add to it but not edit or delete past entries, and
+neither can you. You can change your decision at any time in Settings →
+Analytics, which simply adds a new entry.
+
 ## 6. How long we keep your data
 
 - Active account data (habits, streaks, groups, etc.): retained for as
@@ -139,6 +148,10 @@ local storage, depending on browser support) to track usage as described in
 - Data after account deletion: see §7.
 - Raw Paddle webhook event logs (`paddle_events`): retained indefinitely
   at this time; we may introduce a scheduled purge in the future.
+- Your analytics consent history (`analytics_consent_log`, see §5):
+  retained for as long as your account exists, and deleted along with it.
+  We keep the full history rather than only your current choice, because
+  the point of the record is to show what you chose and when.
 - Backups: our current hosting plan does not include automated backups.
   If you delete data, it's gone — we have no backup copy to restore from.
 
@@ -146,8 +159,26 @@ local storage, depending on browser support) to track usage as described in
 
 Depending on where you live, you may have rights to access, correct,
 export, restrict, object to, or delete your personal information (under
-GDPR, POPIA, and similar laws). To exercise any of these, email
-**seedstackstudio@gmail.com**.
+GDPR, POPIA, and similar laws).
+
+Three of these you can exercise yourself, immediately, without asking us:
+
+- **Access and export your data:** Settings → Your data → "Download my
+  data" gives you a JSON file containing every row our database holds that
+  identifies you — habits, streaks, groups, partnerships, badges, your
+  consent history, and your raw Paddle billing events. Shared records (a
+  group you joined, a nudge someone sent you) are included as stored, so
+  they also name the other person involved — the same information the app
+  already shows you.
+- **Control who can see your progress:** Settings → Progress sharing
+  decides whether the groupmates and accountability partners you've
+  joined with can see your streak and consistency. Turning it off changes
+  nothing about your own use of Strk.
+- **Withdraw analytics consent:** Settings → Analytics, at any time. See
+  §5.
+
+For anything else — correction, restriction, objection, or a question
+about the above — email **seedstackstudio@gmail.com**.
 
 **Deleting your account:** Tapping "Delete Account" in Settings
 permanently and irreversibly deletes your account, including:

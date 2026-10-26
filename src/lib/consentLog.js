@@ -20,7 +20,7 @@ import { supabase } from "@/api/supabaseClient";
  * The brief called keeping these in sync "required human discipline"; the
  * test is there so it is not left to discipline.
  */
-export const PRIVACY_POLICY_VERSION = "2026-09-25";
+export const PRIVACY_POLICY_VERSION = "2026-10-26";
 
 /** "granted" | "denied" | null — the caller's most recently logged decision. */
 export async function latestLoggedConsent() {
