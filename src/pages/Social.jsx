@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { lazy, Suspense, useState, useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Habit, UserProfile, Group, Reaction, GroupChallenge, ChallengeNotification, AccountabilityPartnership } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +19,13 @@ import GroupDashboard from "@/components/groups/GroupDashboard";
 import GroupsEmptyState from "@/components/groups/GroupsEmptyState";
 import GroupMilestoneNotifier from "@/components/groups/GroupMilestoneNotifier";
 import AccountabilityPartnerPanel from "@/components/accountability/AccountabilityPartnerPanel";
-import ScoreHistoryChart from "@/components/social/ScoreHistoryChart";
+// Lazy: ScoreHistoryChart is the only thing on Social that pulls in
+// recharts, about 102KB gzipped. It renders only for a user with no peers
+// on the leaderboard yet (see the ternary below), so every user who DOES
+// have peers was downloading all of recharts for a component that never
+// mounted. A solo user still needs it, but now the rest of Social paints
+// first instead of waiting on the chart library.
+const ScoreHistoryChart = lazy(() => import("@/components/social/ScoreHistoryChart"));
 import ReactionsInbox from "@/components/social/ReactionsInbox";
 import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
@@ -477,6 +483,13 @@ export default function Social() {
               )}
               </Card> :
 
+            <Suspense fallback={
+              /* Reserves the chart's own height so the page below it does
+                 not jump when it arrives. No spinner: this sits inside an
+                 already-rendered page, and a second loading indicator
+                 under a painted screen reads as something going wrong. */
+              <div className="h-[280px]" aria-hidden="true" />
+            }>
             <ScoreHistoryChart
               habits={habits}
               onInvite={() => {
@@ -496,6 +509,7 @@ export default function Social() {
                   catch(() => toast.error("Couldn't copy the link. Long-press the address bar to copy it instead."));
                 }
               }} />
+            </Suspense>
 
             }
           </TabsContent>

@@ -20,11 +20,14 @@ const AuthContext = createContext();
 // our own abort is classified as retryable, so it feeds that loop instead
 // of ending it). This budget covers that ~30s window, plus one more
 // FETCH_TIMEOUT_MS for whichever attempt is in flight when it ends, plus a
-// second FETCH_TIMEOUT_MS for buildUser()'s own separate profile lookup
-// (the timeout stays armed through that too, see below), plus a small
-// margin -- a genuine last-resort ceiling, not a first response to a slow
-// connection.
-const SESSION_CHECK_TIMEOUT_MS = 30_000 + FETCH_TIMEOUT_MS * 2 + 2000;
+// small margin -- a genuine last-resort ceiling, not a first response to a
+// slow connection.
+//
+// Was `FETCH_TIMEOUT_MS * 2`, the second window covering buildUser()'s own
+// profile lookup. buildUser no longer makes a network call at all (see its
+// comment), so that window was budgeting for work that no longer happens
+// and is removed: the ceiling drops from ~42s to ~37s.
+const SESSION_CHECK_TIMEOUT_MS = 30_000 + FETCH_TIMEOUT_MS + 2000;
 // Used instead of the above when navigator.onLine already reports false
 // at the moment the check starts -- the network layer has already told
 // us there's nothing to wait for, so there's no reason to make the user
@@ -37,22 +40,33 @@ const OFFLINE_SESSION_CHECK_TIMEOUT_MS = 2000;
 // is a repeat.
 const SESSION_CHECK_ATTEMPT_KEY = 'strk-session-check-attempts';
 
-// Shapes the Supabase auth user + profile row into the { id, email, full_name, role }
-// object the rest of the app already expects (Dashboard, Social, Badges, PageNotFound, etc.)
-const buildUser = async (authUser) => {
+// Shapes the Supabase auth user into the { id, email, full_name } object the
+// rest of the app expects (Dashboard, Social, Badges, PageNotFound, etc.)
+//
+// This used to `await` a `profiles.select('role')` query before returning,
+// which put a second serial network round-trip in front of first paint on
+// EVERY app open: getSession() had to resolve, and only then did this fire,
+// and only then could isLoadingAuth clear. On a slow connection that is two
+// sequential 5s FETCH_TIMEOUT_MS windows of blank spinner -- and it was the
+// single largest avoidable cost in cold start.
+//
+// It bought nothing. Nothing in src/ ever read `user.role`, and nothing read
+// the `authError` state that existed solely to report this query failing.
+// Authorization here is enforced by RLS and SECURITY DEFINER functions in
+// Postgres, which re-derive the caller from their JWT; a role string held in
+// client memory is not a security boundary and never was one, so fetching it
+// up front protected nothing.
+//
+// Deliberately synchronous now. A future admin surface should query
+// profiles.role where it needs it, behind its own loading state, rather than
+// making every user on every open wait for it.
+const buildUser = (authUser) => {
   if (!authUser) return null;
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', authUser.id)
-    .single();
 
   return {
     id: authUser.id,
     email: authUser.email,
     full_name: authUser.user_metadata?.full_name || null,
-    role: profile?.role || 'user',
   };
 };
 
@@ -115,7 +129,7 @@ export const AuthProvider = ({ children }) => {
       setSessionCheckFailed(false);
       setSessionCheckOffline(false);
       clearSessionCheckAttempts();
-      const nextUser = await buildUser(session?.user ?? null);
+      const nextUser = buildUser(session?.user ?? null);
 
       // Session-switch detection: if a different user just authenticated,
       // purge every cached query so no stale data from the previous user leaks through.
@@ -164,10 +178,13 @@ export const AuthProvider = ({ children }) => {
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
         if (!active) return;
-        // Deliberately NOT marking settled/clearing the timeout yet -- see
-        // below. applySession() below still has its own unguarded network
-        // call (the profiles lookup in buildUser), and the timeout needs to
-        // stay armed against that too, not just this getSession() call.
+        // Deliberately NOT marking settled/clearing the timeout yet --
+        // see below. This used to be because applySession() had its own
+        // unguarded network call (buildUser's profiles lookup); that call
+        // is gone, so applySession is now synchronous work and cannot
+        // itself hang. The ordering is kept anyway: settling only after
+        // applySession has run means isLoadingAuth never clears before
+        // user/isAuthenticated are actually set.
         await applySession(session);
         if (!active) return;
         settled = true;
@@ -202,16 +219,20 @@ export const AuthProvider = ({ children }) => {
     // directly -- auth-js's own _notifyAllSubscribers call (which invokes
     // this callback) is itself awaited from inside _recoverAndRefresh()
     // before that function resolves GoTrueClient's internal
-    // initializePromise. applySession() below makes a reentrant Supabase
+    // initializePromise. applySession() USED TO make a reentrant Supabase
     // call (buildUser()'s profiles lookup), which calls getSession(),
     // which awaits that same initializePromise -- a direct promise cycle
-    // that deadlocks every time _recoverAndRefresh() hasn't already
-    // settled by the time this fires (e.g. right after a slow/real
-    // token-refresh round-trip). Deferring to a fresh macrotask lets
-    // _recoverAndRefresh() finish and resolve initializePromise first, so
-    // the reentrant getSession() call inside buildUser() can proceed
-    // instead of waiting on a promise that can never resolve while this
-    // callback is still on the stack. This mirrors auth-js's own pattern
+    // that deadlocked every time _recoverAndRefresh() hadn't already
+    // settled by the time this fired (e.g. right after a slow/real
+    // token-refresh round-trip).
+    //
+    // That reentrant call is gone: buildUser is now pure. So the specific
+    // deadlock this defends against is no longer reachable from here. The
+    // deferral is kept regardless, because it costs one macrotask (~0ms,
+    // nothing a user can perceive) and it keeps the hazard closed against
+    // the next person who adds an await to applySession -- which is
+    // exactly how the deadlock arrived the first time. This mirrors
+    // auth-js's own pattern
     // for its magic-link-redirect notification path, which defers for the
     // same reason.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {

@@ -1,15 +1,27 @@
-import React, { useMemo, useState } from "react";
+import React, { lazy, Suspense, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { Check, BarChart2, CalendarDays, Clock, Target, Tag, Bell, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn, HABIT_COLORS } from "@/lib/utils";
 import StreakWidget from "./StreakWidget";
-import MonthlyReportDialog from "./MonthlyReportDialog";
 import EditWeekDialog from "./EditWeekDialog";
 import MilestoneBadges from "./MilestoneBadges";
 import { calculateStreak } from "./StreakWidget";
 import EditReminderDialog from "./EditReminderDialog";
+
+// MonthlyReportDialog renders charts, so it pulls in recharts -- about
+// 155KB gzipped of charting (generateCategoricalChart + tooltip). It was a
+// static import, and Dashboard renders a HabitCard per habit, so every
+// Dashboard load fetched all of recharts before it could paint, for a
+// dialog that only appears when someone taps "Monthly report" in a card's
+// actions menu. That made recharts the single largest thing on the
+// Dashboard's critical path -- larger than the page, the shell and React.
+//
+// Now it arrives on demand. loadMonthlyReport() is shared by the lazy
+// component and the prefetch below so both warm the same module record.
+const loadMonthlyReport = () => import("./MonthlyReportDialog");
+const MonthlyReportDialog = lazy(loadMonthlyReport);
 import FreezeConfirmModal from "./FreezeConfirmModal";
 import EditHabitModal from "./EditHabitModal";
 import { getFreezeEligibleDate } from "@/lib/freezeService";
@@ -25,6 +37,9 @@ const CATEGORY_LABELS = {
 // own useEffect, 2 requests per card, on every dashboard load.
 function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpdateReminder, onApplyFreeze, onUpdate, onArchive, userEmail, isPro, isToggling = false, frozenDate = null, freezesRemaining = 0, isHighlighted = false }) {
   const [showReport, setShowReport] = useState(false);
+  // Latch: true from the first time the monthly report is opened. Gates
+  // mounting the lazy dialog at all -- see its render site below.
+  const [reportEverOpened, setReportEverOpened] = useState(false);
   const [showEditWeek, setShowEditWeek] = useState(false);
   const [showEditReminder, setShowEditReminder] = useState(false);
   const [showFreezeModal, setShowFreezeModal] = useState(false);
@@ -55,7 +70,13 @@ function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpda
           "group relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-300 bg-card cursor-pointer",
           isHighlighted && "ring-2 ring-primary ring-offset-2 ring-offset-background"
         )}
-        onClick={() => setActionsVisible((v) => !v)}
+        onClick={() => {
+          // Revealing the actions menu puts "Monthly report" one tap away,
+          // so start its chunk now rather than at the tap. Harmless if it
+          // is never tapped, and a no-op once loaded.
+          loadMonthlyReport().catch(() => {});
+          setActionsVisible((v) => !v);
+        }}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActionsVisible((v) => !v); } }}
       >
         <div className="p-5">
@@ -157,7 +178,7 @@ function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpda
                 variant="ghost"
                 size="icon"
                 className={cn("h-11 w-11 transition-all text-muted-foreground hover:text-foreground", actionsVisible ? "opacity-100" : "opacity-0 pointer-events-none")}
-                onClick={(e) => { e.stopPropagation(); setShowReport(true); setActionsVisible(false); }}
+                onClick={(e) => { e.stopPropagation(); setReportEverOpened(true); setShowReport(true); setActionsVisible(false); }}
                 title="Monthly report"
                 aria-label={`Monthly report for ${habit.name}`}
                 tabIndex={actionsVisible ? 0 : -1}
@@ -214,11 +235,22 @@ function HabitCard({ habit, onToggleToday, onDelete, onUpdateCompletions, onUpda
         </div>
       </Card>
 
-      <MonthlyReportDialog
-        open={showReport}
-        onOpenChange={setShowReport}
-        habit={habit}
-      />
+      {/* Mounted only once it has actually been opened, so the chunk is
+          never fetched for a card nobody opens a report on. The latch
+          stays true afterwards rather than unmounting on close, which
+          keeps Radix's exit animation working on every subsequent open.
+          fallback is null: the dialog animates in from nothing anyway, so
+          a spinner would be a flash of UI where the user expects a sheet
+          to slide up. */}
+      {reportEverOpened && (
+        <Suspense fallback={null}>
+          <MonthlyReportDialog
+            open={showReport}
+            onOpenChange={setShowReport}
+            habit={habit}
+          />
+        </Suspense>
+      )}
       <EditWeekDialog
         open={showEditWeek}
         onOpenChange={setShowEditWeek}
