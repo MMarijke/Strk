@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText, ShieldCheck, Check, Eye } from "lucide-react";
+import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText, ShieldCheck, Check, Eye, Download } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { getWeeklySummaryNotifEnabled, setWeeklySummaryNotifEnabled } from "@/lib/weeklySummaryService";
 import { getAnalyticsConsent, setAnalyticsConsent } from "@/lib/analyticsConsent";
 import { logAnalyticsConsent } from "@/lib/consentLog";
+import { downloadMyData } from "@/lib/exportMyData";
 import { initAnalytics, disableAnalyticsCapturing } from "@/lib/analytics";
 import { Group, UserProfile } from "@/api/entities";
 import { useAuth } from "@/lib/AuthContext";
@@ -52,6 +53,7 @@ export default function Settings() {
   // whether groupmates and partners can read this user's stats at all.
   const [isPublic, setIsPublic] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState(false);
+  const [exporting, setExporting] = useState(false);
   // Both reads now carry an explicit status, because "it failed" and "there
   // is nothing" used to render identically -- and for the group check that
   // difference decides whether a destructive confirmation tells the truth.
@@ -222,6 +224,29 @@ export default function Settings() {
       );
     } finally {
       setSavingVisibility(false);
+    }
+  };
+
+  // Data export (GDPR/POPIA right of access). The counterpart to the
+  // Danger Zone below: we could erase someone's data on request but never
+  // show it to them.
+  //
+  // No optimistic anything here -- the result IS a file, so the button has
+  // to stay in its pending state until the download actually fires, and a
+  // failure has to be loud. Somebody exercising a data-access right needs
+  // to know when it did not happen.
+  const handleExportData = async () => {
+    setExporting(true);
+    try {
+      const data = await downloadMyData();
+      toast.success(
+        `Downloaded ${data.row_count} ${data.row_count === 1 ? "record" : "records"} across ${data.table_count} tables.`,
+        { duration: 5000 }
+      );
+    } catch {
+      toast.error("Couldn't build your data export. Please try again.", { duration: 5000 });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -705,6 +730,28 @@ export default function Settings() {
                 onCheckedChange={handleAnalyticsConsentToggle}
               />
             </div>
+          </Card>
+
+          {/* Your data */}
+          <Card className="border-0 shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-1">
+              <Download className="w-4 h-4 text-primary" aria-hidden="true" />
+              <h2 className="font-semibold text-sm">Your data</h2>
+            </div>
+            <p id="export-hint" className="text-xs text-muted-foreground mb-4">
+              Download everything Strk holds about you as a JSON file -- your habits,
+              streaks, groups, partnerships and billing history.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 w-full"
+              onClick={handleExportData}
+              disabled={exporting}
+              aria-describedby="export-hint"
+            >
+              {exporting ? "Preparing your file..." : "Download my data"}
+            </Button>
           </Card>
 
           {/* Legal */}
