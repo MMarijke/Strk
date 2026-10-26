@@ -234,7 +234,27 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
 
-  const rateLimitResponse = await checkRateLimit(rateLimiter, user.id, CORS_HEADERS);
+  // Wrapped, unlike the other functions' bare `await checkRateLimit(...)`.
+  // rate-limit.ts reads its Upstash credentials with `Deno.env.get(...)!`
+  // -- the compile-time-only assertion env.ts was written to replace -- so
+  // a missing or misconfigured secret does not fail at startup. It throws
+  // here, at the limiter call, and an unhandled throw this early would
+  // return an opaque 500 with nothing in Sentry.
+  //
+  // Deliberately still fails CLOSED. Failing open would be the kinder
+  // reading for a right-of-access endpoint, but this is ~20 service_role
+  // queries, and an endpoint that drops its own cap whenever Redis is
+  // unreachable is an amplifier waiting for an outage. A delayed access
+  // request that we can see in Sentry is recoverable; a quietly uncapped
+  // one is not.
+  let rateLimitResponse: Response | null = null;
+  try {
+    rateLimitResponse = await checkRateLimit(rateLimiter, user.id, CORS_HEADERS);
+  } catch (err) {
+    console.error("export-my-data: rate limiter unavailable", user.id, err);
+    await captureException(err, { userId: user.id, where: "rate-limit" });
+    return jsonResponse({ error: "Couldn't build your export right now. Please try again shortly." }, 503);
+  }
   if (rateLimitResponse) return rateLimitResponse;
 
   const ident: Ident = { id: user.id, email: user.email };
