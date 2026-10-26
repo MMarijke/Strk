@@ -1,6 +1,9 @@
-import * as Sentry from "@sentry/react";
-
 let initialized = false;
+// The loaded SDK module, kept here so this file is the ONLY place that
+// imports @sentry/react. Anything else needing the SDK goes through an
+// exported helper below, which keeps the dependency -- and its ~120KB --
+// out of every chunk that merely wants to report something.
+let sdk = null;
 
 /**
  * Pre-launch config: trace every transaction (tracesSampleRate: 1.0) so
@@ -10,9 +13,33 @@ let initialized = false;
  * handling billing data. dataCollection is set explicitly rather than left
  * to SDK defaults so that stays true even if the SDK's defaults change.
  */
-export function initSentry() {
+// The SDK is imported dynamically rather than at the top of this file so
+// that @sentry/react stays out of the entry chunk -- it was ~120KB gzipped
+// of the bundle that had to arrive, parse and run before the app could
+// paint anything, on every single visit.
+//
+// The trade-off, stated plainly: Sentry now initialises a moment after the
+// first render instead of before it, so an exception thrown in that first
+// render tick is no longer captured. That window is milliseconds, it only
+// exists on the very first paint, and it is the price of not making every
+// user wait for the SDK. Note also that this only loads at all when
+// VITE_SENTRY_DSN is set, so a build without the secret ships none of it.
+export async function initSentry() {
   const dsn = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn || initialized) return;
+
+  // Caught here rather than at the call site: main.jsx invokes this
+  // without awaiting (nothing should wait on error reporting), so an
+  // uncaught rejection would surface as an unhandled promise rejection --
+  // reported, ironically, by nothing.
+  let Sentry;
+  try {
+    Sentry = await import("@sentry/react");
+    sdk = Sentry;
+  } catch (err) {
+    console.error("Failed to load Sentry:", err);
+    return;
+  }
 
   Sentry.init({
     dsn,
@@ -54,4 +81,23 @@ export function initSentry() {
     tracesSampleRate: 1.0,
   });
   initialized = true;
+}
+
+/**
+ * Add a Sentry breadcrumb, if Sentry is loaded and initialised.
+ *
+ * Exists so callers never import @sentry/react themselves.
+ * showNotification.js did, for this one breadcrumb, and because
+ * Dashboard.jsx reaches it through three different services that made the
+ * Dashboard chunk carry the entire SDK -- defeating the point of loading
+ * it lazily on exactly the screen that matters most.
+ *
+ * Silently does nothing when Sentry never initialised (no DSN configured,
+ * or the dynamic import failed). A breadcrumb is context for an error
+ * report that in that case is not being sent anywhere, so there is nothing
+ * to attach it to and no reason to fetch an SDK to discard it.
+ */
+export function addBreadcrumb(breadcrumb) {
+  if (!initialized || !sdk) return;
+  sdk.addBreadcrumb(breadcrumb);
 }

@@ -11,6 +11,13 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import AppLayout from './components/layout/AppLayout';
 import { ThemeProvider, useTheme } from './lib/ThemeContext';
 import AnalyticsConsentBanner from './components/legal/AnalyticsConsentBanner';
+import {
+  AUTH_ROUTE_IMPORTS,
+  LEGAL_ROUTE_IMPORTS,
+  OTHER_APP_ROUTE_IMPORTS,
+  TAB_ROUTE_IMPORTS,
+  prefetchTabRoutesWhenIdle,
+} from '@/lib/routeModules';
 
 // Route-level code splitting -- previously every one of these was bundled
 // into a single ~1.87MB JS file loaded upfront regardless of which page a
@@ -18,19 +25,24 @@ import AnalyticsConsentBanner from './components/legal/AnalyticsConsentBanner';
 // only the first time that route is actually reached; the single
 // <Suspense> around the routes below (both the outer Terms/Privacy pair
 // and everything inside AuthenticatedApp) covers all of them.
-const Login = lazy(() => import('./pages/Login'));
-const Signup = lazy(() => import('./pages/Signup'));
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
-const ResetPassword = lazy(() => import('./pages/ResetPassword'));
-const Landing = lazy(() => import('./pages/Landing'));
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Trends = lazy(() => import('./pages/Trends'));
-const Social = lazy(() => import('./pages/Social'));
-const Settings = lazy(() => import('./pages/Settings'));
-const Badges = lazy(() => import('./pages/Badges'));
-const Subscription = lazy(() => import('./pages/Subscription'));
-const Terms = lazy(() => import('./pages/Terms'));
-const Privacy = lazy(() => import('./pages/Privacy'));
+// The import expressions themselves live in routeModules.js so that the
+// idle prefetcher warms the exact same module records these lazy() calls
+// wait on -- see that file's header. Duplicating the specifiers here would
+// still produce one chunk, but the prefetch would warm a different module
+// record and buy nothing.
+const Login = lazy(AUTH_ROUTE_IMPORTS["/login"]);
+const Signup = lazy(AUTH_ROUTE_IMPORTS["/signup"]);
+const ForgotPassword = lazy(AUTH_ROUTE_IMPORTS["/forgot-password"]);
+const ResetPassword = lazy(AUTH_ROUTE_IMPORTS["/reset-password"]);
+const Landing = lazy(AUTH_ROUTE_IMPORTS["/"]);
+const Dashboard = lazy(TAB_ROUTE_IMPORTS["/Dashboard"]);
+const Trends = lazy(TAB_ROUTE_IMPORTS["/Trends"]);
+const Social = lazy(TAB_ROUTE_IMPORTS["/Social"]);
+const Settings = lazy(TAB_ROUTE_IMPORTS["/Settings"]);
+const Badges = lazy(TAB_ROUTE_IMPORTS["/Badges"]);
+const Subscription = lazy(OTHER_APP_ROUTE_IMPORTS["/Subscription"]);
+const Terms = lazy(LEGAL_ROUTE_IMPORTS["/terms"]);
+const Privacy = lazy(LEGAL_ROUTE_IMPORTS["/privacy"]);
 const OnboardingThemePicker = lazy(() => import('./components/onboarding/OnboardingThemePicker'));
 const OnboardingDisplayName = lazy(() => import('./components/onboarding/OnboardingDisplayName'));
 
@@ -127,6 +139,20 @@ const AuthenticatedApp = () => {
     const timer = setTimeout(() => setShowReconnecting(true), RECONNECT_MESSAGE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [isLoadingAuth]);
+
+  // Warm the other tabs' chunks once the first screen is up and the
+  // browser is idle, so moving between tabs needs no network at all.
+  //
+  // Gated on being signed in and past onboarding: a visitor on the landing
+  // page may never sign in, and spending their bandwidth on five app
+  // screens they cannot reach would be worse than the wait it saves. Fires
+  // once -- the ref guard, plus prefetchRoute's own per-path guard.
+  const prefetchedRef = useRef(false);
+  useEffect(() => {
+    if (isLoadingAuth || !isAuthenticated || !onboarded || prefetchedRef.current) return;
+    prefetchedRef.current = true;
+    prefetchTabRoutesWhenIdle(pathname);
+  }, [isLoadingAuth, isAuthenticated, onboarded, pathname]);
 
   if (isLoadingAuth) {
     return (

@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/react";
+import { addBreadcrumb } from "@/lib/sentry";
 
 // Shared entry point for every browser-notification call site in the app
 // (habit reminders, weekly summary, group digest, group milestones, focus
@@ -53,7 +53,11 @@ function reportNotificationFailure(error, path) {
   // expected, handled condition (that's the whole point of this helper),
   // not something worth alerting on. No notification title/body/email
   // content here, just the browser's own generic exception name/message.
-  Sentry.addBreadcrumb({
+  // Routed through lib/sentry rather than importing @sentry/react here:
+  // Dashboard.jsx reaches this module via notificationService,
+  // weeklySummaryService and groupDigestService, so a static SDK import
+  // here put all ~120KB of Sentry into the Dashboard chunk.
+  addBreadcrumb({
     category: "notification",
     level: "warning",
     message: `showNotification failed via ${path}`,
