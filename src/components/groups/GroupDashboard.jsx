@@ -653,14 +653,21 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                 // Cause-neutral on purpose. This branch means no readable
                 // user_profiles row came back for them, which has two
                 // possible causes -- is_public = false, or no profile row
-                // at all -- and the client cannot tell which. It also can't
-                // honestly lead with privacy: nothing in the product sets
-                // is_public to false (it defaults true in 20260702120002
-                // and saveMyDisplayName hardcodes true), so the reachable
-                // cause today is a profile that was never written, because
-                // onboarding fires that save without awaiting it. Naming
-                // privacy as the explanation would be a guess, and a wrong
-                // one most of the time.
+                // at all -- and the client cannot tell which, because RLS
+                // makes both look identical: a missing row.
+                //
+                // Both causes are now reachable. Privacy used to be
+                // unreachable (the column defaulted true and
+                // saveMyDisplayName hardcoded true), leaving a profile that
+                // was never written as the only real explanation; Settings
+                // > Progress sharing now writes false too. That makes the
+                // cause-neutral wording more right, not less -- it reads
+                // correctly for a member who opted out AND for one whose
+                // row was never created, and it still never guesses.
+                //
+                // "No progress shared yet" is also the exact phrase the
+                // Settings hint shows the person turning sharing off, so
+                // the two ends of the feature describe it identically.
                 //
                 // Previously this carried a `title` spelling both causes
                 // out, which is not a real affordance here: this ships as

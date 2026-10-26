@@ -237,9 +237,11 @@ export default function Social() {
   //
   // It used to rank them against every profile the profiles query
   // returned, which is every account in the database: user_profiles_select
-  // (20260702120003) permits `is_public = true`, that column defaults to
-  // true, and nothing in the product ever sets it false, so
-  // UserProfile.list() hands back every stranger who has ever signed up.
+  // (20260702120003) permits `is_public = true` and that column defaults
+  // to true, so UserProfile.list() hands back every stranger who has ever
+  // signed up. (At the time nothing could set it false either; Settings >
+  // Progress sharing now can, but that is a per-user choice and was never
+  // a substitute for scoping the list to actual peers.)
   // The screen called that "Leaderboard" and showed the user their rank
   // inside it -- a number set by people they have never met, and one that
   // can only get less meaningful as the user base grows. It also
@@ -280,8 +282,9 @@ export default function Social() {
       isPro
     },
     ...profiles.
-    // is_public is still honoured: a peer who opts out (nothing sets it
-    // today, but the column and its RLS clause both exist) stays out.
+    // is_public is honoured: a peer who turns off Progress sharing in
+    // Settings stays out of the leaderboard. This filter predates that
+    // switch existing and is what made adding it a UI-only change.
     filter((p) => p.is_public !== false && p.created_by !== user?.email && peerEmails.has(p.created_by)).
     map((p) => ({
       id: p.id,

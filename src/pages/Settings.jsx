@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText, ShieldCheck, Check } from "lucide-react";
+import { Moon, Sun, Palette, Medal, BarChart2, User, Trash2, LogOut, Sparkles, FileText, ShieldCheck, Check, Eye } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -48,6 +48,10 @@ export default function Settings() {
   // Email digest: server-side, read from and written to user_profiles.
   const [emailDigest, setEmailDigest] = useState(false);
   const [savingEmailDigest, setSavingEmailDigest] = useState(false);
+  // Progress sharing: user_profiles.is_public, the column that decides
+  // whether groupmates and partners can read this user's stats at all.
+  const [isPublic, setIsPublic] = useState(false);
+  const [savingVisibility, setSavingVisibility] = useState(false);
   // Both reads now carry an explicit status, because "it failed" and "there
   // is nothing" used to render identically -- and for the group check that
   // difference decides whether a destructive confirmation tells the truth.
@@ -106,6 +110,11 @@ export default function Settings() {
         // all, so no email is being sent -- `false` is the honest reading,
         // not the column default.
         setEmailDigest(p ? p.email_weekly_digest !== false : false);
+        // Same honest reading as the digest above: with no profile row
+        // there is nothing for a peer to read, so peers genuinely see
+        // "No progress shared yet" regardless of what the column would
+        // default to once a row exists. `false` describes the present.
+        setIsPublic(p ? p.is_public !== false : false);
         setProfileStatus("ready");
       })
       .catch(() => {
@@ -170,6 +179,49 @@ export default function Settings() {
       );
     } finally {
       setSavingEmailDigest(false);
+    }
+  };
+
+  // Progress sharing. user_profiles.is_public is the ONLY thing standing
+  // between this user's stats and every groupmate and partner they have,
+  // and until now nothing in the product ever wrote it: the column
+  // defaulted to true (20260702120002) and saveMyDisplayName hardcoded
+  // true on top of that, so every account was permanently visible with no
+  // opt-out anywhere in the UI. Both consumers already honour it --
+  // Social.jsx filters on `is_public !== false` and GroupDashboard falls
+  // back to its cause-neutral "No progress shared yet" row -- so the
+  // column was a working privacy control with no switch attached.
+  //
+  // Scoped, not global: the leaderboard was narrowed to groupmates and
+  // active partners, so "on" means the people you deliberately joined
+  // with, never strangers. Turning it off keeps streaks and completions
+  // working exactly as before; it only stops others reading them.
+  //
+  // Own-row reads are unaffected: user_profiles_select is
+  // `created_by_id = auth.uid() or is_public = true`, so going private
+  // never costs the user sight of their own profile.
+  //
+  // Optimistic with rollback, matching handleEmailDigestToggle: a privacy
+  // control must never be left displaying a state the server disagrees
+  // with, least of all one claiming "private" when the row is public.
+  const handleVisibilityToggle = async (val) => {
+    if (!profile?.id) return;
+    const previous = isPublic;
+    setIsPublic(val);
+    setSavingVisibility(true);
+    try {
+      const updated = await UserProfile.update(profile.id, { is_public: val });
+      if (updated) setProfile(updated);
+    } catch {
+      setIsPublic(previous);
+      toast.error(
+        val
+          ? "Couldn't start sharing your progress. Please try again."
+          : "Couldn't stop sharing your progress. Please try again.",
+        { duration: 4000 }
+      );
+    } finally {
+      setSavingVisibility(false);
     }
   };
 
@@ -591,6 +643,42 @@ export default function Settings() {
               <Link to="/Badges">
                 <Button variant="outline" size="sm" className="h-11">View</Button>
               </Link>
+            </div>
+          </Card>
+
+          {/* Progress sharing */}
+          <Card className="border-0 shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-1">
+              <Eye className="w-4 h-4 text-primary" aria-hidden="true" />
+              <h2 className="font-semibold text-sm">Progress sharing</h2>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Controls whether the people you share Strk with can see how you're doing
+            </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <Label htmlFor="progress-sharing" className="text-sm font-medium">
+                  Share my progress
+                </Label>
+                {/* Names who, not just whether. "Public" would overstate it:
+                    the leaderboard is scoped to groupmates and active
+                    partners, so this never reaches strangers. */}
+                <p id="progress-sharing-hint" className="text-xs text-muted-foreground mt-0.5">
+                  {!profile?.id
+                    ? "Save a display name first to choose this."
+                    : isPublic
+                      ? "Your groupmates and partners can see your streak and consistency"
+                      : "Your stats stay private -- others see “No progress shared yet”"}
+                </p>
+              </div>
+              <Switch
+                className="relative before:absolute before:content-[''] before:-inset-y-3 before:-inset-x-1"
+                id="progress-sharing"
+                checked={isPublic}
+                disabled={!profile?.id || savingVisibility}
+                onCheckedChange={handleVisibilityToggle}
+                aria-describedby="progress-sharing-hint"
+              />
             </div>
           </Card>
 
