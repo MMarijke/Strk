@@ -31,6 +31,12 @@ export async function saveMyDisplayName(userEmail, displayName) {
   if (existing) {
     return UserProfile.update(existing.id, { display_name: displayName });
   } else {
-    return UserProfile.create({ display_name: displayName, is_public: true });
+    // is_public is deliberately NOT set here. It is the user's own
+    // visibility choice (Settings > Progress sharing), and the column
+    // already defaults to true in 20260702120002 -- naming it again here
+    // meant saving a display name re-asserted a sharing default as though
+    // it were part of the name, and would silently override the column if
+    // that default were ever made privacy-friendlier.
+    return UserProfile.create({ display_name: displayName });
   }
 }
