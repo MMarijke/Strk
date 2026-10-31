@@ -75,7 +75,12 @@ const LeaderboardRow = React.memo(function LeaderboardRow({ entry }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-sm truncate flex items-center gap-1">
-          <span className="mr-1">{getRank(entry.score).emoji}</span>
+          {/* The emoji alone announced "seedling" / "high voltage" /
+              "volcano" next to each name, and the tier NAME appeared
+              nowhere on this screen for anybody. aria-hidden on the glyph,
+              the name in sr-only text beside it. */}
+          <span className="mr-1" aria-hidden="true">{getRank(entry.score).emoji}</span>
+          <span className="sr-only">{getRank(entry.score).title}, </span>
           <span className="truncate">{entry.name}</span>
           {entry.isPro && (
             <Sparkles
