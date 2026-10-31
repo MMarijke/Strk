@@ -115,7 +115,14 @@ describe("the celebration states what was earned", () => {
   });
 
   it("hides the decorative glyph from the accessible name", () => {
-    expect(src()).toMatch(/text-8xl[^>]*aria-hidden="true"|aria-hidden="true"[^>]*text-8xl/);
+    // The hero glyph is RankMark now, not a text-8xl emoji, and RankMark
+    // is aria-hidden by default (asserted in its own describe below). The
+    // guarantee is that the modal shows the drawn mark and announces the
+    // tier through the title, not that a particular class carries an
+    // aria-hidden attribute.
+    const s = src();
+    expect(s).toMatch(/<RankMark rankKey=\{rank\.key\}/);
+    expect(s, "still renders a raw rank emoji").not.toMatch(/rank\.emoji/);
   });
 });
 
@@ -169,21 +176,34 @@ describe("the dead modal in Badges is gone", () => {
   });
 });
 
-describe("tier emoji are labelled on both leaderboards", () => {
-  it("hide the glyph and announce the tier name", () => {
+describe("the tier glyph is decorative and the name is announced", () => {
+  it("both leaderboards draw the mark and announce the tier name", () => {
     // The tier NAME appeared nowhere on either screen, for anybody --
-    // sighted users saw an unexplained emoji and screen-reader users
-    // heard "volcano".
+    // sighted users saw an unexplained emoji and screen-reader users heard
+    // "volcano".
+    //
+    // Asserted as the guarantee, not the mechanism: the emoji are gone
+    // entirely now, replaced by RankMark, so an earlier version of this
+    // test that matched `aria-hidden="true">{getRank(...).emoji}` was
+    // pinning an implementation rather than the outcome.
     for (const rel of ["src/pages/Social.jsx", "src/components/groups/GroupDashboard.jsx"]) {
       const src = code(rel);
-      expect(src, `${rel} emoji not hidden`).toMatch(/\.emoji\}<\/span>/);
-      expect(src, `${rel} has no aria-hidden on the tier glyph`).toMatch(
-        /aria-hidden="true">\{getRank\([^)]*\)\.emoji\}/
+      expect(src, `${rel} does not draw the tier mark`).toMatch(
+        /<RankMark rankKey=\{getRank\([^)]*\)\.key\}/
       );
       expect(src, `${rel} never announces the tier name`).toMatch(
         /sr-only">\{getRank\([^)]*\)\.title\}/
       );
+      expect(src, `${rel} still renders a raw rank emoji`).not.toMatch(/getRank\([^)]*\)\.emoji/);
     }
+  });
+
+  it("RankMark is decorative unless a caller asks otherwise", () => {
+    // Every call site renders the tier name alongside it, so the glyph
+    // must not be announced a second time.
+    const src = code("src/components/rank/RankMark.jsx");
+    expect(src).toMatch(/decorative = true/);
+    expect(src).toMatch(/aria-hidden=\{decorative \? "true" : undefined\}/);
   });
 
   it("every tier has a title to announce", () => {
