@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getRank, assignCompetitionRanks, ordinal, calculateStats, scoreFromParts, witnessFactor } from "@/lib/utils";
+import RankMark from "@/components/rank/RankMark";
 import { getDisplayName } from "@/lib/displayName";
 import { removeGroupMember } from "@/lib/groupService";
 import { cn } from "@/lib/utils";
@@ -79,7 +80,7 @@ const LeaderboardRow = React.memo(function LeaderboardRow({ entry }) {
               "volcano" next to each name, and the tier NAME appeared
               nowhere on this screen for anybody. aria-hidden on the glyph,
               the name in sr-only text beside it. */}
-          <span className="mr-1" aria-hidden="true">{getRank(entry.score).emoji}</span>
+          <RankMark rankKey={getRank(entry.score).key} size={14} className="mr-1 shrink-0" />
           <span className="sr-only">{getRank(entry.score).title}, </span>
           <span className="truncate">{entry.name}</span>
           {entry.isPro && (

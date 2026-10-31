@@ -6,6 +6,7 @@ import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, 
 import { Button } from "@/components/ui/button";
 import LoadErrorStrip from "@/components/ui/load-error-strip";
 import { cn, calculateStats, scoreFromParts, witnessFactor } from "@/lib/utils";
+import RankMark from "@/components/rank/RankMark";
 import { calculateStreak } from "@/components/habits/StreakWidget";
 import CreateChallengeModal from "./CreateChallengeModal";
 import InviteMembersSheet from "./InviteMembersSheet";
@@ -642,7 +643,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
                     name is what a screen reader needs. */}
                 {row.hasData && (
                   <>
-                    <span className="mr-1" aria-hidden="true">{getRank(row.score).emoji}</span>
+                    <RankMark rankKey={getRank(row.score).key} size={14} className="mr-1 shrink-0" />
                     <span className="sr-only">{getRank(row.score).title}, </span>
                   </>
                 )}
