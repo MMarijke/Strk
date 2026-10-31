@@ -47,9 +47,15 @@ function buildOrFragment(condition) {
 
 function createEntity(table) {
   return {
-    async list(sort) {
+    // `limit` is optional and was added because UserProfile.list() was
+    // unbounded: Badges.jsx fetched every readable profile on every visit
+    // just to compute one percentile. RLS already restricts the rows to
+    // public profiles, but "every public profile" grows without limit and
+    // the screen needs a sample, not the census.
+    async list(sort, limit) {
       let query = supabase.from(table).select('*');
       query = applySort(query, sort);
+      if (typeof limit === 'number') query = query.limit(limit);
       const { data, error } = await query;
       if (error) throw error;
       return data.map(mapRow);

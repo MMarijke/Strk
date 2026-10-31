@@ -22,7 +22,7 @@ const RANK_STYLES = {
   gold: { border: "border-yellow-400/60", tint: "from-yellow-400/20", bar: "bg-gradient-to-r from-yellow-400 to-amber-500" },
 };
 
-export default function DashboardSummary({ habits, score, isPro, freezesRemaining, freezesUsed = 0, frozenHabits = {}, onCompleteAll }) {
+export default function DashboardSummary({ habits, score, isPro, freezesRemaining, freezesUsed = 0, frozenHabits = {}, onCompleteAll, onExplainScore }) {
   const rank = getRank(score);
   const { nextRank } = rank;
   const style = RANK_STYLES[rank.color] ?? RANK_STYLES.green;
@@ -52,18 +52,48 @@ export default function DashboardSummary({ habits, score, isPro, freezesRemainin
     <div
       className={`rounded-2xl border bg-gradient-to-br ${style.tint} to-card shadow-lg shadow-black/20 p-4 transition-all duration-500 ${style.border}`}
     >
-      <div className="flex items-center gap-3 mb-3">
-        <span className="text-3xl leading-none">{rank.emoji}</span>
+      {/* A real <button>, not a tappable div: this is the route to the
+          only explanation of the score that exists, so it has to be
+          reachable by keyboard and announce what it opens. min-h-11 is the
+          project's 44px touch target; -my-1 py-1 keeps the hit area
+          without adding layout height to a card the critique already
+          called crowded.
+
+          The emoji is aria-hidden and the rank title carries the meaning:
+          a screen reader announcing "seedling" taught nobody their tier. */}
+      <button
+        type="button"
+        onClick={onExplainScore}
+        aria-label={`${rank.title}, ${score} points. See what your score is made of.`}
+        className="w-full flex items-center gap-3 mb-3 text-left rounded-xl outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-11 -my-1 py-1"
+      >
+        <span className="text-3xl leading-none" aria-hidden="true">{rank.emoji}</span>
         <div className="flex-1 min-w-0">
           <p className="font-bold text-base text-foreground leading-tight">{rank.title}</p>
           <p className="text-xs text-muted-foreground truncate">
             {score} points
-            {nextRank ? ` · ${pointsLeft} to ${nextRank.emoji} ${nextRank.title}` : " · Maximum rank 👑"}
+            {nextRank ? ` · ${pointsLeft} to ${nextRank.title}` : " · Top of the ladder"}
           </p>
         </div>
-      </div>
+      </button>
 
-      <div className="h-2 rounded-full bg-muted overflow-hidden mb-3">
+      {/* Progress conveyed only by bar width and tier colour was invisible
+          to a screen reader and to anyone who cannot distinguish the two
+          near-identical yellows in the ramp. The accessible name states
+          the real quantity rather than the percentage, because "180 of 210
+          points toward Inferno" is the fact and "86%" is the rendering. */}
+      <div
+        role="progressbar"
+        aria-valuemin={rank.minScore}
+        aria-valuemax={nextRank ? nextRank.minScore : rank.minScore}
+        aria-valuenow={score}
+        aria-valuetext={
+          nextRank
+            ? `${score} points, ${pointsLeft} to ${nextRank.title}`
+            : `${score} points, top of the ladder`
+        }
+        className="h-2 rounded-full bg-muted overflow-hidden mb-3"
+      >
         <div
           className={`h-full rounded-full transition-all duration-700 ${style.bar}`}
           style={{ width: `${progressPct}%` }}

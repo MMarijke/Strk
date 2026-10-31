@@ -8,13 +8,14 @@ import { Habit, Group, UserBadge, UserProfile } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
-import { cn, getRank, calculateScore, scoreFromParts, witnessFactor } from "@/lib/utils";
+import { cn, getRank, calculateScore, calculateStats, scoreFromParts, witnessFactor } from "@/lib/utils";
 import { evaluateBadges, STREAK_BADGE_IDS, getStreakBadgeEarnedDate } from "@/lib/badgeDefinitions";
 import { hasFreezeEverBeenUsed } from "@/lib/freezeService";
 import BadgeCelebrationModal from "@/components/badges/BadgeCelebrationModal";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import RankUpModal from "@/components/rank/RankUpModal";
+import ScoreBreakdownSheet from "@/components/rank/ScoreBreakdownSheet";
 
 function ProgressBar({ current, total }) {
   const pct = total > 0 ? Math.min((current / total) * 100, 100) : 0;
@@ -27,6 +28,11 @@ function ProgressBar({ current, total }) {
     </div>
   );
 }
+
+// How many public profiles the percentile is computed from. Large enough
+// for "top N%" to mean something, small enough to be a fixed cost as the
+// user base grows.
+const PERCENTILE_SAMPLE = 500;
 
 const BadgeCard = React.memo(function BadgeCard({ badge, isNew }) {
   return (
@@ -105,6 +111,7 @@ export default function Badges() {
   const queryClient = useQueryClient();
   const [celebrationBadge, setCelebrationBadge] = useState(null);
   const [rankUpRank, setRankUpRank] = useState(null);
+  const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
   const prevEarnedIds = useRef(null);
   const [newlyEarnedIds, setNewlyEarnedIds] = useState(new Set());
 
@@ -263,9 +270,13 @@ export default function Badges() {
   // "top X%" go through one definition. Declared after the rank, it was a
   // temporal dead zone -- a ReferenceError on every render, which
   // typecheck caught as TS2448.
+  // Bounded. This was an unbounded fetch of every readable profile, run
+  // to produce a single percentile. 500 is a sample large enough for that
+  // number to mean something and small enough to stay a fixed cost; the
+  // query key stays ["user-profiles"] so it shares cache with Social.
   const { data: allProfiles = [] } = useQuery({
     queryKey: ["user-profiles"],
-    queryFn: () => UserProfile.list("-best_streak"),
+    queryFn: () => UserProfile.list("-best_streak", PERCENTILE_SAMPLE),
   });
 
   // Compute rank -- calculateScore/getRank, same shared formula RankCard
@@ -285,7 +296,32 @@ export default function Badges() {
     const s = scoreFromParts(p.rolling_best_streak_90, p.consistency_score, witnessFactor(p.witness_slots));
     return s < myScore;
   }).length;
-  const topPct = totalUsers > 5 ? Math.round(((totalUsers - usersBelow) / totalUsers) * 100) : null;
+
+  // This line used to greet every new user with "You are in the top 100%
+  // of Strk users". At myScore 0 nobody scores below you, so usersBelow is
+  // 0 and the percentage is 100 -- the app's only bragging surface opening
+  // by telling someone they are last, in the grammar of a compliment.
+  //
+  // Three separate corrections:
+  //
+  //   myScore > 0 && usersBelow > 0 -- a percentile needs somebody to be
+  //   a percentile OF. Below that it is not a modest claim, it is a
+  //   meaningless one, so the line is withheld rather than softened.
+  //
+  //   Math.min(..., 99) -- "top 100%" is never a thing worth printing even
+  //   when the arithmetic produces it.
+  //
+  //   "who share progress", not "of Strk users". allProfiles comes from
+  //   UserProfile.list, which RLS limits to rows with is_public = true, so
+  //   the denominator is people who have Progress sharing on -- not the
+  //   user base. Social.jsx documents removing exactly this conflation
+  //   from the leaderboard for being wrong; the same claim was still here,
+  //   and in a product with GDPR/POPIA positioning a sentence about "all
+  //   Strk users" is a statement about other people's data.
+  const canRank = myScore > 0 && usersBelow > 0 && totalUsers > 5;
+  const topPct = canRank
+    ? Math.min(Math.round(((totalUsers - usersBelow) / totalUsers) * 100), 99)
+    : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -308,12 +344,30 @@ export default function Badges() {
           </div>
         </div>
 
-        {/* Rank Showcase */}
-        <div className="mb-6 p-5 rounded-2xl border bg-card text-center">
-          <div className="text-6xl mb-2 leading-none">{myRank.emoji}</div>
+        {/* Rank Showcase. The whole card is the affordance for the
+            breakdown, because the score is the thing users cannot explain
+            and this is the screen they come to for it. */}
+        <button
+          type="button"
+          onClick={() => setShowScoreBreakdown(true)}
+          aria-label={`${myRank.title}, ${myScore} points. See what your score is made of.`}
+          className="w-full mb-6 p-5 rounded-2xl border bg-card text-center outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <div className="text-6xl mb-2 leading-none" aria-hidden="true">{myRank.emoji}</div>
           <h2 className="text-2xl font-extrabold text-foreground tracking-tight mb-0.5">{myRank.title}</h2>
           <p className="text-xs text-muted-foreground mb-3">{myScore} points</p>
-          <div className="h-2 rounded-full bg-muted overflow-hidden mb-1.5">
+          <div
+            role="progressbar"
+            aria-valuemin={myRank.minScore}
+            aria-valuemax={nextRank ? nextRank.minScore : myRank.minScore}
+            aria-valuenow={myScore}
+            aria-valuetext={
+              nextRank
+                ? `${myScore} points, ${nextRank.minScore - myScore} to ${nextRank.title}`
+                : `${myScore} points, top of the ladder`
+            }
+            className="h-2 rounded-full bg-muted overflow-hidden mb-1.5"
+          >
             <div
               className="h-full rounded-full bg-primary transition-all duration-700"
               style={{ width: `${progressPct}%` }}
@@ -321,13 +375,15 @@ export default function Badges() {
           </div>
           <p className="text-xs text-muted-foreground mb-2">
             {nextRank
-              ? `${nextRank.minScore - myScore} points to ${nextRank.emoji} ${nextRank.title}`
-              : "Maximum rank reached 👑"}
+              ? `${nextRank.minScore - myScore} points to ${nextRank.title}`
+              : "Top of the ladder"}
           </p>
           {topPct !== null && (
-            <p className="text-xs font-semibold text-primary">You are in the top {topPct}% of Strk users</p>
+            <p className="text-xs font-semibold text-primary">
+              Top {topPct}% of Strk users who share progress
+            </p>
           )}
-        </div>
+        </button>
 
         {/* Progress summary */}
         <div className="mb-6 p-4 bg-primary/5 rounded-2xl border border-primary/10">
@@ -374,6 +430,15 @@ export default function Badges() {
 
       <BadgeCelebrationModal badge={celebrationBadge} onClose={() => setCelebrationBadge(null)} />
       <RankUpModal rank={rankUpRank} onClose={() => setRankUpRank(null)} />
+
+      {/* Same component and the same inputs as Dashboard's, so the two
+          screens cannot explain one score two ways. */}
+      <ScoreBreakdownSheet
+        open={showScoreBreakdown}
+        onOpenChange={setShowScoreBreakdown}
+        {...calculateStats(habits, new Date(), myWitness)}
+        witnessSlots={allProfiles.find((p) => p.created_by === user?.email)?.witness_slots}
+      />
     </div>
   );
 }

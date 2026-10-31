@@ -20,7 +20,8 @@ import PullToRefresh from "@/components/dashboard/PullToRefresh";
 import TodayTray from "@/components/dashboard/TodayTray";
 import FriendActivityStrip from "@/components/social/FriendActivityStrip";
 import RankUpModal from "@/components/rank/RankUpModal";
-import { getRank, calculateScore, witnessFactor, RANK_ORDER, normalizeRankKey } from "@/lib/utils";
+import ScoreBreakdownSheet from "@/components/rank/ScoreBreakdownSheet";
+import { getRank, calculateScore, calculateStats, witnessFactor, RANK_ORDER, normalizeRankKey } from "@/lib/utils";
 import StartFocusModal from "@/components/focus/StartFocusModal";
 import SessionRoom from "@/components/focus/SessionRoom";
 import { trackEvent } from "@/lib/analytics";
@@ -288,6 +289,7 @@ export default function Dashboard() {
   // The viewer's own witness multiplier, from the profile this screen
   // already loads.
   const myWitness = witnessFactor(userProfile?.witness_slots);
+  const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
 
   // Check for rank-up whenever habits or profile change
   useEffect(() => {
@@ -460,6 +462,7 @@ export default function Dashboard() {
             <DashboardSummary
               habits={habits}
               score={calculateScore(allHabits, myWitness)}
+              onExplainScore={() => setShowScoreBreakdown(true)}
               isPro={isPro}
               freezesUsed={freezesUsed}
               freezesRemaining={freezesRemaining}
@@ -614,6 +617,17 @@ export default function Dashboard() {
         <AddHabitDialog open={showAdd} onOpenChange={setShowAdd} onAdd={(data) => createMutation.mutateAsync(data)} />
         </div>
         <RankUpModal rank={rankUpRank} onClose={() => setRankUpRank(null)} />
+
+        {/* calculateStats, not calculateScore: the sheet needs the parts,
+            and recomputing them here from the same inputs guarantees the
+            breakdown adds up to the number on the card rather than being
+            assembled from a second source. */}
+        <ScoreBreakdownSheet
+          open={showScoreBreakdown}
+          onOpenChange={setShowScoreBreakdown}
+          {...calculateStats(allHabits, new Date(), myWitness)}
+          witnessSlots={userProfile?.witness_slots}
+        />
         <StartFocusModal
           open={showFocusModal}
           onOpenChange={setShowFocusModal}
