@@ -14,7 +14,7 @@ import { calculateStreak } from "@/components/habits/StreakWidget";
 import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
 import { useSubscription } from "@/hooks/useSubscription";
 import UpgradeModal from "@/components/upgrade/UpgradeModal";
-import { HABIT_COLORS as STROKE_COLORS, cn } from "@/lib/utils";
+import { HABIT_COLORS as STROKE_COLORS, cn, habitWindowDays } from "@/lib/utils";
 
 // STROKE_COLORS has 8 entries; the 9th+ uncustomized habit reuses one of
 // them via i % STROKE_COLORS.length, which makes two lines identical and
@@ -297,8 +297,14 @@ export default function Trends() {
                 const completions = h.completions || [];
                 const streak = calculateStreak(completions);
                 const best = getAllTimeBest(completions);
-                const last30Count = last30.filter((d) => completions.includes(d)).length;
-                const rate30 = Math.round((last30Count / 30) * 100);
+                // Rated over this habit's own lifetime, capped at 30 days,
+                // matching calculateStats and the stats trigger. A habit
+                // added yesterday and kept both days is at 100% here, not
+                // 7% -- the card and the score now describe the same habit
+                // the same way.
+                const windowDays = habitWindowDays(h);
+                const last30Count = last30.slice(0, windowDays).filter((d) => completions.includes(d)).length;
+                const rate30 = Math.round((last30Count / windowDays) * 100);
                 const color = h.color || STROKE_COLORS[i % STROKE_COLORS.length];
 
                 // 4-week trend: compare last 2 weeks vs 2 weeks before that
@@ -327,7 +333,17 @@ export default function Trends() {
                         </div>
                         <div>
                           <p className="text-lg font-bold text-foreground">{rate30}%</p>
-                          <p className="text-[10px] text-muted-foreground">Last 30 days</p>
+                          {/* The label follows the window. Saying "Last 30
+                              days" over a rate measured across the three
+                              days a habit has existed would state a period
+                              the number does not cover. */}
+                          <p className="text-[10px] text-muted-foreground">
+                            {windowDays >= 30
+                              ? "Last 30 days"
+                              : windowDays === 1
+                                ? "Today"
+                                : `Last ${windowDays} days`}
+                          </p>
                         </div>
                       </div>
                       <p className={`text-xs font-medium mt-2 ${trendColor}`}>{trend}</p>

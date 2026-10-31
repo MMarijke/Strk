@@ -1,7 +1,7 @@
 import { format, subDays, getDaysInMonth, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, addDays } from "date-fns";
 import { calculateStreak, } from "@/components/habits/StreakWidget";
 import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
-import { dayNumber } from "@/lib/utils";
+import { dayNumber, habitWindowDays } from "@/lib/utils";
 
 export const BADGES = [
   {
@@ -198,20 +198,28 @@ export function evaluateBadges(habits, groups, userEmail, freezeEverUsed = false
   // permanently unreachable for anyone who had ever archived anything.
   const activeHabits = habits.filter((h) => !h.archived);
 
-  // Overall 30-day completion rate, over active habits only.
+  // Completion rate over active habits, each rated over its own lifetime
+  // capped at 30 days (habitWindowDays).
   //
-  // Pooled (total completions / total slots) rather than averaging
-  // per-habit percentages, which is what award_badge does. Those are the
-  // same number -- sum(k_i)/(n*30) either way -- and pooling rounds once,
-  // so this agrees with the server rather than drifting by a point the
-  // way a per-habit round would.
-  const last30Days = Array.from({ length: 30 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
-  let totalSlots = 0, totalDone = 0;
-  activeHabits.forEach((h) => {
-    const c = h.completions || [];
-    last30Days.forEach((d) => { totalSlots++; if (c.includes(d)) totalDone++; });
-  });
-  const consistencyRate = totalSlots > 0 ? Math.round((totalDone / totalSlots) * 100) : 0;
+  // Averaged per habit, NOT pooled. This used to pool total completions
+  // over total slots, with a comment arguing that pooling and per-habit
+  // averaging are "the same number -- sum(k_i)/(n*30) either way". That
+  // was true only while every denominator was 30. Once each habit is
+  // rated over its own window the two diverge -- sum(k_i)/sum(w_i) is not
+  // the mean of k_i/w_i when the w_i differ -- and award_badge computes
+  // round(avg(pct)) per habit. Pooling here would silently disagree with
+  // the server about consistency_king eligibility, which is exactly the
+  // class of bug 20261031090001 was written to fix.
+  const consistencyRate = activeHabits.length
+    ? Math.round(
+      activeHabits.reduce((sum, h) => {
+        const c = h.completions || [];
+        const w = habitWindowDays(h);
+        const days = Array.from({ length: w }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
+        return sum + (days.filter((d) => c.includes(d)).length / w) * 100;
+      }, 0) / activeHabits.length
+    )
+    : 0;
 
   // Perfect week: any 7-day window where every ACTIVE habit was completed
   // every day. The length guard is on activeHabits for a reason beyond
