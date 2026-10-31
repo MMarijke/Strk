@@ -127,8 +127,30 @@ describe("scoreFromParts", () => {
   });
 
   it("agrees with calculateStats's own score", () => {
+    // rollingBest, not bestStreak: the score's form term is the 90-day
+    // rolling best. Passing bestStreak here used to be equivalent and
+    // still passes for this fixture, because a 3-day run IS the all-time
+    // best -- which is precisely why it is the wrong field to assert on.
+    // The second fixture below has the two genuinely differ.
     const habits = [{ archived: false, completions: [day(0), day(1), day(2)] }];
     const s = calculateStats(habits);
-    expect(s.score).toBe(scoreFromParts(s.bestStreak, s.consistency));
+    expect(s.score).toBe(scoreFromParts(s.rollingBest, s.consistency, s.witness));
+  });
+
+  it("builds the score from rolling form, not the all-time best", () => {
+    // A 40-day run that ended over 90 days ago, plus a 3-day run now.
+    // bestStreak is 40 and rollingBest is 3; the score must follow the 3.
+    const habits = [{
+      archived: false,
+      completions: [
+        ...Array.from({ length: 40 }, (_, i) => day(200 + i)),
+        day(0), day(1), day(2),
+      ],
+    }];
+    const s = calculateStats(habits);
+    expect(s.bestStreak).toBe(40);
+    expect(s.rollingBest).toBe(3);
+    expect(s.score).toBe(scoreFromParts(3, s.consistency, 0));
+    expect(s.score).not.toBe(scoreFromParts(40, s.consistency, 0));
   });
 });

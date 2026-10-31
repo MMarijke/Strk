@@ -7,7 +7,7 @@ import { Users, Trophy, Plus, LogIn, Crown, Medal, Sparkles, Handshake } from "l
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getRank, assignCompetitionRanks, ordinal, calculateStats, scoreFromParts } from "@/lib/utils";
+import { getRank, assignCompetitionRanks, ordinal, calculateStats, scoreFromParts, witnessFactor } from "@/lib/utils";
 import { getDisplayName } from "@/lib/displayName";
 import { removeGroupMember } from "@/lib/groupService";
 import { cn } from "@/lib/utils";
@@ -274,16 +274,23 @@ export default function Social() {
     user?.full_name || getDisplayName(user?.email, profiles);
 
     // Shared definition rather than a third copy of the same arithmetic.
-    const { bestStreak: myBestStreak, consistency: myConsistency } = calculateStats(habits);
+    // myWitness comes from the same ["user-profiles"] query the peer rows
+    // read, so the viewer's own multiplier is the one the server computed
+    // rather than a second client-side guess at it.
+    const myWitness = witnessFactor(
+      profiles.find((p) => p.created_by === user?.email)?.witness_slots
+    );
+    const { rollingBest: myRolling, consistency: myConsistency } =
+      calculateStats(habits, new Date(), myWitness);
 
     const sorted = [
     {
       id: "me",
       name: myDisplayName,
       avatarColor: "hsl(var(--primary))",
-      bestStreak: myBestStreak,
+      bestStreak: myRolling,
       consistency: myConsistency,
-      score: scoreFromParts(myBestStreak, myConsistency),
+      score: scoreFromParts(myRolling, myConsistency, myWitness),
       isMe: true,
       isPro
     },
@@ -298,7 +305,7 @@ export default function Social() {
       avatarColor: p.avatar_color,
       bestStreak: p.best_streak || 0,
       consistency: p.consistency_score || 0,
-      score: scoreFromParts(p.best_streak, p.consistency_score),
+      score: scoreFromParts(p.rolling_best_streak_90, p.consistency_score, witnessFactor(p.witness_slots)),
       isPro: p.plan === "pro"
     }))].
     sort((a, b) => b.score - a.score);
@@ -492,6 +499,7 @@ export default function Social() {
             }>
             <ScoreHistoryChart
               habits={habits}
+              witness={witnessFactor(profiles.find((p) => p.created_by === user?.email)?.witness_slots)}
               onInvite={() => {
                 if (navigator.share) {
                   // Dismissing the share sheet rejects with AbortError --

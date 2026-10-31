@@ -20,7 +20,7 @@ import PullToRefresh from "@/components/dashboard/PullToRefresh";
 import TodayTray from "@/components/dashboard/TodayTray";
 import FriendActivityStrip from "@/components/social/FriendActivityStrip";
 import RankUpModal from "@/components/rank/RankUpModal";
-import { getRank, calculateScore } from "@/lib/utils";
+import { getRank, calculateScore, witnessFactor, RANK_ORDER, normalizeRankKey } from "@/lib/utils";
 import StartFocusModal from "@/components/focus/StartFocusModal";
 import SessionRoom from "@/components/focus/SessionRoom";
 import { trackEvent } from "@/lib/analytics";
@@ -281,7 +281,13 @@ export default function Dashboard() {
     );
   };
 
-  const RANK_ORDER = ["ember", "flame", "blaze", "inferno", "legend"];
+  // RANK_ORDER is imported from utils, derived from RANKS itself. It used
+  // to be a hand-written array here, duplicating the order RANKS already
+  // implies -- and it still said "legend", a tier that no longer exists.
+  //
+  // The viewer's own witness multiplier, from the profile this screen
+  // already loads.
+  const myWitness = witnessFactor(userProfile?.witness_slots);
 
   // Check for rank-up whenever habits or profile change
   useEffect(() => {
@@ -291,9 +297,14 @@ export default function Dashboard() {
       // allHabits, not habits: calculateScore owns the archived rule now,
       // and passing the pre-filtered list is what made this screen
       // disagree with Badges for the same user.
-      const score = calculateScore(allHabits);
+      const score = calculateScore(allHabits, myWitness);
       const currentRank = getRank(score);
-      const highestKey = userProfile.highest_rank;
+      // normalizeRankKey, because a row written before the rename holds
+      // 'legend'. Unmapped, indexOf returns -1, which reads as "no tier
+      // ever reached" and would re-fire the celebration for somebody who
+      // peaked long ago. The migration rewrites the column; this covers a
+      // row read before it applied, and any cached client state.
+      const highestKey = normalizeRankKey(userProfile.highest_rank);
       const currentIdx = RANK_ORDER.indexOf(currentRank.key);
       const highestIdx = highestKey ? RANK_ORDER.indexOf(highestKey) : -1;
 
@@ -448,7 +459,7 @@ export default function Dashboard() {
           <div className="mb-3">
             <DashboardSummary
               habits={habits}
-              score={calculateScore(allHabits)}
+              score={calculateScore(allHabits, myWitness)}
               isPro={isPro}
               freezesUsed={freezesUsed}
               freezesRemaining={freezesRemaining}
