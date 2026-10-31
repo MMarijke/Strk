@@ -181,9 +181,13 @@ function habit(offsets, { archived = false } = {}) {
 
 describe("calculateStats", () => {
   it("returns real zeros for no habits rather than NaN", () => {
-    expect(calculateStats([])).toEqual({ score: 0, bestStreak: 0, consistency: 0 });
-    expect(calculateStats(null)).toEqual({ score: 0, bestStreak: 0, consistency: 0 });
-    expect(calculateStats(undefined)).toEqual({ score: 0, bestStreak: 0, consistency: 0 });
+    // Every numeric field, not a subset: the point of this test is that
+    // nothing comes back NaN, and a partial assertion would miss a new
+    // field added later that does.
+    const zeros = { score: 0, base: 0, bestStreak: 0, rollingBest: 0, consistency: 0, witness: 0 };
+    expect(calculateStats([])).toEqual(zeros);
+    expect(calculateStats(null)).toEqual(zeros);
+    expect(calculateStats(undefined)).toEqual(zeros);
   });
 
   // The all-time rule: archiving a habit must not erase a record somebody
@@ -236,7 +240,7 @@ describe("calculateStats", () => {
   it("treats a missing completions array as empty rather than throwing", () => {
     expect(() => calculateStats([{ name: "no completions key" }])).not.toThrow();
     expect(calculateStats([{ name: "no completions key" }])).toEqual({
-      score: 0, bestStreak: 0, consistency: 0,
+      score: 0, base: 0, bestStreak: 0, rollingBest: 0, consistency: 0, witness: 0,
     });
   });
 });

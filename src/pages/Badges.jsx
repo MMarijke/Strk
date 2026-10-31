@@ -8,7 +8,7 @@ import { Habit, Group, UserBadge, UserProfile } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
-import { cn, getRank, calculateScore, scoreFromParts } from "@/lib/utils";
+import { cn, getRank, calculateScore, scoreFromParts, witnessFactor } from "@/lib/utils";
 import { evaluateBadges, STREAK_BADGE_IDS, getStreakBadgeEarnedDate } from "@/lib/badgeDefinitions";
 import { hasFreezeEverBeenUsed } from "@/lib/freezeService";
 import BadgeCelebrationModal from "@/components/badges/BadgeCelebrationModal";
@@ -257,23 +257,32 @@ export default function Badges() {
     prevEarnedIds.current = currentEarnedIds;
   }, [habits, allMyGroups, persistedBadges]);
 
+  // The profiles query comes FIRST because the rank below now depends on
+  // it: the viewer's own witness multiplier is read from the same
+  // ["user-profiles"] result the peer comparison uses, so both sides of
+  // "top X%" go through one definition. Declared after the rank, it was a
+  // temporal dead zone -- a ReferenceError on every render, which
+  // typecheck caught as TS2448.
+  const { data: allProfiles = [] } = useQuery({
+    queryKey: ["user-profiles"],
+    queryFn: () => UserProfile.list("-best_streak"),
+  });
+
   // Compute rank -- calculateScore/getRank, same shared formula RankCard
   // and the leaderboards use, instead of a separate inline copy.
-  const myScore = calculateScore(habits);
+  const myWitness = witnessFactor(
+    allProfiles.find((p) => p.created_by === user?.email)?.witness_slots
+  );
+  const myScore = calculateScore(habits, myWitness);
   const myRank = getRank(myScore);
   const { nextRank } = myRank;
   const progressPct = nextRank
     ? Math.min(((myScore - myRank.minScore) / (nextRank.minScore - myRank.minScore)) * 100, 100)
     : 100;
 
-  // Top X% calculation
-  const { data: allProfiles = [] } = useQuery({
-    queryKey: ["user-profiles"],
-    queryFn: () => UserProfile.list("-best_streak"),
-  });
   const totalUsers = allProfiles.length;
   const usersBelow = allProfiles.filter((p) => {
-    const s = scoreFromParts(p.best_streak, p.consistency_score);
+    const s = scoreFromParts(p.rolling_best_streak_90, p.consistency_score, witnessFactor(p.witness_slots));
     return s < myScore;
   }).length;
   const topPct = totalUsers > 5 ? Math.round(((totalUsers - usersBelow) / totalUsers) * 100) : null;
