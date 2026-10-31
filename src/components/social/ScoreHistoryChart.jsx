@@ -33,7 +33,7 @@ import { Card } from "@/components/ui/card";
  * calculateStats takes an as-of date precisely so this can reuse it rather
  * than keep a second definition in step by hand.
  */
-function weeklySamples(habits) {
+function weeklySamples(habits, witness) {
   const today = new Date();
   return Array.from({ length: 4 }, (_, i) => {
     const weekStart = startOfWeek(subDays(today, (3 - i) * 7), { weekStartsOn: 1 });
@@ -42,13 +42,22 @@ function weeklySamples(habits) {
     // 30-day window running into the future and read as a slump that is
     // really just days that have not arrived.
     const asOf = weekEnd > today ? today : weekEnd;
-    const { score, consistency, bestStreak } = calculateStats(habits, asOf);
-    return { label: format(weekStart, "MMM d"), score, consistency, bestStreak };
+    // The CURRENT witness factor is applied to every sample, including the
+    // older ones. Historical witness is not recorded anywhere -- only the
+    // live slots are stored -- so the alternative was to plot the base and
+    // let the headline disagree with the leaderboard, which is the exact
+    // defect this component was rebuilt to remove. Scaling all four points
+    // by today's multiplier keeps the latest one equal to the leaderboard
+    // and makes the line "how my base has moved, at the level I am
+    // witnessed now". That is a real approximation and it is the one worth
+    // taking.
+    const { score, consistency, rollingBest } = calculateStats(habits, asOf, witness);
+    return { label: format(weekStart, "MMM d"), score, consistency, bestStreak: rollingBest };
   });
 }
 
-export default function ScoreHistoryChart({ habits, onInvite }) {
-  const weeks = weeklySamples(habits);
+export default function ScoreHistoryChart({ habits, onInvite, witness = 0 }) {
+  const weeks = weeklySamples(habits, witness);
 
   const currentScore = weeks[weeks.length - 1]?.score ?? 0;
 

@@ -1,0 +1,44 @@
+-- Rename the top tier's stored key: legend -> wildfire.
+--
+-- RANKS in src/lib/utils.js re-derives the ladder for a bounded score, and
+-- the top tier becomes Wildfire. Two reasons, recorded because a rename
+-- with no reason is churn: "Legend" was the one non-fire word in a fire
+-- ladder (ember, flame, blaze, inferno, legend), and wildfire is the fire
+-- state that SPREADS TO OTHER PEOPLE -- which is what the witness
+-- multiplier measures. The name and the mechanic now say the same thing.
+--
+-- user_profiles.highest_rank stores a tier KEY, so every row written
+-- before this holds 'legend'. Left alone, RANK_ORDER.indexOf('legend')
+-- returns -1, which Dashboard.jsx reads as "no tier ever reached" -- and
+-- would re-fire the rank-up celebration for somebody who peaked long ago,
+-- then immediately overwrite their peak with whatever they are now.
+--
+-- The client also normalizes this (normalizeRankKey in utils.js), and both
+-- are wanted: the client covers a row read from cache before this applied,
+-- this covers the stored truth so the normalization is not load-bearing
+-- forever.
+--
+-- highest_rank is deliberately NOT in protect_user_profiles_stats_fields
+-- -- it is written by the client from Dashboard.jsx -- so this needs no
+-- service_role claim and no SET ROLE. The migration role owns the table
+-- and so is not subject to its RLS.
+--
+-- Scoped to the exact value. A `where highest_rank is not null` would also
+-- rewrite rows already holding a valid key.
+update public.user_profiles
+set highest_rank = 'wildfire'
+where highest_rank = 'legend';
+
+-- ============================================================
+-- Verification for the production apply
+-- ============================================================
+-- Preview branches are disabled on this project, so this has not run
+-- anywhere when the PR goes green.
+--
+--   select highest_rank, count(*)
+--   from public.user_profiles
+--   group by 1 order by 2 desc;
+--
+-- No row should report 'legend' afterwards. Any key outside
+-- (ember, flame, blaze, inferno, wildfire, null) is a row the client can
+-- no longer place on the ladder, and would show as "no tier reached".

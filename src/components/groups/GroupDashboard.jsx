@@ -5,7 +5,7 @@ import { format, parseISO, isAfter, differenceInCalendarDays } from "date-fns";
 import { Crown, Medal, Flame, ArrowLeft, Copy, Check, Share2, Settings, Trophy, Plus, Sparkles, Users, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import LoadErrorStrip from "@/components/ui/load-error-strip";
-import { cn, calculateStats, scoreFromParts } from "@/lib/utils";
+import { cn, calculateStats, scoreFromParts, witnessFactor } from "@/lib/utils";
 import { calculateStreak } from "@/components/habits/StreakWidget";
 import CreateChallengeModal from "./CreateChallengeModal";
 import InviteMembersSheet from "./InviteMembersSheet";
@@ -339,7 +339,18 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
   // on the same definition -- which held only while the server used the
   // same rule, and two other copies of the same arithmetic existed in
   // utils.js and Social.jsx anyway.
-  const myStats = useMemo(() => calculateStats(habits), [habits]);
+  // The viewer's own witness, read from the same profiles list the member
+  // rows below are scored from -- so "me" and every other row go through
+  // scoreFromParts with a server-computed multiplier, not a mix of one
+  // computed here and one read there.
+  const myWitness = useMemo(
+    () => witnessFactor(profiles.find((p) => p.created_by === userEmail)?.witness_slots),
+    [profiles, userEmail]
+  );
+  const myStats = useMemo(
+    () => calculateStats(habits, new Date(), myWitness),
+    [habits, myWitness]
+  );
   const myTopHabit = useMemo(() => getTopHabit(habits), [habits]);
 
   const rows = useMemo(() => {
@@ -365,7 +376,7 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
         name,
         isMe: false,
         isPro: memberProfile.plan === "pro",
-        score: scoreFromParts(memberProfile.best_streak, memberProfile.consistency_score),
+        score: scoreFromParts(memberProfile.rolling_best_streak_90, memberProfile.consistency_score, witnessFactor(memberProfile.witness_slots)),
         bestStreak: memberProfile.best_streak || 0,
         consistency: memberProfile.consistency_score || 0,
         // Stays null for everyone but you, and not as a placeholder: another

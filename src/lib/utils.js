@@ -110,9 +110,11 @@ export function habitWindowDays(habit, asOf = new Date(), maxDays = 30) {
   return Math.max(1, Math.min(maxDays, age));
 }
 
-export function calculateStats(habits, asOf = new Date()) {
+export function calculateStats(habits, asOf = new Date(), witness = 0) {
   const all = habits || [];
-  if (!all.length) return { score: 0, bestStreak: 0, consistency: 0 };
+  if (!all.length) {
+    return { score: 0, base: 0, bestStreak: 0, rollingBest: 0, consistency: 0, witness };
+  }
 
   const active = all.filter((h) => !h.archived);
   const last30 = Array.from({ length: 30 }, (_, i) =>
@@ -156,12 +158,30 @@ export function calculateStats(habits, asOf = new Date()) {
     )
     : 0;
 
-  const bestStreak = Math.max(
-    ...all.map((h) => getAllTimeBest((h.completions || []).filter((d) => d <= cutoff))),
-    0
-  );
+  const withinCutoff = (h) => (h.completions || []).filter((d) => d <= cutoff);
 
-  return { score: scoreFromParts(bestStreak, consistency), bestStreak, consistency };
+  // All-time, across every habit including archived. No longer the score's
+  // input -- it is the PEAK record, kept because it is a record somebody
+  // set and because the six streak badges legitimately read it.
+  const bestStreak = Math.max(...all.map((h) => getAllTimeBest(withinCutoff(h))), 0);
+
+  // The score's form term. Archived habits are included for the same
+  // reason the SQL includes them: this measures whether the user actually
+  // showed up on those days, a historical fact about the window, so
+  // retiring the habit afterwards should not erase them. The decay is the
+  // window moving on, not the archive flag.
+  const rolling = Math.max(...all.map((h) => rollingBest(withinCutoff(h), asOf)), 0);
+
+  const base = rolling * 2 + consistency;
+
+  return {
+    score: scoreFromParts(rolling, consistency, witness),
+    base,
+    bestStreak,
+    rollingBest: rolling,
+    consistency,
+    witness,
+  };
 }
 
 /**
@@ -178,13 +198,48 @@ export function calculateStats(habits, asOf = new Date()) {
  * .consistency_score, computed server-side. That asymmetry is the point of
  * the function.
  */
-export function scoreFromParts(bestStreak, consistency) {
-  return (bestStreak || 0) * 2 + (consistency || 0);
+export function scoreFromParts(rollingBest, consistency, witness = 0) {
+  const base = (rollingBest || 0) * 2 + (consistency || 0);
+  return Math.round(base * (1 + (witness || 0)));
 }
 
-/** Score only, for callers that need nothing else. */
-export function calculateScore(habits) {
-  return calculateStats(habits).score;
+/**
+ * Longest unbroken run inside the trailing `days` window.
+ *
+ * This replaces the all-time best as the score's form term, and it is the
+ * fix for the defect that mattered most: an all-time best is monotone, so
+ * with consistency capped at 100 every user's score was pinned inside
+ * [2b, 2b+100] and could not move at all past their peak. It also made
+ * demotion below a record's tier impossible, so a dormant ex-champion
+ * outranked an active newcomer by 240 points.
+ *
+ * Mirrors the SQL exactly: `d > current_date - 90 and d <= current_date`,
+ * i.e. the 90 days ending today inclusive. A run that began 120 days ago
+ * and is still going reads as 90, which is the cap by construction.
+ *
+ * Rolling rather than the live current streak, deliberately: this app
+ * ships two streak freezes a month precisely because people miss days, so
+ * a term that collapses to zero on one missed day would contradict the
+ * product's own acknowledgement. This decays over three months instead.
+ */
+export function rollingBest(completions, asOf = new Date(), days = 90) {
+  const newest = dayNumber(format(asOf, "yyyy-MM-dd"));
+  const oldest = newest - (days - 1);
+  const within = (completions || []).filter((d) => {
+    const n = dayNumber(d);
+    return Number.isFinite(n) && n >= oldest && n <= newest;
+  });
+  return getAllTimeBest(within);
+}
+
+/**
+ * Score only, for callers that need nothing else.
+ *
+ * `witness` is second because it is the argument callers actually pass;
+ * asOf stays last and defaulted, since only ScoreHistoryChart overrides it.
+ */
+export function calculateScore(habits, witness = 0, asOf = new Date()) {
+  return calculateStats(habits, asOf, witness).score;
 }
 
 // Whether this viewer has asked the OS for less motion.
@@ -269,13 +324,100 @@ export const HABIT_COLOR_NAMES = [
 ];
 
 // ── RPG Rank System ──────────────────────────────────────────────────────────
+/**
+ * The ladder, re-derived for a bounded score.
+ *
+ * The old thresholds (0/50/100/200/400) were set against an unbounded
+ * score, because the form term was an all-time best streak that could grow
+ * forever. It no longer can: rollingBest90 caps at 90, so the base caps at
+ * 90*2 + 100 = 280, and the witness multiplier caps at 1.5x, so the score
+ * caps at 420. A finite range means these can be spaced deliberately
+ * instead of guessed.
+ *
+ * Wildfire starts at 300 and the SOLO ceiling is 280. That ten-tier-point
+ * gap is the whole design: a user with no social activity climbs four full
+ * tiers and tops out one short of the fifth, with no lockout rule and no
+ * "you need friends" error anywhere -- the arithmetic does it. Move either
+ * number without the other and the top tier becomes either reachable alone
+ * or unreachable for everyone. See the shape brief.
+ *
+ * Pacing, one habit never missed: Flame day 12, Blaze day 25, Inferno day
+ * 55 solo (day 31 with people), Wildfire day 66 with people. The old
+ * ladder was 10/19/50/150, which front-loaded two rank-ups into three
+ * weeks and then put the top 150 flawless days away.
+ *
+ * "Legend" became "Wildfire" because it was the one non-fire word in a
+ * fire ladder -- the naming was the only authored thing in the old system
+ * -- and because wildfire is the fire state that SPREADS TO OTHER PEOPLE,
+ * which is exactly what the multiplier measures. The name and the mechanic
+ * finally say the same thing.
+ *
+ * The emoji and colour fields are unchanged here and are wrong on purpose
+ * for now: Ember is still a green seedling and Blaze a lightning bolt in a
+ * flame-branded product. Replacing them with one mark at five intensities,
+ * and the ramp with monotone ember-to-white-hot theme tokens, is the next
+ * change -- doing it here would mix a formula migration with a visual one.
+ */
 export const RANKS = [
-  { key: "ember",   title: "Ember",   emoji: "🌱", minScore: 0,   maxScore: 49,  color: "green" },
-  { key: "flame",   title: "Flame",   emoji: "🔥", minScore: 50,  maxScore: 99,  color: "orange" },
-  { key: "blaze",   title: "Blaze",   emoji: "⚡", minScore: 100, maxScore: 199, color: "yellow" },
-  { key: "inferno", title: "Inferno", emoji: "🌋", minScore: 200, maxScore: 399, color: "red" },
-  { key: "legend",  title: "Legend",  emoji: "👑", minScore: 400, maxScore: Infinity, color: "gold" },
+  { key: "ember",    title: "Ember",    emoji: "🌱", minScore: 0,   maxScore: 59,  color: "green" },
+  { key: "flame",    title: "Flame",    emoji: "🔥", minScore: 60,  maxScore: 129, color: "orange" },
+  { key: "blaze",    title: "Blaze",    emoji: "⚡", minScore: 130, maxScore: 209, color: "yellow" },
+  { key: "inferno",  title: "Inferno",  emoji: "🌋", minScore: 210, maxScore: 299, color: "red" },
+  { key: "wildfire", title: "Wildfire", emoji: "🔥", minScore: 300, maxScore: Infinity, color: "gold" },
 ];
+
+/** Tier keys in ladder order. Derived, so nothing can duplicate it. */
+export const RANK_ORDER = RANKS.map((r) => r.key);
+
+/**
+ * Tier keys that no longer exist, mapped to what replaced them.
+ *
+ * user_profiles.highest_rank stores a key, so every row written before the
+ * rename holds 'legend'. A migration rewrites the column, but this has to
+ * exist anyway: an unmapped key makes RANK_ORDER.indexOf return -1, which
+ * reads as "no tier ever reached" and would re-fire the rank-up
+ * celebration for somebody who peaked years ago.
+ */
+const LEGACY_RANK_KEYS = { legend: "wildfire" };
+
+export function normalizeRankKey(key) {
+  if (!key) return key;
+  return LEGACY_RANK_KEYS[key] ?? key;
+}
+
+/**
+ * The five ways a user's habits can be witnessed, each worth +10%.
+ *
+ * Distinct KINDS, never volume: volume is farmable (two users could spam
+ * reactions at each other) while breadth is not, because each slot is a
+ * different feature with a different other person in it. Written by
+ * recompute_witness_slots (20261031090002) into user_profiles.witness_slots.
+ */
+export const WITNESS_SLOTS = [
+  { key: "reacted", label: "Reacted to", hint: "Someone responded to your progress" },
+  { key: "session", label: "Shared a session", hint: "You focused alongside someone" },
+  { key: "challenge", label: "In a challenge", hint: "You're carrying a group challenge" },
+  { key: "assist", label: "Saved a streak", hint: "You spent a freeze on someone else" },
+  { key: "partner", label: "Accountable", hint: "You have an active partner" },
+];
+
+export const WITNESS_SLOT_VALUE = 0.1;
+
+/**
+ * 0 to 0.5, from the stored slots.
+ *
+ * Tolerant of a missing or malformed column on purpose. witness_slots
+ * defaults to '{}' for a row the trigger has not reached yet, and a user
+ * who has never been witnessed is indistinguishable from one who has never
+ * been computed -- both correctly score 0 here. Unknown keys are ignored
+ * rather than counted, so adding a slot to the database before the client
+ * knows about it cannot inflate anyone's score.
+ */
+export function witnessFactor(slots) {
+  if (!slots || typeof slots !== "object") return 0;
+  const lit = WITNESS_SLOTS.filter((s) => slots[s.key] === true).length;
+  return lit * WITNESS_SLOT_VALUE;
+}
 
 // Standard competition ranking ("1-2-2-4"): equal scores share a place, and
 // the next distinct score skips the places the tie consumed.
