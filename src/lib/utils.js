@@ -79,6 +79,37 @@ export function getAllTimeBest(completions) {
  * one user two different scores on two screens, under a comment claiming
  * it read the same everywhere. Pass the full list; this decides.
  */
+/**
+ * How many days a habit has existed, capped at `maxDays`.
+ *
+ * This is the denominator for that habit's completion rate, and it exists
+ * because a fixed 30 punishes the single action the product most wants.
+ * A habit created today and completed today was kept 1 day out of 1 — but
+ * divided by 30 it reads 3.33%, and since consistency averages across
+ * habits, adding one to a perfect 50-day habit used to drop consistency
+ * from 100% to 52% and the score from 200 to 152: a full tier, silently,
+ * as the immediate consequence of tracking something new.
+ *
+ * Inclusive of the creation day, so a habit created today has a window of
+ * 1 rather than 0 — a 0 would divide by zero.
+ *
+ * Returns `maxDays` when the creation date is missing or unparseable,
+ * which is the old behaviour: an unknown age must not inflate a rate.
+ * Clamped to at least 1 so clock skew (a creation date in the future)
+ * cannot produce a negative or zero window.
+ */
+export function habitWindowDays(habit, asOf = new Date(), maxDays = 30) {
+  const raw = habit?.created_date ?? habit?.created_at;
+  if (!raw) return maxDays;
+
+  const created = new Date(raw);
+  if (Number.isNaN(created.getTime())) return maxDays;
+
+  const age = dayNumber(format(asOf, "yyyy-MM-dd")) - dayNumber(format(created, "yyyy-MM-dd")) + 1;
+  if (!Number.isFinite(age)) return maxDays;
+  return Math.max(1, Math.min(maxDays, age));
+}
+
 export function calculateStats(habits, asOf = new Date()) {
   const all = habits || [];
   if (!all.length) return { score: 0, bestStreak: 0, consistency: 0 };
@@ -112,7 +143,15 @@ export function calculateStats(habits, asOf = new Date()) {
     ? Math.round(
       active.reduce((s, h) => {
         const c = h.completions || [];
-        return s + (last30.filter((d) => c.includes(d)).length / 30) * 100;
+        // Each habit is rated over its own lifetime, capped at 30 days --
+        // see habitWindowDays. Slicing the window rather than clamping the
+        // result also handles a case this app genuinely produces:
+        // completions can PREDATE created_date, because Edit Completions
+        // lets a user backfill (SmartReminders.jsx records the same).
+        // Counting those against a 1-day window would read 500%; taking
+        // only the window's own days means the count can never exceed it.
+        const w = habitWindowDays(h, asOf);
+        return s + (last30.slice(0, w).filter((d) => c.includes(d)).length / w) * 100;
       }, 0) / active.length
     )
     : 0;
