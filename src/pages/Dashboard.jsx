@@ -290,6 +290,13 @@ export default function Dashboard() {
   // already loads.
   const myWitness = witnessFactor(userProfile?.witness_slots);
   const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
+  // One computation feeding both the breakdown sheet and the rank-up
+  // modal, so the number celebrated and the number explained cannot
+  // differ.
+  const rankUpStats = useMemo(
+    () => calculateStats(allHabits, new Date(), myWitness),
+    [allHabits, myWitness]
+  );
 
   // Check for rank-up whenever habits or profile change
   useEffect(() => {
@@ -311,9 +318,28 @@ export default function Dashboard() {
       const highestIdx = highestKey ? RANK_ORDER.indexOf(highestKey) : -1;
 
       if (currentIdx > highestIdx) {
-        UserProfile.update(userProfile.id, { highest_rank: currentRank.key })
+        // Stamp the tier with the date it was first reached, so a
+        // celebration that was missed -- dismissed, or fired while the
+        // user was inside the OS share sheet -- still leaves a record the
+        // ladder can show. Existing keys are never overwritten: the FIRST
+        // time a tier was reached is the fact worth keeping, and a user
+        // who drops a tier and re-earns it has not reached it anew.
+        const reachedAt = {
+          ...(userProfile.rank_reached_at ?? {}),
+          [currentRank.key]: userProfile.rank_reached_at?.[currentRank.key]
+            ?? new Date().toISOString(),
+        };
+
+        UserProfile.update(userProfile.id, {
+          highest_rank: currentRank.key,
+          rank_reached_at: reachedAt,
+        })
           .then(() => {
-            setUserProfile((p) => ({ ...p, highest_rank: currentRank.key }));
+            setUserProfile((p) => ({
+              ...p,
+              highest_rank: currentRank.key,
+              rank_reached_at: reachedAt,
+            }));
           })
           .catch((err) => {
             // Local state deliberately left alone: highest_rank is what
@@ -616,7 +642,15 @@ export default function Dashboard() {
 
         <AddHabitDialog open={showAdd} onOpenChange={setShowAdd} onAdd={(data) => createMutation.mutateAsync(data)} />
         </div>
-        <RankUpModal rank={rankUpRank} onClose={() => setRankUpRank(null)} />
+        {/* score and rollingBest, so the celebration can state the
+            number earned and the next threshold, and so the share text
+            carries a human fact rather than a product noun. */}
+        <RankUpModal
+          rank={rankUpRank}
+          score={rankUpStats.score}
+          rollingBest={rankUpStats.rollingBest}
+          onClose={() => setRankUpRank(null)}
+        />
 
         {/* calculateStats, not calculateScore: the sheet needs the parts,
             and recomputing them here from the same inputs guarantees the
@@ -625,8 +659,9 @@ export default function Dashboard() {
         <ScoreBreakdownSheet
           open={showScoreBreakdown}
           onOpenChange={setShowScoreBreakdown}
-          {...calculateStats(allHabits, new Date(), myWitness)}
+          {...rankUpStats}
           witnessSlots={userProfile?.witness_slots}
+          rankReachedAt={userProfile?.rank_reached_at}
         />
         <StartFocusModal
           open={showFocusModal}

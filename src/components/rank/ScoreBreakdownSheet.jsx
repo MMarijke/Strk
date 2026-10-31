@@ -1,4 +1,5 @@
 import React from "react";
+import { format } from "date-fns";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Check } from "lucide-react";
 import { cn, RANKS, WITNESS_SLOTS, WITNESS_SLOT_VALUE, getRank } from "@/lib/utils";
@@ -50,6 +51,27 @@ function Row({ label, working = null, value, strong = false }) {
   );
 }
 
+/**
+ * "Reached 12 Mar", or "Reached" with no date for a tier earned before
+ * rank_reached_at existed, or nothing for a tier never reached.
+ *
+ * Reached-ness is inferred from the score rather than from the map, so a
+ * tier the user is past but has no stored date for is still shown as
+ * earned. The map only ever adds precision.
+ */
+function reachedLabel(key, reached, isCurrent, score) {
+  const tier = RANKS.find((r) => r.key === key);
+  const earned = isCurrent || (tier && score >= tier.minScore);
+  if (!earned) return null;
+
+  const stamp = reached[key];
+  if (!stamp) return "Reached";
+
+  const when = new Date(stamp);
+  if (Number.isNaN(when.getTime())) return "Reached";
+  return `Reached ${format(when, "d MMM yyyy")}`;
+}
+
 export default function ScoreBreakdownSheet({
   open,
   onOpenChange,
@@ -58,11 +80,13 @@ export default function ScoreBreakdownSheet({
   rollingBest,
   consistency,
   witnessSlots,
+  rankReachedAt,
 }) {
   const rank = getRank(score);
   const { nextRank } = rank;
   const slots = witnessSlots && typeof witnessSlots === "object" ? witnessSlots : {};
   const lit = WITNESS_SLOTS.filter((s) => slots[s.key] === true).length;
+  const reached = rankReachedAt && typeof rankReachedAt === "object" ? rankReachedAt : {};
   const multiplier = 1 + lit * WITNESS_SLOT_VALUE;
 
   return (
@@ -170,15 +194,29 @@ export default function ScoreBreakdownSheet({
                       here ? "bg-primary/10" : ""
                     )}
                   >
-                    <p
-                      className={cn(
-                        "text-sm",
-                        here ? "font-semibold text-foreground" : "text-muted-foreground"
+                    <div className="min-w-0">
+                      <p
+                        className={cn(
+                          "text-sm",
+                          here ? "font-semibold text-foreground" : "text-muted-foreground"
+                        )}
+                      >
+                        {r.title}
+                        {here && <span className="sr-only"> — you are here</span>}
+                      </p>
+                      {/* When this tier was first reached. The whole reason
+                          rank_reached_at exists: RankUpModal can fire at
+                          most four times in a user's life and a missed one
+                          left no trace at all, so the moment was
+                          unrecoverable. A tier reached before the column
+                          existed has no date and simply says so rather
+                          than being given an invented one. */}
+                      {reachedLabel(r.key, reached, here, score) && (
+                        <p className="text-[11px] text-muted-foreground">
+                          {reachedLabel(r.key, reached, here, score)}
+                        </p>
                       )}
-                    >
-                      {r.title}
-                      {here && <span className="sr-only"> — you are here</span>}
-                    </p>
+                    </div>
                     <span className="text-xs text-muted-foreground tabular-nums shrink-0">
                       {/* maxScore finally has a reader. It was declared on
                           every tier and used by nothing, which is why the
