@@ -7,7 +7,7 @@ import { Users, Trophy, Plus, LogIn, Crown, Medal, Sparkles, Handshake } from "l
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getRank, assignCompetitionRanks, ordinal, calculateStats } from "@/lib/utils";
+import { getRank, assignCompetitionRanks, ordinal, calculateStats, scoreFromParts } from "@/lib/utils";
 import { getDisplayName } from "@/lib/displayName";
 import { removeGroupMember } from "@/lib/groupService";
 import { cn } from "@/lib/utils";
@@ -283,7 +283,7 @@ export default function Social() {
       avatarColor: "hsl(var(--primary))",
       bestStreak: myBestStreak,
       consistency: myConsistency,
-      score: myBestStreak * 2 + myConsistency,
+      score: scoreFromParts(myBestStreak, myConsistency),
       isMe: true,
       isPro
     },
@@ -298,7 +298,7 @@ export default function Social() {
       avatarColor: p.avatar_color,
       bestStreak: p.best_streak || 0,
       consistency: p.consistency_score || 0,
-      score: (p.best_streak || 0) * 2 + (p.consistency_score || 0),
+      score: scoreFromParts(p.best_streak, p.consistency_score),
       isPro: p.plan === "pro"
     }))].
     sort((a, b) => b.score - a.score);

@@ -1,6 +1,7 @@
 import { format, subDays, getDaysInMonth, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, addDays } from "date-fns";
 import { calculateStreak, } from "@/components/habits/StreakWidget";
 import { getAllTimeBest } from "@/components/habits/MilestoneBadges";
+import { dayNumber } from "@/lib/utils";
 
 export const BADGES = [
   {
@@ -246,9 +247,11 @@ export function evaluateBadges(habits, groups, userEmail, freezeEverUsed = false
       if (hasComeback) return;
       const sorted = [...new Set(h.completions || [])].sort();
       for (let i = 1; i < sorted.length; i++) {
-        const prev = new Date(sorted[i - 1] + "T00:00:00");
-        const curr = new Date(sorted[i] + "T00:00:00");
-        const gap = (curr - prev) / 86400000;
+        // dayNumber, not Date subtraction: local midnights are 23 or 25
+        // hours apart across a DST transition, so a real 2-day gap
+        // spanning one measured 1.9583 or 2.0417 and this test silently
+        // missed it. Same root cause as getAllTimeBest's -- see dayNumber.
+        const gap = dayNumber(sorted[i]) - dayNumber(sorted[i - 1]);
         // gap > 1 means streak was broken; gap === 2 means they came back exactly the next day after the miss
         if (gap === 2) { hasComeback = true; break; }
       }

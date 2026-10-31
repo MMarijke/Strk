@@ -8,7 +8,7 @@ import { Habit, Group, UserBadge, UserProfile } from "@/api/entities";
 import { supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
-import { cn, getRank, calculateScore } from "@/lib/utils";
+import { cn, getRank, calculateScore, scoreFromParts } from "@/lib/utils";
 import { evaluateBadges, STREAK_BADGE_IDS, getStreakBadgeEarnedDate } from "@/lib/badgeDefinitions";
 import { hasFreezeEverBeenUsed } from "@/lib/freezeService";
 import BadgeCelebrationModal from "@/components/badges/BadgeCelebrationModal";
@@ -273,7 +273,7 @@ export default function Badges() {
   });
   const totalUsers = allProfiles.length;
   const usersBelow = allProfiles.filter((p) => {
-    const s = (p.best_streak || 0) * 2 + (p.consistency_score || 0);
+    const s = scoreFromParts(p.best_streak, p.consistency_score);
     return s < myScore;
   }).length;
   const topPct = totalUsers > 5 ? Math.round(((totalUsers - usersBelow) / totalUsers) * 100) : null;

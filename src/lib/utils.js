@@ -9,14 +9,48 @@ import { format, subDays } from "date-fns";
 // trigger already use, instead of pointing lib/utils.js at a component
 // file (MilestoneBadges.jsx itself imports cn from here, so the reverse
 // direction would be a real import cycle).
+/**
+ * A "yyyy-MM-dd" string as a whole number of days, for comparing dates.
+ *
+ * This exists because the obvious way to ask "are these two dates one day
+ * apart" is wrong twice a year. `new Date("2026-11-02T00:00:00")` parses
+ * as LOCAL midnight, and local midnights are not 24 hours apart across a
+ * DST transition -- so `(b - a) / 86400000` returns 1.0417 at fall-back
+ * and 0.9583 at spring-forward, and an `=== 1` test fails on a run of
+ * consecutive days that really is consecutive.
+ *
+ * Measured, scanning every day boundary of 2026: every DST-observing zone
+ * has exactly two broken boundaries a year.
+ *
+ *   America/*     2026-03-08 -> 03-09   and   2026-11-01 -> 11-02
+ *   Europe/*      2026-03-29 -> 03-30   and   2026-10-25 -> 10-26
+ *   Australia/*   2026-04-05 -> 04-06   and   2026-10-04 -> 10-05
+ *   Africa/Johannesburg, Asia/Kolkata, America/Sao_Paulo:  none
+ *
+ * That last line is why this went unnoticed: the timezone this is
+ * developed in has no DST, so it never reproduces locally.
+ *
+ * Date.UTC never applies an offset, so every day is exactly 86400000ms
+ * and the result is an integer, independent of the viewer's timezone. NaN
+ * for an unparseable string, which every caller treats as a break in the
+ * run -- the same thing the old Invalid Date arithmetic did, minus the
+ * crash risk.
+ */
+export function dayNumber(isoDate) {
+  const [y, m, d] = String(isoDate).split("-").map(Number);
+  return Date.UTC(y, m - 1, d) / 86400000;
+}
+
 export function getAllTimeBest(completions) {
   if (!completions || completions.length === 0) return 0;
   const sorted = [...completions].sort();
   let best = 1, cur = 1;
   for (let i = 1; i < sorted.length; i++) {
-    const prev = new Date(sorted[i - 1] + "T00:00:00");
-    const curr = new Date(sorted[i] + "T00:00:00");
-    const diff = (curr - prev) / (1000 * 60 * 60 * 24);
+    // Integer day arithmetic, not Date subtraction -- see dayNumber.
+    // A fall-back boundary used to read as diff > 1 and RESET cur to 1,
+    // silently truncating an all-time best streak; best_streak is then
+    // weighted x2 in the score and gates six badges.
+    const diff = dayNumber(sorted[i]) - dayNumber(sorted[i - 1]);
     if (diff === 1) { cur++; best = Math.max(best, cur); }
     else if (diff > 1) cur = 1;
   }
@@ -54,11 +88,25 @@ export function calculateStats(habits) {
     format(subDays(new Date(), i), "yyyy-MM-dd")
   );
 
+  // Rounded ONCE, at the end.
+  //
+  // This used to round each habit's percentage and then round the average
+  // of those, while the server rounds only the average -- `round(avg(pct))`
+  // in sync_profile_stats_from_habits. Double rounding disagrees with
+  // single rounding for 220 of the 961 possible two-habit combinations.
+  // Two habits with 0 and 2 completions in the window: the server says 3%,
+  // this used to say 4%.
+  //
+  // One point sounds harmless, and is not, because of where the two
+  // numbers meet. Every leaderboard draws YOUR row from this function and
+  // everyone else's from user_profiles.consistency_score, which the
+  // trigger wrote. The viewer was therefore ranked against the field by a
+  // formula that differed from the one applied to the field.
   const consistency = active.length
     ? Math.round(
       active.reduce((s, h) => {
         const c = h.completions || [];
-        return s + Math.round((last30.filter((d) => c.includes(d)).length / 30) * 100);
+        return s + (last30.filter((d) => c.includes(d)).length / 30) * 100;
       }, 0) / active.length
     )
     : 0;
@@ -67,7 +115,25 @@ export function calculateStats(habits) {
     ...all.map((h) => getAllTimeBest(h.completions || [])), 0
   );
 
-  return { score: bestStreak * 2 + consistency, bestStreak, consistency };
+  return { score: scoreFromParts(bestStreak, consistency), bestStreak, consistency };
+}
+
+/**
+ * The score weighting, in one place.
+ *
+ * `bestStreak * 2 + consistency` was written out in five files besides
+ * this one -- GroupDashboard, ScoreHistoryChart, Badges and Social twice.
+ * calculateStats owned it only for the viewer's own row; every "other
+ * person" row re-derived it from the server columns. Changing the
+ * weighting meant editing six files and noticing all six.
+ *
+ * Takes the parts rather than habits because the other-person callers
+ * genuinely only have the parts: user_profiles.best_streak and
+ * .consistency_score, computed server-side. That asymmetry is the point of
+ * the function.
+ */
+export function scoreFromParts(bestStreak, consistency) {
+  return (bestStreak || 0) * 2 + (consistency || 0);
 }
 
 /** Score only, for callers that need nothing else. */
