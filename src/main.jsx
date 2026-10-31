@@ -3,19 +3,18 @@ import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
 import { initSentry } from '@/lib/sentry'
 import { initAnalytics } from '@/lib/analytics'
+import { registerServiceWorker } from '@/lib/pwa'
 import '@/index.css'
 
 initSentry()
 initAnalytics()
 
-// Registers public/sw.js -- src/lib/showNotification.js prefers
-// navigator.serviceWorker.ready so browser notifications work on Android
-// Chrome, which requires a service worker and throws on a direct
-// `new Notification(...)` call. Best-effort: showNotification() already
-// falls back to the direct constructor if no service worker is available.
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
-}
+// The worker is now built from src/sw.js by vite-plugin-pwa and does
+// precaching as well as notifications, so registration moved into
+// lib/pwa.js where update handling lives. Same /sw.js URL, same
+// best-effort behaviour: showNotification() still falls back to the
+// direct Notification constructor if no worker is available.
+registerServiceWorker();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <App />

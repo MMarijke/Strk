@@ -21,6 +21,7 @@ import TodayTray from "@/components/dashboard/TodayTray";
 import FriendActivityStrip from "@/components/social/FriendActivityStrip";
 import RankUpModal from "@/components/rank/RankUpModal";
 import ScoreBreakdownSheet from "@/components/rank/ScoreBreakdownSheet";
+import InstallPrompt from "@/components/pwa/InstallPrompt";
 import { getRank, calculateScore, calculateStats, witnessFactor, RANK_ORDER, normalizeRankKey } from "@/lib/utils";
 import StartFocusModal from "@/components/focus/StartFocusModal";
 import SessionRoom from "@/components/focus/SessionRoom";
@@ -483,6 +484,13 @@ export default function Dashboard() {
         {/* Rank + stats + freeze, merged into one compact card (formerly
             three separate stacked blocks) to cut the chrome-block count
             that stood between opening the app and the habit list. */}
+        {/* Above the summary rather than below the habit list: the point
+            of installing is that the app opens full screen and works
+            offline, which is a decision made on arrival, not after
+            scrolling. It renders at most once ever and only where the
+            platform can actually honour it -- see InstallPrompt. */}
+        <InstallPrompt />
+
         {habits.length > 0 && (
           <div className="mb-3">
             <DashboardSummary
