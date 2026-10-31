@@ -98,20 +98,65 @@ export function getAllTimeBest(completions) {
  * Clamped to at least 1 so clock skew (a creation date in the future)
  * cannot produce a negative or zero window.
  */
-export function habitWindowDays(habit, asOf = new Date(), maxDays = 30) {
+/**
+ * The day a habit was created, as a day number, or null when unknowable.
+ *
+ * null means "no usable creation date" — a legacy row, or an unparseable
+ * value. Both callers below treat that as "cannot exclude it and cannot
+ * date it", which preserves the behaviour those rows had before any of
+ * this existed.
+ */
+function habitCreatedDay(habit) {
   const raw = habit?.created_date ?? habit?.created_at;
-  if (!raw) return maxDays;
-
+  if (!raw) return null;
   const created = new Date(raw);
-  if (Number.isNaN(created.getTime())) return maxDays;
+  if (Number.isNaN(created.getTime())) return null;
+  const n = dayNumber(format(created, "yyyy-MM-dd"));
+  return Number.isFinite(n) ? n : null;
+}
 
-  const age = dayNumber(format(asOf, "yyyy-MM-dd")) - dayNumber(format(created, "yyyy-MM-dd")) + 1;
+/**
+ * Did this habit exist on `asOf`?
+ *
+ * Only meaningful for a historical sample. ScoreHistoryChart asks
+ * calculateStats for the score at four past dates, and a habit created
+ * AFTER one of those dates was not part of the user's score then — but it
+ * was still being counted, because habitWindowDays clamps a negative age
+ * to 1 and the habit then entered that sample's average at 0%.
+ *
+ * The visible effect was that adding a habit retroactively made the user's
+ * own history look worse: one perfect long-standing habit plus one added
+ * five days ago, sampled three weeks back, read 50% instead of 100%. On a
+ * chart that only renders for users with no peers yet — i.e. new users,
+ * the people most likely to have just added a habit.
+ *
+ * A habit with no usable creation date is included. Excluding it would
+ * drop legacy rows out of every sample including the current one, which
+ * is a worse wrong than the one being fixed.
+ */
+export function habitExistedAt(habit, asOf = new Date()) {
+  const created = habitCreatedDay(habit);
+  if (created === null) return true;
+  return created <= dayNumber(format(asOf, "yyyy-MM-dd"));
+}
+
+export function habitWindowDays(habit, asOf = new Date(), maxDays = 30) {
+  const created = habitCreatedDay(habit);
+  if (created === null) return maxDays;
+
+  const age = dayNumber(format(asOf, "yyyy-MM-dd")) - created + 1;
   if (!Number.isFinite(age)) return maxDays;
   return Math.max(1, Math.min(maxDays, age));
 }
 
 export function calculateStats(habits, asOf = new Date(), witness = 0) {
-  const all = habits || [];
+  // Only habits that existed at asOf. For the default asOf this is a
+  // no-op -- a habit created today passes -- so the live score is
+  // unchanged. It matters only for the historical samples
+  // ScoreHistoryChart asks for, where a habit created after the sample
+  // date used to be counted at 0% and quietly rewrote the user's own
+  // history. See habitExistedAt.
+  const all = (habits || []).filter((h) => habitExistedAt(h, asOf));
   if (!all.length) {
     return { score: 0, base: 0, bestStreak: 0, rollingBest: 0, consistency: 0, witness };
   }

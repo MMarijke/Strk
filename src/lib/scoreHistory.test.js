@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { format, subDays, startOfWeek } from "date-fns";
-import { calculateStats } from "./utils";
+import { calculateStats, habitExistedAt } from "./utils";
 
 /**
  * ScoreHistoryChart used to print the leaderboard's exact caption --
@@ -43,6 +43,64 @@ describe("calculateStats with an as-of date", () => {
     const habits = [{ archived: false, completions: Array.from({ length: 10 }, (_, i) => day(i)) }];
     expect(calculateStats(habits, subDays(new Date(), 5)).bestStreak).toBe(5);
     expect(calculateStats(habits).bestStreak).toBe(10);
+  });
+});
+
+describe("a historical sample only counts habits that existed then", () => {
+  const iso = (n) => subDays(new Date(), n).toISOString();
+  const dated = (age, done) => ({
+    archived: false,
+    created_date: iso(age),
+    completions: Array.from({ length: done }, (_, i) => day(i)),
+  });
+
+  it("does not let a new habit rewrite the user's history", () => {
+    // The bug: habitWindowDays clamps a negative age to 1, so a habit
+    // created AFTER the sample date entered that sample's average at 0%.
+    // Adding a habit therefore made the user's own past look worse -- on a
+    // chart that renders only for users with no peers yet, i.e. the people
+    // most likely to have just added one.
+    const longStanding = dated(200, 200);
+    const addedRecently = dated(5, 6);
+    const threeWeeksAgo = subDays(new Date(), 20);
+
+    const withBoth = calculateStats([longStanding, addedRecently], threeWeeksAgo);
+    const truthThen = calculateStats([longStanding], threeWeeksAgo);
+
+    expect(withBoth.consistency).toBe(truthThen.consistency);
+    expect(withBoth.score).toBe(truthThen.score);
+    // Specifically: 100%, not the 50% the clamped window produced.
+    expect(withBoth.consistency).toBe(100);
+  });
+
+  it("still counts a habit created on the sample date itself", () => {
+    // Inclusive, so the live score is unaffected: a habit created today
+    // must count today.
+    expect(calculateStats([dated(0, 1)]).consistency).toBe(100);
+    expect(habitExistedAt(dated(0, 1))).toBe(true);
+  });
+
+  it("returns real zeros when nothing existed yet", () => {
+    const s = calculateStats([dated(5, 6)], subDays(new Date(), 60));
+    expect(s).toEqual({
+      score: 0, base: 0, bestStreak: 0, rollingBest: 0, consistency: 0, witness: 0,
+    });
+  });
+
+  it("keeps a habit with no usable creation date", () => {
+    // Excluding legacy rows would drop them from every sample including
+    // the current one -- a worse wrong than the one being fixed.
+    expect(habitExistedAt({ completions: [] }, subDays(new Date(), 60))).toBe(true);
+    expect(habitExistedAt({ created_date: "nonsense" }, subDays(new Date(), 60))).toBe(true);
+  });
+
+  it("excludes a habit from the all-time best of an earlier sample too", () => {
+    // Not just consistency: bestStreak and rollingBest must not see it
+    // either, or the form term would credit a run that had not happened.
+    const future = dated(5, 6);
+    const s = calculateStats([future], subDays(new Date(), 30));
+    expect(s.bestStreak).toBe(0);
+    expect(s.rollingBest).toBe(0);
   });
 });
 
