@@ -184,35 +184,57 @@ export function evaluateBadges(habits, groups, userEmail, freezeEverUsed = false
     return Math.max(max, b, s);
   }, 0);
 
+  // Every habit ever created, archived included. first_step and collector
+  // are historical -- archiving one of five habits should not take
+  // Collector away -- and award_badge counts the same way.
   const habitCount = habits.length;
 
-  // Overall 30-day completion rate
+  // Habits still being tracked. The forward-looking badges below use this
+  // and not the full list, matching the rule 20261025090002 set for
+  // calculateStats and the stats trigger: an archived habit contributes 0%
+  // to a rate and has no completions in any recent window, so counting it
+  // dragged consistency_king down and made perfect_week/perfect_month
+  // permanently unreachable for anyone who had ever archived anything.
+  const activeHabits = habits.filter((h) => !h.archived);
+
+  // Overall 30-day completion rate, over active habits only.
+  //
+  // Pooled (total completions / total slots) rather than averaging
+  // per-habit percentages, which is what award_badge does. Those are the
+  // same number -- sum(k_i)/(n*30) either way -- and pooling rounds once,
+  // so this agrees with the server rather than drifting by a point the
+  // way a per-habit round would.
   const last30Days = Array.from({ length: 30 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
   let totalSlots = 0, totalDone = 0;
-  habits.forEach((h) => {
+  activeHabits.forEach((h) => {
     const c = h.completions || [];
     last30Days.forEach((d) => { totalSlots++; if (c.includes(d)) totalDone++; });
   });
   const consistencyRate = totalSlots > 0 ? Math.round((totalDone / totalSlots) * 100) : 0;
 
-  // Perfect week: any 7-day window where all habits completed every day
+  // Perfect week: any 7-day window where every ACTIVE habit was completed
+  // every day. The length guard is on activeHabits for a reason beyond
+  // tidiness: `.every()` on an empty array is true, so with the filter in
+  // place and no guard this would report a perfect week for an account
+  // tracking nothing. award_badge's SQL has the same guard for the same
+  // reason.
   let hasPerfectWeek = false;
-  if (habits.length > 0) {
+  if (activeHabits.length > 0) {
     for (let offset = 0; offset <= 60; offset++) {
       const window = Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), offset + i), "yyyy-MM-dd"));
-      const perfect = habits.every((h) => window.every((d) => (h.completions || []).includes(d)));
+      const perfect = activeHabits.every((h) => window.every((d) => (h.completions || []).includes(d)));
       if (perfect) { hasPerfectWeek = true; break; }
     }
   }
 
   // Perfect month: any calendar month where all habits 100%
   let hasPerfectMonth = false;
-  if (habits.length > 0) {
+  if (activeHabits.length > 0) {
     for (let m = 0; m < 6; m++) {
       const ref = subDays(new Date(), m * 30);
       const days = eachDayOfInterval({ start: startOfMonth(ref), end: endOfMonth(ref) })
         .map((d) => format(d, "yyyy-MM-dd"));
-      const perfect = habits.every((h) => days.every((d) => (h.completions || []).includes(d)));
+      const perfect = activeHabits.every((h) => days.every((d) => (h.completions || []).includes(d)));
       if (perfect) { hasPerfectMonth = true; break; }
     }
   }
@@ -240,9 +262,9 @@ export function evaluateBadges(habits, groups, userEmail, freezeEverUsed = false
 
   // Current perfect week progress
   const last7 = Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"));
-  const perfectWeekSlots = habits.length * 7;
-  const perfectWeekDone = habits.length > 0
-    ? habits.reduce((s, h) => s + last7.filter((d) => (h.completions || []).includes(d)).length, 0)
+  const perfectWeekSlots = activeHabits.length * 7;
+  const perfectWeekDone = activeHabits.length > 0
+    ? activeHabits.reduce((s, h) => s + last7.filter((d) => (h.completions || []).includes(d)).length, 0)
     : 0;
 
   return BADGES.map((badge) => {
@@ -291,7 +313,7 @@ export function evaluateBadges(habits, groups, userEmail, freezeEverUsed = false
         progress = { current: earned ? 1 : 0, total: 1, label: earned ? "Achieved!" : "Miss a day, then come back (or use a streak freeze)" };
         break;
       case "consistency_king":
-        earned = consistencyRate >= 80 && habits.length > 0;
+        earned = consistencyRate >= 80 && activeHabits.length > 0;
         progress = { current: Math.min(consistencyRate, 80), total: 80, label: `${consistencyRate}% / 80% consistency` };
         break;
       case "social_butterfly":
