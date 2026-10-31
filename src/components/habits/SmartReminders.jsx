@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { calculateStreak } from "./StreakWidget";
 import { isOldEnoughForFreeze } from "@/lib/freezeService";
-import { cn } from "@/lib/utils";
+import { cn, dayNumber } from "@/lib/utils";
 
 function buildReminders(habits) {
   const now = new Date();
@@ -43,9 +43,11 @@ function buildReminders(habits) {
     // actually let them do.
     if (!doneToday && !completions.includes(yesterday) && completions.length > 0) {
       const last = [...completions].sort().reverse()[0];
-      const daysSince = Math.floor(
-        (new Date(today + "T00:00:00") - new Date(last + "T00:00:00")) / (1000 * 60 * 60 * 24)
-      );
+      // dayNumber rather than subtracting two local midnights: across a
+      // spring-forward boundary that difference is 1.9583, and Math.floor
+      // turned a real two-day gap into 1 -- so this reminder silently did
+      // not fire on one day a year in every DST timezone. See dayNumber.
+      const daysSince = dayNumber(today) - dayNumber(last);
       if (daysSince === 2 && isOldEnoughForFreeze(habit, yesterdayDate)) {
         reminders.push({
           id: `missed-${habit.id}`,
