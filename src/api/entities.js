@@ -1,4 +1,12 @@
 import { supabase } from '@/api/supabaseClient';
+import { isOfflineReadable, isOfflineWritable } from '@/lib/offline/tables';
+import {
+  localCreate,
+  localDelete,
+  localFilter,
+  localList,
+  localUpdate,
+} from '@/lib/offline/localStore';
 
 // Base44's implicit "created_date" field is our "created_at" column.
 const SORT_FIELD_ALIASES = { created_date: 'created_at' };
@@ -45,7 +53,37 @@ function buildOrFragment(condition) {
   return `${field}.eq.${escapeFilterValue(value)}`;
 }
 
+/**
+ * Column defaults Postgres would apply on insert.
+ *
+ * Needed only for offline-writable tables: an optimistically created row
+ * never reaches the server, so nothing fills these in, and the UI would
+ * render a habit whose `completions` is undefined rather than [].
+ */
+const LOCAL_INSERT_DEFAULTS = {
+  habits: { completions: [], archived: false, reminder_days: [] },
+};
+
+/**
+ * The Supabase adapter, with a local-first path for the tables listed in
+ * lib/offline/tables.js.
+ *
+ * The local path lives behind this function rather than in the 46
+ * useQuery call sites across 20 files. Those all go through these methods
+ * already, so inserting the offline layer here serves reads from
+ * IndexedDB and makes writes optimistic without touching a single
+ * component -- and without discarding the invalidateQueries logic already
+ * threaded through every mutation path, which stays the reactivity
+ * mechanism.
+ *
+ * Reads fall back to the network when the local store has nothing yet, so
+ * a first-ever load still works before the first sync has populated
+ * anything.
+ */
 function createEntity(table) {
+  const offlineRead = isOfflineReadable(table);
+  const offlineWrite = isOfflineWritable(table);
+
   return {
     // `limit` is optional and was added because UserProfile.list() was
     // unbounded: Badges.jsx fetched every readable profile on every visit
@@ -53,6 +91,14 @@ function createEntity(table) {
     // public profiles, but "every public profile" grows without limit and
     // the screen needs a sample, not the census.
     async list(sort, limit) {
+      if (offlineRead) {
+        const local = await localList(table, sort, limit);
+        // A populated local store is authoritative; an empty one may just
+        // mean "never synced", so fall through to the network rather than
+        // reporting no data on a first load.
+        if (local.length) return local;
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return local;
+      }
       let query = supabase.from(table).select('*');
       query = applySort(query, sort);
       if (typeof limit === 'number') query = query.limit(limit);
@@ -62,6 +108,11 @@ function createEntity(table) {
     },
 
     async filter(conditions = {}, sort) {
+      if (offlineRead) {
+        const local = await localFilter(table, conditions, sort);
+        if (local.length) return local;
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return local;
+      }
       let query = supabase.from(table).select('*');
       if (conditions.$or) {
         query = query.or(conditions.$or.map(buildOrFragment).join(','));
@@ -77,6 +128,9 @@ function createEntity(table) {
     },
 
     async create(data) {
+      if (offlineWrite) {
+        return localCreate(table, data, LOCAL_INSERT_DEFAULTS[table]);
+      }
       const { data: row, error } = await supabase.from(table).insert(data).select().single();
       if (error) throw error;
       return mapRow(row);
@@ -94,12 +148,18 @@ function createEntity(table) {
     },
 
     async update(id, data) {
+      if (offlineWrite) {
+        return localUpdate(table, id, data);
+      }
       const { data: row, error } = await supabase.from(table).update(data).eq('id', id).select().single();
       if (error) throw error;
       return mapRow(row);
     },
 
     async delete(id) {
+      if (offlineWrite) {
+        return localDelete(table, id);
+      }
       const { error } = await supabase.from(table).delete().eq('id', id);
       if (error) throw error;
     },

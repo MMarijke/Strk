@@ -7,6 +7,8 @@ import BottomTabBar from "./BottomTabBar";
 import FocusInviteListener from "@/components/focus/FocusInviteListener";
 import AccountabilityNudgeListener from "@/components/accountability/AccountabilityNudgeListener";
 import ConsentLogReconciler from "@/components/legal/ConsentLogReconciler";
+import SyncStatus from "@/components/offline/SyncStatus";
+import SyncTriggers from "@/components/offline/SyncTriggers";
 
 // Pages that show the bottom tab bar
 const TAB_PAGES = ["/Dashboard", "/Trends", "/Social", "/Settings", "/Badges"];
@@ -58,6 +60,11 @@ export default function AppLayout() {
           choosing. This records it server-side the first time they are
           signed in afterwards. */}
       {user?.email && <ConsentLogReconciler userEmail={user.email} />}
+      {/* Sync triggers, mounted beside the other app-wide listeners for
+          the same reason they are: a hook inside one page stops running
+          the moment the user navigates away. Keyed on the user so the
+          triggers restart cleanly after a session switch. */}
+      {user?.id && <SyncTriggers userId={user.id} />}
       <main className={showTabs ? "pb-[calc(3.75rem_+_env(safe-area-inset-bottom))]" : ""}>
         {/* The page chunks are lazy, so switching tabs suspends. Without a
             boundary HERE the nearest one is the single <Suspense> at the
@@ -76,6 +83,11 @@ export default function AppLayout() {
             routeModules.js), so by the time a tab is tapped its module is
             usually already in memory and the swap is synchronous. This is
             the honest path for a cold tap that beat the prefetch. */}
+        {/* Above the routed content: a failed sync is about the whole
+            app, not whichever screen happens to be open, and it must not
+            scroll out of reach inside a page. Renders nothing when there
+            is nothing to say. */}
+        <SyncStatus className="mx-4 mt-2" />
         <Suspense fallback={<PageLoadingFallback />}>
           <Outlet />
         </Suspense>
