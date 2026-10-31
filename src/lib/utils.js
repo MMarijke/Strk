@@ -79,14 +79,20 @@ export function getAllTimeBest(completions) {
  * one user two different scores on two screens, under a comment claiming
  * it read the same everywhere. Pass the full list; this decides.
  */
-export function calculateStats(habits) {
+export function calculateStats(habits, asOf = new Date()) {
   const all = habits || [];
   if (!all.length) return { score: 0, bestStreak: 0, consistency: 0 };
 
   const active = all.filter((h) => !h.archived);
   const last30 = Array.from({ length: 30 }, (_, i) =>
-    format(subDays(new Date(), i), "yyyy-MM-dd")
+    format(subDays(asOf, i), "yyyy-MM-dd")
   );
+  // Nothing after asOf counts, so the same function can answer "what was
+  // this score a week ago" -- which is what ScoreHistoryChart needs, and
+  // why it no longer has its own copy of this arithmetic. For the default
+  // asOf this filter is a no-op: reject_future_habit_completions
+  // (20260914090005) already prevents a completion dated ahead of today.
+  const cutoff = format(asOf, "yyyy-MM-dd");
 
   // Rounded ONCE, at the end.
   //
@@ -112,7 +118,8 @@ export function calculateStats(habits) {
     : 0;
 
   const bestStreak = Math.max(
-    ...all.map((h) => getAllTimeBest(h.completions || [])), 0
+    ...all.map((h) => getAllTimeBest((h.completions || []).filter((d) => d <= cutoff))),
+    0
   );
 
   return { score: scoreFromParts(bestStreak, consistency), bestStreak, consistency };
