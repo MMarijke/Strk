@@ -352,18 +352,17 @@ export const HABIT_COLOR_NAMES = [
  * which is exactly what the multiplier measures. The name and the mechanic
  * finally say the same thing.
  *
- * The emoji and colour fields are unchanged here and are wrong on purpose
- * for now: Ember is still a green seedling and Blaze a lightning bolt in a
- * flame-branded product. Replacing them with one mark at five intensities,
- * and the ramp with monotone ember-to-white-hot theme tokens, is the next
- * change -- doing it here would mix a formula migration with a visual one.
+ * Carries no emoji or colour. Both fields are gone: appearance now lives
+ * in src/components/rank/RankMark.jsx, keyed on `key`, so there is one
+ * place that decides how a tier looks instead of a `color` string that
+ * only one card read and a set of emoji that contradicted these names.
  */
 export const RANKS = [
-  { key: "ember",    title: "Ember",    emoji: "🌱", minScore: 0,   maxScore: 59,  color: "green" },
-  { key: "flame",    title: "Flame",    emoji: "🔥", minScore: 60,  maxScore: 129, color: "orange" },
-  { key: "blaze",    title: "Blaze",    emoji: "⚡", minScore: 130, maxScore: 209, color: "yellow" },
-  { key: "inferno",  title: "Inferno",  emoji: "🌋", minScore: 210, maxScore: 299, color: "red" },
-  { key: "wildfire", title: "Wildfire", emoji: "🔥", minScore: 300, maxScore: Infinity, color: "gold" },
+  { key: "ember",    title: "Ember",    minScore: 0,   maxScore: 59 },
+  { key: "flame",    title: "Flame",    minScore: 60,  maxScore: 129 },
+  { key: "blaze",    title: "Blaze",    minScore: 130, maxScore: 209 },
+  { key: "inferno",  title: "Inferno",  minScore: 210, maxScore: 299 },
+  { key: "wildfire", title: "Wildfire", minScore: 300, maxScore: Infinity },
 ];
 
 /** Tier keys in ladder order. Derived, so nothing can duplicate it. */

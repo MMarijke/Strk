@@ -92,6 +92,46 @@
     --chart-3: 220 60% 55%;
     --chart-4: 280 55% 55%;
     --chart-5: 340 65% 55%;
+
+    /* Tier ramp: dull coal to white-hot, one monotone progression.
+       ------------------------------------------------------------
+       The five tiers are Ember, Flame, Blaze, Inferno, Wildfire. They
+       used to be rendered from raw Tailwind palette picks in a lookup
+       table inside DashboardSummary:
+
+         green-500 -> orange-500 -> yellow-500 -> red-500 -> yellow-400
+
+       which was non-monotonic in hue, in temperature AND in perceived
+       advancement. Tiers 3 and 5 landed on #eab308 and #facc15, two
+       near-identical yellows, so Blaze and Wildfire were almost
+       indistinguishable. Tier 2 was essentially the brand primary and
+       read HOTTER than tier 3. Tier 1 was green, in a flame-branded
+       product whose first tier is called Ember. And tier 4 used the
+       app's own danger hue for an achievement.
+
+       These three channels each rise monotonically across the ramp, so
+       "further along" is legible without reading the label and survives
+       greyscale, since lightness alone is already ordered:
+
+         hue         18 -> 48   deep red-orange toward white-hot yellow
+         saturation  55 -> 100  dull coal toward full burn
+         lightness   42 -> 62   dark toward bright
+
+       Deliberately NOT derived from --primary, unlike most of this file.
+       COLOR_THEMES lets a user pick a blue or violet accent, and a blue
+       "Inferno" would contradict the one genuinely authored thing about
+       this ladder -- its names. The ramp is fixed product identity; the
+       surfaces around it stay themed.
+
+       Nowhere near --destructive (hue 0). The closest is --rank-4 at 40.
+       Used for borders, low-alpha tints and progress fills, never for
+       text, so the 4.5:1 body rule does not apply to them. */
+    --rank-1: 18 55% 42%;
+    --rank-2: 26 75% 48%;
+    --rank-3: 34 85% 52%;
+    --rank-4: 40 95% 56%;
+    --rank-5: 48 100% 62%;
+
     --radius: 0.75rem;
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -155,6 +195,15 @@
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+
+    /* Same ramp, lifted so the darkest end still separates from a dark
+       card (--card is 60 5% 14%). The three channels stay monotonic. */
+    --rank-1: 18 60% 48%;
+    --rank-2: 26 78% 54%;
+    --rank-3: 34 88% 58%;
+    --rank-4: 40 95% 62%;
+    --rank-5: 48 100% 68%;
+
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;

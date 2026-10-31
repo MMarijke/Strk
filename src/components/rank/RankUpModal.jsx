@@ -3,6 +3,7 @@ import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { prefersReducedMotion } from "@/lib/utils";
+import RankMark from "@/components/rank/RankMark";
 
 /**
  * The one celebration this system has, and it used to teach nothing.
@@ -95,9 +96,13 @@ export default function RankUpModal({ rank, score, rollingBest, onClose }) {
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
               Rank Up!
             </p>
-            {/* aria-hidden: a screen reader announcing "high voltage" told
-                nobody their tier. The title below carries it. */}
-            <div className="text-8xl mb-4 leading-none" aria-hidden="true">{rank.emoji}</div>
+            {/* The drawn mark, not an emoji: a screen reader announcing
+                "high voltage" told nobody their tier, and the glyphs
+                contradicted the fire names. Decorative — the title below
+                carries the meaning. */}
+            <div className="flex justify-center mb-4">
+              <RankMark rankKey={rank.key} size={88} />
+            </div>
             <DialogTitle className="text-3xl font-extrabold tracking-tight mb-2">
               <span className="text-foreground">You are now </span>
               <span className="text-primary">{rank.title}</span>

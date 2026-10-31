@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Check } from "lucide-react";
 import { cn, RANKS, WITNESS_SLOTS, WITNESS_SLOT_VALUE, getRank } from "@/lib/utils";
+import RankMark from "@/components/rank/RankMark";
 
 /**
  * What the score is made of, in the user's own numbers.
@@ -194,7 +195,13 @@ export default function ScoreBreakdownSheet({
                       here ? "bg-primary/10" : ""
                     )}
                   >
-                    <div className="min-w-0">
+                    <div className="flex items-start gap-2 min-w-0">
+                      {/* The mark per row is what makes the ramp legible
+                          AS a ramp: five tiers in one monotone
+                          progression read as an escalation here, where
+                          five unrelated palette picks read as a legend. */}
+                      <RankMark rankKey={r.key} size={16} className="mt-0.5 shrink-0" />
+                      <div className="min-w-0">
                       <p
                         className={cn(
                           "text-sm",
@@ -216,6 +223,7 @@ export default function ScoreBreakdownSheet({
                           {reachedLabel(r.key, reached, here, score)}
                         </p>
                       )}
+                      </div>
                     </div>
                     <span className="text-xs text-muted-foreground tabular-nums shrink-0">
                       {/* maxScore finally has a reader. It was declared on

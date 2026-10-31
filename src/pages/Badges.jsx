@@ -15,6 +15,7 @@ import BadgeCelebrationModal from "@/components/badges/BadgeCelebrationModal";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import ScoreBreakdownSheet from "@/components/rank/ScoreBreakdownSheet";
+import RankMark, { rankStyle } from "@/components/rank/RankMark";
 
 function ProgressBar({ current, total }) {
   const pct = total > 0 ? Math.min((current / total) * 100, 100) : 0;
@@ -283,6 +284,7 @@ export default function Badges() {
   const myWitness = witnessFactor(myProfileRow?.witness_slots);
   const myScore = calculateScore(habits, myWitness);
   const myRank = getRank(myScore);
+  const rankCardStyle = rankStyle(myRank.key);
   const { nextRank } = myRank;
   const progressPct = nextRank
     ? Math.min(((myScore - myRank.minScore) / (nextRank.minScore - myRank.minScore)) * 100, 100)
@@ -348,9 +350,18 @@ export default function Badges() {
           type="button"
           onClick={() => setShowScoreBreakdown(true)}
           aria-label={`${myRank.title}, ${myScore} points. See what your score is made of.`}
-          className="w-full mb-6 p-5 rounded-2xl border bg-card text-center outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className={cn(
+            // Was a plain `border bg-card`, so the same tier looked like
+            // two different things on two screens. Same tint and border
+            // treatment as DashboardSummary now, from one source.
+            "w-full mb-6 p-5 rounded-2xl border bg-gradient-to-br to-card text-center outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            rankCardStyle.border,
+            rankCardStyle.tint
+          )}
         >
-          <div className="text-6xl mb-2 leading-none" aria-hidden="true">{myRank.emoji}</div>
+          <div className="flex justify-center mb-2">
+            <RankMark rankKey={myRank.key} size={56} />
+          </div>
           <h2 className="text-2xl font-extrabold text-foreground tracking-tight mb-0.5">{myRank.title}</h2>
           <p className="text-xs text-muted-foreground mb-3">{myScore} points</p>
           <div
@@ -366,7 +377,7 @@ export default function Badges() {
             className="h-2 rounded-full bg-muted overflow-hidden mb-1.5"
           >
             <div
-              className="h-full rounded-full bg-primary transition-all duration-700"
+              className={cn("h-full rounded-full transition-all duration-700", rankCardStyle.bar)}
               style={{ width: `${progressPct}%` }}
             />
           </div>
