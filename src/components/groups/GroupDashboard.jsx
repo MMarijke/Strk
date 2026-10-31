@@ -638,7 +638,14 @@ export default function GroupDashboard({ group, userId, userEmail, userFullName,
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate flex items-center gap-1">
-                {row.hasData && <span className="mr-1">{getRank(row.score).emoji}</span>}
+                {/* Same as Social: the glyph is decorative and the tier
+                    name is what a screen reader needs. */}
+                {row.hasData && (
+                  <>
+                    <span className="mr-1" aria-hidden="true">{getRank(row.score).emoji}</span>
+                    <span className="sr-only">{getRank(row.score).title}, </span>
+                  </>
+                )}
                 <span className="truncate">{row.name}</span>
                 {row.isPro && <Sparkles className="w-3 h-3 shrink-0 text-primary" aria-label="Pro member" />}
                 {row.isMe && <span className="text-xs text-primary font-normal shrink-0">(you)</span>}

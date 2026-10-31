@@ -75,11 +75,26 @@ describe("the score is explainable from both screens", () => {
     }
   });
 
-  it("feeds the sheet from calculateStats, not a second assembly", () => {
-    // Spreading the one result guarantees the breakdown adds up to the
-    // number on the card.
+  it("feeds the sheet by spreading one calculateStats result", () => {
+    // The guarantee is that the breakdown adds up to the number on the
+    // card, which holds as long as the sheet's numeric props come from a
+    // SPREAD of a calculateStats result rather than being assembled field
+    // by field.
+    //
+    // Asserted as intent, not as a literal `{...calculateStats(`: Dashboard
+    // now routes that result through a memo so the sheet and the rank-up
+    // modal share one computation, which serves this guarantee better than
+    // calling it twice. An earlier version of this test pinned the spelling
+    // and failed on the improvement.
     for (const rel of ["src/pages/Dashboard.jsx", "src/pages/Badges.jsx"]) {
-      expect(code(rel)).toMatch(/\{\.\.\.calculateStats\(/);
+      const src = code(rel);
+      const block = /<ScoreBreakdownSheet[\s\S]*?\/>/.exec(src);
+      expect(block, `${rel} does not render the sheet`).not.toBeNull();
+      expect(
+        /\{\.\.\.\w+\}|\{\.\.\.calculateStats\(/.test(block[0]),
+        `${rel} hand-assembles the sheet's props instead of spreading one result`
+      ).toBe(true);
+      expect(src, `${rel} never calls calculateStats`).toContain("calculateStats(");
     }
   });
 });

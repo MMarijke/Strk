@@ -1,0 +1,61 @@
+-- Record WHEN each tier was first reached, so a missed celebration is
+-- recoverable.
+--
+-- RankUpModal can fire at most four times in a user's life, and until now
+-- a missed one was gone permanently: there was no rank history anywhere,
+-- so a celebration dismissed by its own five-second timer -- or fired
+-- while the user was inside the OS share sheet -- left no trace that it
+-- had ever happened. highest_rank records the peak but not when, so the
+-- ladder could not say "Inferno, reached 12 March".
+--
+-- One jsonb column keyed by tier, rather than a rank_events table:
+--
+--   {"ember": "2026-01-04T...", "flame": "2026-01-16T...", ...}
+--
+-- There are five tiers, so this holds at most five entries and will never
+-- grow. A table would bring its own RLS policies, its own lockdown
+-- trigger, and a join, to store something with a hard upper bound of five
+-- rows per user.
+--
+-- Written by the client, from Dashboard.jsx, in the same update as
+-- highest_rank -- and deliberately at the same trust level, which means
+-- NOT in protect_user_profiles_stats_fields. That is a real decision, not
+-- an oversight:
+--
+--   highest_rank has always been client-written, so guarding only the
+--   companion column would be security theatre -- a user who can forge
+--   "I reached Wildfire" can already forge it in the column that matters.
+--
+--   Neither column feeds a score, a tier, or a leaderboard position. Those
+--   come from rolling_best_streak_90, consistency_score and witness_slots,
+--   all of which ARE guarded (20261031090002). This is a display-only
+--   record of the user's own history, shown to the user themselves, so
+--   forging it buys nothing from anyone else.
+--
+-- If rank history ever becomes something other people see -- a group
+-- "longest-held Wildfire", say -- it stops being display-only and both
+-- columns need moving behind the guard together.
+alter table public.user_profiles
+  add column if not exists rank_reached_at jsonb not null default '{}'::jsonb;
+
+-- ============================================================
+-- Backfill
+-- ============================================================
+-- No date exists for tiers already reached -- that history was never
+-- recorded, which is the whole reason for this column. Rather than invent
+-- timestamps, existing rows keep '{}' and the client renders a tier with
+-- no recorded date as reached-but-undated. Inventing a date here would put
+-- a specific, wrong day in front of the user and look authoritative.
+--
+-- So: no backfill, on purpose.
+--
+-- ============================================================
+-- Verification for the production apply
+-- ============================================================
+--
+--   select count(*) filter (where rank_reached_at = '{}'::jsonb) as undated,
+--          count(*) as total
+--   from public.user_profiles;
+--
+-- Immediately after the apply, undated should equal total. Entries appear
+-- from the next rank-up each user earns.

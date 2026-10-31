@@ -14,7 +14,6 @@ import { hasFreezeEverBeenUsed } from "@/lib/freezeService";
 import BadgeCelebrationModal from "@/components/badges/BadgeCelebrationModal";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
-import RankUpModal from "@/components/rank/RankUpModal";
 import ScoreBreakdownSheet from "@/components/rank/ScoreBreakdownSheet";
 
 function ProgressBar({ current, total }) {
@@ -110,7 +109,6 @@ export default function Badges() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [celebrationBadge, setCelebrationBadge] = useState(null);
-  const [rankUpRank, setRankUpRank] = useState(null);
   const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
   const prevEarnedIds = useRef(null);
   const [newlyEarnedIds, setNewlyEarnedIds] = useState(new Set());
@@ -281,9 +279,8 @@ export default function Badges() {
 
   // Compute rank -- calculateScore/getRank, same shared formula RankCard
   // and the leaderboards use, instead of a separate inline copy.
-  const myWitness = witnessFactor(
-    allProfiles.find((p) => p.created_by === user?.email)?.witness_slots
-  );
+  const myProfileRow = allProfiles.find((p) => p.created_by === user?.email);
+  const myWitness = witnessFactor(myProfileRow?.witness_slots);
   const myScore = calculateScore(habits, myWitness);
   const myRank = getRank(myScore);
   const { nextRank } = myRank;
@@ -429,15 +426,14 @@ export default function Badges() {
       </div>
 
       <BadgeCelebrationModal badge={celebrationBadge} onClose={() => setCelebrationBadge(null)} />
-      <RankUpModal rank={rankUpRank} onClose={() => setRankUpRank(null)} />
-
       {/* Same component and the same inputs as Dashboard's, so the two
           screens cannot explain one score two ways. */}
       <ScoreBreakdownSheet
         open={showScoreBreakdown}
         onOpenChange={setShowScoreBreakdown}
         {...calculateStats(habits, new Date(), myWitness)}
-        witnessSlots={allProfiles.find((p) => p.created_by === user?.email)?.witness_slots}
+        witnessSlots={myProfileRow?.witness_slots}
+        rankReachedAt={myProfileRow?.rank_reached_at}
       />
     </div>
   );
