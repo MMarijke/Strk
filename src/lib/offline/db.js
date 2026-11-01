@@ -179,6 +179,27 @@ export async function setCursor(table, iso) {
   await db.meta.put({ key: cursorKey(table), value: iso });
 }
 
+const syncedAtKey = (table) => `syncedAt:${table}`;
+
+/**
+ * When a table last completed a pull, or null.
+ *
+ * Distinct from the cursor, which holds the newest `updated_at` among the
+ * rows pulled -- that is a property of the DATA and does not move when a
+ * pull returns nothing. This is a property of the SYNC, and it is what
+ * answers "how old is what we are showing", which is the question
+ * subscription state has to ask before it trusts a cached `plan`.
+ */
+export async function getSyncedAt(table) {
+  const row = await db.meta.get(syncedAtKey(table));
+  const value = row?.value;
+  return typeof value === "string" ? value : null;
+}
+
+export async function setSyncedAt(table, iso = new Date().toISOString()) {
+  await db.meta.put({ key: syncedAtKey(table), value: iso });
+}
+
 /**
  * Reset a table's cursor so the next pull is a full one.
  *

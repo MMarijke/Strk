@@ -1,5 +1,5 @@
 import { supabase } from "@/api/supabaseClient";
-import { db, getCursor, setCursor, getOwner, mirrorStore } from "./db";
+import { db, getCursor, setCursor, setSyncedAt, getOwner, mirrorStore } from "./db";
 import {
   OP,
   STATUS,
@@ -247,6 +247,12 @@ async function pullTable(table, ownerId) {
   const localIds = await store.toCollection().primaryKeys();
   const stale = localIds.filter((id) => !live.has(id) && !blocked.has(id));
   if (stale.length) await store.bulkDelete(stale);
+
+  // Last, so it is only written when the whole pull succeeded. Recorded
+  // even when nothing changed: "we asked and there was nothing new" is
+  // exactly what makes the mirror fresh, and anything deciding how far to
+  // trust cached state needs that rather than the data's own timestamps.
+  await setSyncedAt(table);
 }
 
 async function pull(ownerId) {

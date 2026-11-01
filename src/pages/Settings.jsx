@@ -30,7 +30,7 @@ import { supabase } from "@/api/supabaseClient";
 export default function Settings() {
   const { themeId, setThemeId, isDark, setIsDark } = useTheme();
   const { user, logout } = useAuth();
-  const { isPro } = useSubscription();
+  const { isPro, isSubscriptionExpired } = useSubscription();
   const navigate = useNavigate();
   const notifSupported = "Notification" in window && Notification.permission === "granted";
   // Push notification: localStorage only, and the only thing
@@ -453,6 +453,19 @@ export default function Settings() {
                 ? "Unlimited groups, unlimited streak freezes, and full 12-week analytics."
                 : "Upgrade for unlimited groups, unlimited streak freezes, and full 12-week analytics."}
             </p>
+            {/* A Pro plan held only in the local cache stops being
+                honoured after a week without a successful sync. Said
+                plainly here, because the alternative is a paying customer
+                discovering it by tapping a feature that has quietly
+                become unavailable, with nothing on screen connecting that
+                to being offline. */}
+            {isSubscriptionExpired && (
+              <p className="text-xs text-foreground mb-4" role="status">
+                We can't confirm your Pro plan while you're offline, so Pro features are
+                paused. Reconnect and they'll come straight back — nothing has been
+                cancelled.
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <span className={cn(
                 "inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full text-foreground",
