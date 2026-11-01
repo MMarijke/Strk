@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { supabase, FETCH_TIMEOUT_MS } from '@/api/supabaseClient';
 import { clearQueryCache } from '@/lib/query-client';
-import { clearLocalData, setOwner } from '@/lib/offline/db';
+import { clearLocalData, getOwnerIdentity, setOwner } from '@/lib/offline/db';
 import { identifyUser, resetAnalytics } from '@/lib/analytics';
 
 const AuthContext = createContext();
@@ -98,8 +98,61 @@ export const AuthProvider = ({ children }) => {
       return 0;
     }
   });
+  // True when the user was resumed from the locally cached identity
+  // rather than a session Supabase confirmed. Exposed so a surface that
+  // needs a live session (billing, anything writing to a table the
+  // offline layer does not mirror) can say so rather than failing oddly.
+  const [isOfflineSession, setIsOfflineSession] = useState(false);
   // Track the last authenticated email so we can detect session switches
   const lastEmailRef = useRef(null);
+  // Set by logout() so a SIGNED_OUT event arriving while offline can
+  // never be "recovered" from the cached identity it just deleted.
+  const signedOutRef = useRef(false);
+
+  const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+
+  /**
+   * Open the app from the identity cached in the local store.
+   *
+   * This is what makes a cold start with no network possible at all. The
+   * app previously had exactly two offline outcomes: getSession() could
+   * not reach the network, so either the 2s offline timeout fired or it
+   * resolved with no session -- the first showed "couldn't verify your
+   * session", the second showed Login. Neither opens the app, however
+   * much habit data is already on the device.
+   *
+   * Not an authorization decision. The identity was written from a
+   * session Supabase itself verified, it only names who the local data
+   * belongs to, and every server call still carries the real JWT and is
+   * still checked by RLS -- an expired token fails there exactly as
+   * before. What it buys is that the user's own cached habits are
+   * readable while the network is gone.
+   */
+  const resumeOfflineIdentity = async () => {
+    try {
+      const identity = await getOwnerIdentity();
+      // The email is required, not optional: every habit query in the app
+      // is keyed on it (`enabled: !!user?.email`), so resuming without one
+      // would open an app in which nothing renders -- more confusing than
+      // the failure screen this is replacing. A store written before the
+      // identity was cached has no email; that user gets the old screen
+      // once, and their next online session fills it in.
+      if (!identity?.id || !identity.email) return false;
+
+      lastEmailRef.current = identity.email ?? null;
+      setUser({ id: identity.id, email: identity.email, full_name: identity.full_name });
+      setIsAuthenticated(true);
+      setIsOfflineSession(true);
+      setAuthError(null);
+      setSessionCheckFailed(false);
+      setSessionCheckOffline(false);
+      setIsLoadingAuth(false);
+      return true;
+    } catch (err) {
+      console.error('offline: failed to resume cached identity', err);
+      return false;
+    }
+  };
 
   const recordSessionCheckFailure = () => {
     setSessionCheckAttempts((n) => {
@@ -131,6 +184,9 @@ export const AuthProvider = ({ children }) => {
       setSessionCheckOffline(false);
       clearSessionCheckAttempts();
       const nextUser = buildUser(session?.user ?? null);
+      // A real session clears the sign-out guard: signing out and back in
+      // within one page life must not leave offline resume disabled.
+      if (nextUser) signedOutRef.current = false;
 
       // Session-switch detection: if a different user just authenticated,
       // purge every cached query so no stale data from the previous user leaks through.
@@ -147,7 +203,7 @@ export const AuthProvider = ({ children }) => {
       // is exactly the leak it prevents.
       if (nextUser?.id) {
         try {
-          await setOwner(nextUser.id);
+          await setOwner(nextUser.id, nextUser);
         } catch (err) {
           // A broken local store must not block signing in. Reads fall
           // back to the network when the mirror is empty.
@@ -155,8 +211,19 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
+      // No session, and no network to ask about one. Supabase cannot
+      // verify a stored token offline, so it reports null -- which is
+      // indistinguishable here from "signed out" and would drop a signed-in
+      // user onto Login with their cached habits sitting right there in
+      // IndexedDB. Resume from the cached identity instead. Never after an
+      // explicit sign-out: that wipes the identity and sets the ref below.
+      if (!nextUser && !signedOutRef.current && isOffline() && (await resumeOfflineIdentity())) {
+        return;
+      }
+
       setUser(nextUser);
       setIsAuthenticated(!!nextUser);
+      setIsOfflineSession(false);
       if (nextUser) identifyUser(nextUser);
     } catch (error) {
       console.error('Auth session check failed:', error);
@@ -175,16 +242,30 @@ export const AuthProvider = ({ children }) => {
 
     // Short-circuit the wait when the browser already knows it's
     // offline -- see OFFLINE_SESSION_CHECK_TIMEOUT_MS above.
-    const startedOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const startedOffline = isOffline();
     const timeoutMs = startedOffline ? OFFLINE_SESSION_CHECK_TIMEOUT_MS : SESSION_CHECK_TIMEOUT_MS;
+
+    // Already offline at launch: open from the cached identity now rather
+    // than spending the offline timeout waiting for a verification that
+    // cannot arrive. getSession() and onAuthStateChange stay running
+    // below, so a real session still takes over the moment one resolves.
+    if (startedOffline) {
+      resumeOfflineIdentity().catch(() => {});
+    }
 
     const timeoutId = setTimeout(() => {
       if (!active || settled) return;
       console.error(`Auth session check timed out after ${timeoutMs}ms with no response.`);
-      setSessionCheckOffline(startedOffline);
-      recordSessionCheckFailure();
-      setSessionCheckFailed(true);
-      setIsLoadingAuth(false);
+      // A cached identity is a better answer than the failure screen:
+      // the session check timing out while offline is the expected case,
+      // not a fault, and the data to carry on with is already local.
+      resumeOfflineIdentity().then((resumed) => {
+        if (!active || settled || resumed) return;
+        setSessionCheckOffline(startedOffline);
+        recordSessionCheckFailure();
+        setSessionCheckFailed(true);
+        setIsLoadingAuth(false);
+      });
       // Deliberately not marked settled=true: if getSession() or
       // onAuthStateChange eventually DO resolve after this fires (a slow
       // connection rather than a true hang), applySession still runs and
@@ -216,7 +297,24 @@ export const AuthProvider = ({ children }) => {
         // somewhere usable, but sessionCheckFailed keeps that distinct
         // from a real "no session" visitor -- see the App.jsx screen.
         console.error('Auth session check failed:', error);
-        setSessionCheckOffline(typeof navigator !== 'undefined' && navigator.onLine === false);
+        const offline = isOffline();
+        // Offline, with habits already on the device: resume rather than
+        // report a failure the user cannot act on. Online, a rejected
+        // getSession() is a real fault and still surfaces as one --
+        // falling back to a cached identity there would hide it.
+        if (offline) {
+          resumeOfflineIdentity().then((resumed) => {
+            if (!active || resumed) return;
+            setSessionCheckOffline(true);
+            recordSessionCheckFailure();
+            setSessionCheckFailed(true);
+            setUser(null);
+            setIsAuthenticated(false);
+            setIsLoadingAuth(false);
+          });
+          return;
+        }
+        setSessionCheckOffline(false);
         recordSessionCheckFailure();
         setSessionCheckFailed(true);
         setUser(null);
@@ -274,6 +372,10 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const logout = async () => {
+    // Set before the wipe, so a SIGNED_OUT event that lands while the
+    // device is offline cannot resume the identity being deleted here.
+    signedOutRef.current = true;
+    setIsOfflineSession(false);
     clearQueryCache();
     resetAnalytics();
     lastEmailRef.current = null;
@@ -305,6 +407,7 @@ export const AuthProvider = ({ children }) => {
       sessionCheckFailed,
       sessionCheckOffline,
       sessionCheckAttempts,
+      isOfflineSession,
       logout,
     }}>
       {children}

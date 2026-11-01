@@ -100,11 +100,41 @@ export async function clearLocalData() {
 // ----------------------------------------------------------------- meta
 
 const OWNER_KEY = "ownerUserId";
+const IDENTITY_KEY = "ownerIdentity";
 
 /** The user id the local data belongs to, or null. */
 export async function getOwner() {
   const row = await db.meta.get(OWNER_KEY);
   return row?.value ?? null;
+}
+
+/**
+ * The owner's id, email and name, or null.
+ *
+ * Stored alongside the id because two separate things need it and
+ * neither can get it from the network:
+ *
+ *   - An optimistically created row has to carry the owner's EMAIL, not
+ *     just the id. `habits.created_by` is stamped server-side from the
+ *     JWT, and every habit query in the app filters on it, so a local
+ *     row without it is invisible to the query that created it.
+ *
+ *   - A cold start with no network has to resolve who is signed in
+ *     without asking Supabase. See AuthContext: the stored session
+ *     cannot be verified offline, and without this the app shows
+ *     "couldn't verify your session" instead of opening.
+ *
+ * Only ever written from a session Supabase already verified. It is an
+ * identity cache, not an authorization decision: every server call still
+ * carries the real JWT and is still checked by RLS.
+ */
+export async function getOwnerIdentity() {
+  const [id, identity] = await Promise.all([getOwner(), db.meta.get(IDENTITY_KEY)]);
+  if (!id) return null;
+  const value = /** @type {{ email?: string | null, full_name?: string | null }} */ (
+    identity?.value ?? {}
+  );
+  return { id, email: value.email ?? null, full_name: value.full_name ?? null };
 }
 
 /**
@@ -114,14 +144,26 @@ export async function getOwner() {
  * other's habits. Dexie has no RLS, so this is the only thing enforcing
  * that -- and it has to happen before the first read, not after.
  */
-export async function setOwner(userId) {
+export async function setOwner(userId, identity) {
   const current = await getOwner();
   if (current && current !== userId) {
     await clearLocalData();
   }
   if (userId) {
     await db.meta.put({ key: OWNER_KEY, value: userId });
+    if (identity) {
+      await db.meta.put({
+        key: IDENTITY_KEY,
+        value: { email: identity.email ?? null, full_name: identity.full_name ?? null },
+      });
+    }
   }
+}
+
+/** The owner's email, for stamping optimistic rows. */
+export async function getOwnerEmail() {
+  const identity = await getOwnerIdentity();
+  return identity?.email ?? null;
 }
 
 const cursorKey = (table) => `cursor:${table}`;

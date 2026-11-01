@@ -1,4 +1,4 @@
-import { db, getOwner } from "./db";
+import { db, getOwner, getOwnerEmail } from "./db";
 import { offlineConfig } from "./tables";
 import { queueDelete, queueInsert, queueUpdate } from "./outbox";
 import { syncAfterWrite } from "./sync";
@@ -115,7 +115,7 @@ export async function localGet(table, id) {
  */
 export async function localCreate(table, data, defaults = {}) {
   const config = offlineConfig(table);
-  const owner = await getOwner();
+  const [owner, ownerEmail] = await Promise.all([getOwner(), getOwnerEmail()]);
   const now = new Date().toISOString();
 
   const row = {
@@ -126,6 +126,21 @@ export async function localCreate(table, data, defaults = {}) {
     created_at: data.created_at ?? now,
     updated_at: now,
   };
+
+  // The email mirror of the owner column. Server-controlled, so the row
+  // would otherwise reach the local store without it and be invisible to
+  // every read that filters by email -- including the one the UI runs
+  // immediately after this returns. See tables.js:ownerEmailColumn.
+  if (config.ownerEmailColumn) {
+    row[config.ownerEmailColumn] = row[config.ownerEmailColumn] ?? ownerEmail;
+  }
+
+  // Fail loudly rather than storing a row no read can ever see. An
+  // unqueryable local row looks exactly like a create that silently did
+  // nothing, which is how this was found.
+  if (!row[config.ownerColumn]) {
+    throw new Error(`offline create: no owner for ${table} -- local store is not scoped yet`);
+  }
 
   await db[table].put(row);
   await queueInsert(table, row);
