@@ -80,6 +80,44 @@ or treat the production apply as the first real test and watch it.
   wrappers). Diff the error list against `main` to find genuinely new
   ones; the raw count on its own tells you nothing.
 
+## Offline / PWA conventions
+
+Full detail in `OFFLINE.md`. The parts that bite:
+
+- **The service worker is hand-written at `src/sw.js`**, and
+  `vite-plugin-pwa` runs with `strategies: 'injectManifest'` so it only
+  injects the precache manifest. Do NOT switch to `generateSW`: it writes
+  its own worker at the same `/sw.js` scope and drops the
+  `notificationclick` handler that Android notifications depend on
+  (`showNotification.js` calls `registration.showNotification()` because
+  Android Chrome throws `Illegal constructor` on a direct
+  `new Notification(...)`). Notifications would still appear and silently
+  do nothing when tapped. `src/lib/pwaBuild.test.js` guards this.
+- **`public/manifest.json` is hand-maintained**, so the plugin runs with
+  `manifest: false`. Registration lives only in `src/lib/pwa.js`, with
+  `injectRegister: false` — two registrations race.
+- **The SW is off in dev** unless `VITE_PWA_DEV=true`.
+- **Navigations are NetworkFirst, not stale-while-revalidate.** SWR serves
+  the previous `index.html` after a deploy, which references
+  content-hashed assets Vercel no longer has, giving a blank screen until
+  a second reload.
+- **Supabase and Paddle responses are never cached in the SW.** Data
+  caching belongs to the Dexie layer, and a Workbox route over the REST
+  API would be a second cache with no conflict resolution.
+- **`habits.completions` is a `text[]`, not a check-in table.** Any
+  offline write path for check-ins must use delta operations
+  (`completion_add` / `completion_remove`), never a row-level
+  last-write-wins on the habits row — LWW destroys check-ins made on two
+  devices.
+- **`updated_at` is written by a server-side trigger**, so it records sync
+  time rather than edit time and cannot be used as the conflict clock. A
+  client-supplied `client_updated_at` is needed, and it must stay
+  client-writable (i.e. NOT added to
+  `protect_user_profiles_stats_fields`).
+- **`freeze_assists` and `freeze_assist_notifications` reject client
+  inserts** (`current_user = 'freeze_rpc_trusted'`). Offline freeze
+  operations must queue the RPC call, not a row upsert.
+
 ## Local environment notes
 
 - The test suite can crash on worker **startup** with exit code
