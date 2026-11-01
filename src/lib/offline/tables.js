@@ -54,6 +54,15 @@ export const OFFLINE_TABLES = {
      */
     ownerColumn: "created_by_id",
     /**
+     * The mirror holds everything the server would return for this
+     * table, so an unscoped read can be answered locally.
+     *
+     * True here because habits_select_own is `created_by_id =
+     * auth.uid()`: the owner's rows ARE the whole readable table. Not
+     * true of user_profiles -- see its entry.
+     */
+    completeMirror: true,
+    /**
      * The denormalized email mirror of ownerColumn.
      *
      * `habits.created_by` is server-controlled -- stamped from the JWT by
@@ -90,9 +99,68 @@ export const OFFLINE_TABLES = {
     read: true,
     write: false,
     ownerColumn: "created_by_id",
+    /**
+     * FALSE, and this is load-bearing.
+     *
+     * user_profiles_select_public lets the client read every row with
+     * `is_public = true`, not just its own -- and the leaderboards are
+     * built on exactly that: `UserProfile.list("-best_streak")` in
+     * Social, Badges and Dashboard is a POPULATION query. The pull only
+     * fetches the owner's row, so the mirror is a strict subset of what
+     * the server would answer.
+     *
+     * Serving an unscoped read from it therefore does not return stale
+     * data, it returns a WRONG ANSWER: a population of one, the viewer,
+     * ranked first by definition. And because a populated mirror is
+     * authoritative, that answer would be given while perfectly online.
+     * Badges' own percentile gate (`usersBelow > 0`) would hide it
+     * rather than announce "top 100%", so it would have shown up as a
+     * leaderboard that quietly lost everyone else.
+     *
+     * So reads of this table are served locally only when they pin the
+     * owner -- the viewer's own profile, which is what Dashboard's score
+     * and tier and useSubscription need offline. Anything asking about
+     * other people goes to the network and is honestly unavailable
+     * without one.
+     */
+    completeMirror: false,
+    /**
+     * Read scoping only, never stamping: this table is not offline
+     * writable, so localCreate never runs for it.
+     *
+     * It is here because every real query for the viewer's own profile
+     * is `filter({ created_by: email })` -- Dashboard's score and tier,
+     * displayName, useSubscription. Without it, completeMirror: false
+     * would send all three to the network and the profile would be
+     * unavailable offline, which is most of what the mirror exists for.
+     */
+    ownerEmailColumn: "created_by",
     setColumns: [],
   },
 };
+
+/**
+ * Whether the local store can answer this query at all.
+ *
+ * A mirror scoped to one user can only answer questions about that user.
+ * `completeMirror` says the mirror is everything the server would return;
+ * otherwise the query has to pin the owner column (or its email mirror)
+ * for a local answer to be the same answer.
+ *
+ * `$or` is refused rather than inspected: a branch that does not pin the
+ * owner widens the query past what the mirror holds, and no query in this
+ * codebase needs it on a mirrored table.
+ */
+export function canAnswerLocally(table, conditions) {
+  const config = offlineConfig(table);
+  if (!config?.read) return false;
+  if (config.completeMirror) return true;
+  if (!conditions || conditions.$or) return false;
+
+  return [config.ownerColumn, config.ownerEmailColumn]
+    .filter(Boolean)
+    .some((column) => typeof conditions[column] === "string" && conditions[column].length > 0);
+}
 
 export function offlineConfig(table) {
   return OFFLINE_TABLES[table] ?? null;

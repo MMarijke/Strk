@@ -136,6 +136,37 @@ produce an outbox entry that can only ever fail. It is cached because
 Dashboard, Badges and Social all read it on mount and without it the shell
 renders with no score, tier or name.
 
+## What the mirror is allowed to answer
+
+A mirror scoped to one user can only answer questions about that user.
+`completeMirror` records whether the mirror is everything the server
+would return:
+
+| table | completeMirror | because |
+|---|---|---|
+| `habits` | yes | `habits_select_own` is `created_by_id = auth.uid()` — the owner's rows are the whole readable table |
+| `user_profiles` | **no** | RLS also exposes every `is_public` row, and the leaderboards read exactly those |
+
+This distinction is load-bearing. `UserProfile.list("-best_streak")` in
+Social, Badges and Dashboard is a **population** query, and the pull
+only fetches the owner's row. Answering it from the mirror does not give
+stale data, it gives a *wrong answer* — a population of one, the
+viewer, ranked first by definition — and because a populated mirror is
+authoritative it gives that answer while perfectly online.
+
+So `canAnswerLocally()` gates every local read: a table whose mirror is
+incomplete is served locally only when the query pins the owner (via
+`ownerColumn` or `ownerEmailColumn`). That keeps the viewer's own profile
+— score, tier, cached plan — working offline, while anything asking
+about other people goes to the network and is honestly unavailable
+without one. `$or` is refused rather than inspected.
+
+The same rule applies in reverse to writes: **a server-side write to a
+mirrored table has to be followed by a pull.** The entities layer does
+this for every write it handles, but an RPC does not —
+`complete_habit_from_focus_session` writes `habits.completions` in
+Postgres, so `SessionRoom` runs `syncNow()` and only then invalidates.
+
 ## Adding a new synced table
 
 1. Add it to `OFFLINE_TABLES` in `lib/offline/tables.js` with `read`,
@@ -150,7 +181,11 @@ renders with no score, tier or name.
 5. If it needs column defaults on an optimistic insert, add them to
    `LOCAL_INSERT_DEFAULTS` in `entities.js` — otherwise the local row is
    missing them until the first sync.
-6. Confirm its RLS lets the *client* upsert. Two tables do not.
+6. Decide `completeMirror`. If the server would return rows the pull
+   does not fetch (anything readable beyond the owner), it is `false`
+   and the table needs an `ownerEmailColumn` too, or its owner-scoped
+   reads will go to the network and be unavailable offline.
+7. Confirm its RLS lets the *client* upsert. Two tables do not.
 
 ## The two decisions that shaped the engine
 

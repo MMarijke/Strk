@@ -158,6 +158,24 @@ Full detail in `OFFLINE.md`. The parts that bite:
   a cached email because every habit query is keyed on it. It is an
   identity cache, not an authorization decision: RLS still checks every
   server call. Only an explicit sign-out clears it.
+- **The mirror may only answer questions about its owner.**
+  `completeMirror` in `tables.js` says whether the mirror is everything
+  the server would return. It is true for `habits` (RLS is owner-only)
+  and **false** for `user_profiles`, where RLS also exposes every
+  `is_public` row — which is what the leaderboards read via
+  `UserProfile.list("-best_streak")`. Serving that from an owner-scoped
+  mirror does not return stale data, it returns a population of ONE, the
+  viewer, ranked first by definition, and it does so while online
+  because a populated mirror is authoritative. `canAnswerLocally()`
+  gates every local read: unscoped reads of such a table go to the
+  network and are honestly unavailable offline. `readScope.test.js`
+  guards it.
+- **A server-side write to a mirrored table must be followed by a
+  sync.** `complete_habit_from_focus_session` writes
+  `habits.completions` in Postgres, so the mirror does not know and the
+  UI reads the copy without it. `SessionRoom` calls `syncNow()` and then
+  invalidates, in that order. Writes going through `entities.js` already
+  do this; a new RPC does not.
 - **`created_by` is server-controlled but still has to be on an
   optimistic row.** It is stamped from the JWT on insert and pinned on
   update (`20260914090001`, after it was found forgeable), so nothing
