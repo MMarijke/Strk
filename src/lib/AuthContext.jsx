@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { supabase, FETCH_TIMEOUT_MS } from '@/api/supabaseClient';
 import { clearQueryCache } from '@/lib/query-client';
+import { clearLocalData, setOwner } from '@/lib/offline/db';
 import { identifyUser, resetAnalytics } from '@/lib/analytics';
 
 const AuthContext = createContext();
@@ -138,6 +139,22 @@ export const AuthProvider = ({ children }) => {
       }
       lastEmailRef.current = nextUser?.email ?? null;
 
+      // Scope the local mirror to this user BEFORE anything reads it.
+      // Dexie has no RLS, so this is the only thing stopping a row left
+      // behind by a previous session on a shared device from being served
+      // to whoever signs in next -- setOwner wipes the store when the id
+      // changes. Awaited rather than fired off: a read racing ahead of it
+      // is exactly the leak it prevents.
+      if (nextUser?.id) {
+        try {
+          await setOwner(nextUser.id);
+        } catch (err) {
+          // A broken local store must not block signing in. Reads fall
+          // back to the network when the mirror is empty.
+          console.error('offline: failed to scope local store', err);
+        }
+      }
+
       setUser(nextUser);
       setIsAuthenticated(!!nextUser);
       if (nextUser) identifyUser(nextUser);
@@ -260,6 +277,20 @@ export const AuthProvider = ({ children }) => {
     clearQueryCache();
     resetAnalytics();
     lastEmailRef.current = null;
+
+    // Explicit sign-out is the ONLY place the local mirror is wiped.
+    // Never on a failed token refresh, which is indistinguishable from
+    // being offline -- clearing the store because the network dropped
+    // would delete unsynced check-ins, the worst thing this layer could
+    // do. Note this also discards a non-empty outbox, which is correct
+    // here: the user asked to leave, and replaying their writes after
+    // somebody else signs in would be worse.
+    try {
+      await clearLocalData();
+    } catch (err) {
+      console.error('offline: failed to clear local store on sign-out', err);
+    }
+
     setUser(null);
     setIsAuthenticated(false);
     await supabase.auth.signOut();

@@ -104,16 +104,40 @@ Full detail in `OFFLINE.md`. The parts that bite:
 - **Supabase and Paddle responses are never cached in the SW.** Data
   caching belongs to the Dexie layer, and a Workbox route over the REST
   API would be a second cache with no conflict resolution.
+- **The local-first path lives in `src/api/entities.js`, not in
+  components.** `createEntity` reads from Dexie and writes optimistically
+  through `lib/offline/localStore.js`; all 46 `useQuery` call sites are
+  untouched and `invalidateQueries` stays the reactivity mechanism. Do
+  NOT move this to `liveQuery` — it would mean rewriting every call site
+  and discarding that invalidation work. Reads fall back to the network
+  when the mirror is empty, because empty means "never synced", not "no
+  data".
+- **Offline tables are opt-in, in `lib/offline/tables.js`.** Only
+  `habits` (read+write) and `user_profiles` (read-only) are mirrored.
+  Social tables are deliberately excluded: a cached "who is in this focus
+  session right now" is worse than an honest empty state. Adding one is a
+  five-step checklist in `OFFLINE.md` — miss the `clearLocalData()` step
+  and a shared device leaks the previous user's rows.
 - **`habits.completions` is a `text[]`, not a check-in table.** Any
-  offline write path for check-ins must use delta operations
-  (`completion_add` / `completion_remove`), never a row-level
-  last-write-wins on the habits row — LWW destroys check-ins made on two
-  devices.
+  offline write path for an array column must go through `setColumns` in
+  `tables.js`, which makes `queueUpdate` diff it into per-member
+  `set_add` / `set_remove` operations. Never queue a whole-array `patch`
+  — that is last-write-wins and destroys check-ins made on two devices.
+  `sync.test.js` has the two-device case as an explicit test; keep it.
+- **The outbox parks an entry as `failed` after six attempts, it does not
+  drop it.** The local row keeps the user's change, so any new write path
+  needs a surface for that state or an unsaved check-in is
+  indistinguishable from a saved one. That is why `SyncStatus` shipped
+  with phase 3 rather than phase 4.
 - **`updated_at` is written by a server-side trigger**, so it records sync
   time rather than edit time and cannot be used as the conflict clock. A
   client-supplied `client_updated_at` is needed, and it must stay
   client-writable (i.e. NOT added to
-  `protect_user_profiles_stats_fields`).
+  `protect_user_profiles_stats_fields`). It is **proposed, not applied**,
+  in `docs/proposed/` — not in `supabase/migrations/`, because the
+  Supabase GitHub integration applies everything in that directory on
+  push to `main`. Until it lands, `sync.js:pullTable` carries the known
+  wrong line, commented as such.
 - **`freeze_assists` and `freeze_assist_notifications` reject client
   inserts** (`current_user = 'freeze_rpc_trusted'`). Offline freeze
   operations must queue the RPC call, not a row upsert.
