@@ -15,6 +15,7 @@ import { motion } from "framer-motion";
 import LobbyRing from "./LobbyRing";
 import ReactionButton from "@/components/groups/ReactionButton";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { syncNow } from "@/lib/offline/sync";
 import { useSubscription } from "@/hooks/useSubscription";
 
 // How long this session's lobby runs, in seconds, measured from the row
@@ -494,6 +495,21 @@ export default function SessionRoom({ session: initialSession, userEmail, userNa
             // done today". An unknown value falls through to the neutral
             // pending copy rather than asserting anything.
             setHabitOutcome(data || "unknown");
+
+            // This RPC writes habits.completions SERVER-side, and habit
+            // reads are served from the local mirror, so without a pull
+            // the credited day stays invisible until the next scheduled
+            // sync. Pull first, then invalidate, or the refetch reads the
+            // copy that does not have it yet.
+            //
+            // The rule, for the next RPC that writes a mirrored table: a
+            // server-side write has to be followed by a sync. Writes that
+            // go through the entities layer do this already.
+            syncNow({ reason: "focus-habit-credit" })
+              .catch(() => {})
+              .then(() => {
+                queryClient.invalidateQueries({ queryKey: ["habits", userEmail] });
+              });
           }).catch((err) => {
             console.error("Failed to credit habit from focus session:", err);
             setHabitOutcome("failed");

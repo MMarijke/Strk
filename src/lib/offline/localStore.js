@@ -18,6 +18,19 @@ import { syncAfterWrite } from "./sync";
  * responsible for.
  */
 
+/**
+ * The row to update is not in the mirror.
+ *
+ * Its own type because the right response is not "fail": online, the
+ * write belongs on the server, which is where that row came from.
+ */
+export class LocalRowMissingError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "LocalRowMissingError";
+  }
+}
+
 /** Same `created_date` alias entities.js adds, so callers cannot tell. */
 function mapRow(row) {
   if (!row) return row;
@@ -159,9 +172,14 @@ export async function localCreate(table, data, defaults = {}) {
 export async function localUpdate(table, id, changes) {
   const previous = await localGet(table, id);
   if (!previous) {
-    // Nothing local to update. Queueing a patch for a row the device has
-    // never seen would push changes computed from no baseline.
-    throw new Error(`offline update: ${table}:${id} is not in the local store`);
+    // Nothing local to update, so there is no baseline to diff a set
+    // column against. Reachable in one ordinary case: the mirror has not
+    // finished its first pull, the read fell through to the network, and
+    // the user acted on a row they can see but the device has not stored
+    // yet. A distinct error type rather than a generic one so the caller
+    // can send that write to the server instead of failing it -- see
+    // entities.js:update.
+    throw new LocalRowMissingError(`offline update: ${table}:${id} is not in the local store`);
   }
 
   const next = { ...previous, ...changes, updated_at: new Date().toISOString() };

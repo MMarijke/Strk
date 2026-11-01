@@ -1,6 +1,7 @@
 import { supabase } from '@/api/supabaseClient';
-import { isOfflineReadable, isOfflineWritable } from '@/lib/offline/tables';
+import { canAnswerLocally, isOfflineReadable, isOfflineWritable } from '@/lib/offline/tables';
 import {
+  LocalRowMissingError,
   localCreate,
   localDelete,
   localFilter,
@@ -91,7 +92,11 @@ function createEntity(table) {
     // public profiles, but "every public profile" grows without limit and
     // the screen needs a sample, not the census.
     async list(sort, limit) {
-      if (offlineRead) {
+      // Only when the mirror is everything the server would return.
+      // list() on user_profiles is a population query (the leaderboards),
+      // and an owner-scoped mirror would answer it with a population of
+      // one -- see tables.js:completeMirror.
+      if (offlineRead && canAnswerLocally(table, null)) {
         const local = await localList(table, sort, limit);
         // A populated local store is authoritative; an empty one may just
         // mean "never synced", so fall through to the network rather than
@@ -127,7 +132,7 @@ function createEntity(table) {
       const online = typeof navigator === 'undefined' || navigator.onLine !== false;
       const preferNetwork = fresh && online;
 
-      if (offlineRead && !preferNetwork) {
+      if (offlineRead && !preferNetwork && canAnswerLocally(table, conditions)) {
         const local = await localFilter(table, conditions, sort);
         if (local.length) return local;
         if (!online) return local;
@@ -168,7 +173,18 @@ function createEntity(table) {
 
     async update(id, data) {
       if (offlineWrite) {
-        return localUpdate(table, id, data);
+        try {
+          return await localUpdate(table, id, data);
+        } catch (err) {
+          // The row is not mirrored yet -- the first pull has not landed
+          // and this read came from the network. Send the write to the
+          // server rather than failing it: the row is there, and a user
+          // tapping a habit they can plainly see must not be told it
+          // didn't save. Offline there is nothing to fall back to, so it
+          // still surfaces.
+          const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+          if (!(err instanceof LocalRowMissingError) || !online) throw err;
+        }
       }
       const { data: row, error } = await supabase.from(table).update(data).eq('id', id).select().single();
       if (error) throw error;
