@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "fake-indexeddb/auto";
 
-import { db, clearLocalData, setOwner, getCursor, setCursor } from "./db";
+import { db, clearLocalData, setOwner, getCursor, setCursor, getSyncedAt } from "./db";
 import {
   MAX_ATTEMPTS,
   OP,
@@ -39,6 +39,8 @@ let server;
 let calls;
 /** Set to make the next write fail, for retry and backoff tests. */
 let failNextWrites = 0;
+/** Set to make the next read fail, for the "pull did not complete" tests. */
+let failReads = 0;
 /** Backs the navigator.onLine spy. */
 let onLine = false;
 
@@ -70,6 +72,10 @@ vi.mock("@/api/supabaseClient", () => {
         return this._resolve(false).then(onOk, onErr);
       },
       async _resolve(single) {
+        if (failReads > 0) {
+          failReads -= 1;
+          return { data: null, error: new Error("read failed") };
+        }
         const rows = (server[this._table] ?? []).filter((r) => {
           for (const [k, v] of Object.entries(this._filters)) {
             if (k.endsWith(">")) {
@@ -174,6 +180,7 @@ beforeEach(async () => {
   server = { habits: [], user_profiles: [] };
   calls = [];
   failNextWrites = 0;
+  failReads = 0;
   await clearLocalData();
   await setOwner(OWNER);
 
@@ -477,6 +484,34 @@ describe("pull and the cursor", () => {
     await syncNow();
 
     expect(await getCursor("habits")).toBe("2026-10-05T00:00:00.000Z");
+  });
+
+  it("records when the pull completed, even with nothing new to merge", async () => {
+    // Separate from the cursor on purpose: the cursor tracks the newest
+    // row and does not move when a pull returns nothing, but a pull that
+    // returned nothing is still a successful pull -- and that is what
+    // dates cached subscription state (see subscription.js).
+    expect(await getSyncedAt("user_profiles")).toBeNull();
+
+    goOnline();
+    await syncNow();
+
+    const first = await getSyncedAt("user_profiles");
+    expect(first).not.toBeNull();
+    expect(await getCursor("user_profiles")).toBeNull();
+  });
+
+  it("does not record a completion when the pull failed", async () => {
+    await clearLocalData();
+    await setOwner(OWNER);
+    failReads = 1;
+
+    goOnline();
+    await syncNow();
+
+    // Otherwise a failed sync would refresh the freshness claim it never
+    // earned, and a stale cached plan would be honoured for another week.
+    expect(await getSyncedAt("habits")).toBeNull();
   });
 
   it("only asks for rows newer than the cursor", async () => {

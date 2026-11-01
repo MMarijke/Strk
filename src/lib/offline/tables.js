@@ -54,6 +54,25 @@ export const OFFLINE_TABLES = {
      */
     ownerColumn: "created_by_id",
     /**
+     * The denormalized email mirror of ownerColumn.
+     *
+     * `habits.created_by` is server-controlled -- stamped from the JWT by
+     * stamp_created_by_email() on insert and pinned on update, after it
+     * was found to be forgeable (20260914090001). The client cannot set
+     * it, so nothing fills it in on a row that has not reached the
+     * server yet.
+     *
+     * It still has to be on the optimistic row, because every habit
+     * query in the app filters by it -- Dashboard's own refetch is
+     * `filter({ created_by: user.email })`. Without it a habit created
+     * offline is invisible to the query that just created it: the write
+     * succeeds, the list never shows it, and it only appears after a
+     * sync replaces the local row with the server's copy. Stamped from
+     * the owner identity cached in `meta`, which is the same email the
+     * server's trigger will write, so the two agree.
+     */
+    ownerEmailColumn: "created_by",
+    /**
      * Columns holding a set whose members are added and removed
      * individually, rather than a value that is replaced.
      *

@@ -141,6 +141,29 @@ Full detail in `OFFLINE.md`. The parts that bite:
 - **`freeze_assists` and `freeze_assist_notifications` reject client
   inserts** (`current_user = 'freeze_rpc_trusted'`). Offline freeze
   operations must queue the RPC call, not a row upsert.
+- **A mirrored read is authoritative, which is wrong for billing.**
+  `plan` is flipped server-side by the Paddle webhook, so
+  `useSubscription` reads with `{ fresh: true }` (skip the mirror while
+  online) and falls back to the cache only when the network is gone or
+  the read failed — a cached plan is then honoured for seven days from
+  the last *successful* pull (`meta.syncedAt:<table>`, not the cursor,
+  which does not move when a pull merges nothing). Never date a verified
+  server answer by the mirror's age: no stamp fails closed, so that
+  downgrades a paying user whose profile mirror has not synced yet.
+- **An offline cold start resolves identity from `meta`, not Supabase.**
+  A stored token cannot be verified offline, so `getSession()` either
+  stalls past the 2s offline budget or returns null — both of which used
+  to end the launch on the failure screen or on Login. `AuthContext`
+  resumes from the cached owner identity instead, and a resume requires
+  a cached email because every habit query is keyed on it. It is an
+  identity cache, not an authorization decision: RLS still checks every
+  server call. Only an explicit sign-out clears it.
+- **`created_by` is server-controlled but still has to be on an
+  optimistic row.** It is stamped from the JWT on insert and pinned on
+  update (`20260914090001`, after it was found forgeable), so nothing
+  fills it in locally — while every habit query filters on it. A local
+  row without it is invisible to the query that just created it. That is
+  what `ownerEmailColumn` in `tables.js` is for.
 
 ## Local environment notes
 

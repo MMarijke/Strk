@@ -1,23 +1,25 @@
 # Offline support
 
-Status: **phases 1–3 shipped.** Habits work offline end to end.
+Status: **all four phases shipped.** Habits work offline end to end.
 
 | phase | what | state |
 |---|---|---|
 | 1 | PWA shell: precached assets, offline fallback, install prompt | **done** |
 | 2 | Dexie mirror + read-through at the entities layer | **done** |
 | 3 | Outbox + sync engine | **done** |
-| 4 | Subscription status caching | not started |
+| 4 | Subscription status caching | **done** |
 
 What works with no network: the app loads, habit data renders, and habits
 can be created, edited, deleted and checked in. Writes queue and replay
 when connectivity returns.
 
+A Pro user keeps their paid features offline, for up to a week — see
+"Trusting a cached plan" below.
+
 What does not: anything social (groups, challenges, focus sessions,
 reactions, partnerships) still reaches Supabase and still shows an empty
 or error state offline — deliberately, see "Which tables" below. Paddle
-checkout is online-only and subscription status is not yet cached, so a
-Pro user who opens the app offline may be treated as free until phase 4.
+checkout is online-only and always will be.
 
 The sync status indicator shipped early, with phase 3 rather than 4: the
 outbox parks an entry as failed after six attempts, and without somewhere
@@ -196,6 +198,49 @@ from `completions` (`calculateStats`, `getAllTimeBest`, `rollingBest` in
 are server-derived mirrors for *other people's* leaderboard rows, and are
 already blocked from client writes. Nothing to change.
 
+## Trusting a cached plan
+
+`plan` is the column the whole paid tier hangs off, and it is the one
+piece of cached state where both answers are wrong:
+
+- Refusing to trust it offline downgrades a paying customer the moment
+  their train enters a tunnel.
+- Trusting it forever hands out Pro to a lapsed subscriber on a device
+  that simply never reconnects.
+
+So: **online, the server is authoritative** — `useSubscription` passes
+`{ fresh: true }`, which skips the mirror, because the Paddle webhook
+flips `plan` server-side and a customer who has just checked out must
+not still be told they are on free. **Offline, the cached plan is
+honoured for seven days** from the last *successful* profile pull, then
+stops.
+
+Three details that matter more than they look:
+
+1. **The clock is the sync time, not the row time.** `meta` holds a
+   `syncedAt:<table>` written at the end of a pull that completed,
+   including one that merged nothing — "we asked and there was nothing
+   new" is exactly what makes the mirror fresh. The cursor cannot serve
+   here: it tracks the newest row's `updated_at` and does not move when
+   a pull returns nothing. A pull that *failed* writes neither.
+2. **A verified answer is never dated by the mirror.** They are separate
+   branches in the hook on purpose. Dating a live server answer by the
+   mirror's last pull would downgrade a paying user whose profile mirror
+   had not synced yet, since no stamp fails closed — the exact failure
+   the whole design is meant to prevent.
+3. **It fails closed, except on a clock going backwards.** No stamp, or
+   an unparseable one, refuses a cached `pro`. A stamp in the *future* is
+   clamped to fresh instead: a wrong device clock must not cancel
+   somebody's subscription.
+
+When a cached plan does lapse, Settings says so in as many words
+(`isSubscriptionExpired`), because the alternative is a paying customer
+discovering it by tapping a feature that has quietly stopped working.
+
+The seven days are deliberately generous. The failure it permits — one
+device keeps Pro for a week after a cancellation, while offline — is far
+cheaper than the one it prevents.
+
 ## Known RLS blockers
 
 Flagged, not changed.
@@ -233,10 +278,12 @@ Flagged, not changed.
   local row keeps the change and `SyncStatus` offers Retry, but nothing
   escalates it further — an RLS rejection looks the same to the outbox
   as a dropped connection.
-- **Billing is online-only.** Paddle checkout cannot work offline at all,
-  and subscription *status* is not cached yet, so a Pro user opening the
-  app offline can be treated as free. Phase 4 caches status for 7 days;
-  the checkout flow stays untouched.
+- **Checkout is online-only.** Paddle cannot work offline at all. Paid
+  *status* is cached for seven days (above); buying, upgrading and
+  cancelling all need a connection.
+- **A device offline for more than a week loses Pro until it
+  reconnects.** By design, and said plainly in Settings when it
+  happens.
 - **The precache is ~62 entries and grows with the bundle.** The size
   limit is raised to 4 MiB per file because the entry chunk is ~530 KiB
   and the recharts chunk ~370 KiB; the default 2 MiB silently drops large
@@ -297,7 +344,14 @@ Signed in, online, with at least two habits. Application → IndexedDB →
     the `outbox` row's `status` to `"failed"` and reload. A "1 change
     didn't save" card with a Retry button must appear. Retry must clear
     it once online.
-15. Sign out. `habits`, `user_profiles` and `outbox` must all be empty —
+15. **Paid status.** As a Pro user, go offline and reload: Pro features
+    must still work and Settings must still say "Pro Plan". Then, in
+    DevTools, change `meta` → `syncedAt:user_profiles` to a date more
+    than seven days old and reload while still offline: the plan must
+    drop to Free *and* the Subscription card must explain why. Back
+    online, it must return on the next load with no action from the
+    user.
+16. Sign out. `habits`, `user_profiles` and `outbox` must all be empty —
     a shared device must not leak the previous user's habits. Sign in as
     a different user and confirm the mirror repopulates with *their*
     rows.

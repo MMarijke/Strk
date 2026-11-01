@@ -107,11 +107,30 @@ function createEntity(table) {
       return data.map(mapRow);
     },
 
-    async filter(conditions = {}, sort) {
-      if (offlineRead) {
+    /**
+     * `options.fresh` asks for the server's answer rather than the
+     * mirror's, and falls back to the mirror if the network fails.
+     *
+     * Needed because a mirrored read is authoritative by default, which
+     * is right for habit data and wrong for billing: the webhook that
+     * flips `plan` to pro lands on the server, and a client reading its
+     * local copy would keep reporting `free` to a customer who has just
+     * paid, until the next pull happened to run.
+     *
+     * A failed network read throws rather than quietly serving the
+     * mirror. Whether cached state may stand in depends on what is being
+     * read -- for billing it depends on how old that state is -- and
+     * this adapter is the wrong place to decide it. See
+     * lib/offline/subscription.js.
+     */
+    async filter(conditions = {}, sort, { fresh = false } = {}) {
+      const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+      const preferNetwork = fresh && online;
+
+      if (offlineRead && !preferNetwork) {
         const local = await localFilter(table, conditions, sort);
         if (local.length) return local;
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) return local;
+        if (!online) return local;
       }
       let query = supabase.from(table).select('*');
       if (conditions.$or) {
